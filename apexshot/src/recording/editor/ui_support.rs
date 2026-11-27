@@ -1,0 +1,188 @@
+use gtk4::{gdk, CssProvider};
+
+const RECORDING_EDITOR_CSS: &str = concat!(
+    "\n",
+    include_str!("ui_support_css/01.css"),
+    include_str!("ui_support_css/02.css"),
+    include_str!("ui_support_css/03.css"),
+    include_str!("ui_support_css/04.css"),
+    include_str!("ui_support_css/05.css"),
+    include_str!("ui_support_css/06.css"),
+    include_str!("ui_support_css/07.css"),
+    include_str!("ui_support_css/08.css"),
+    include_str!("ui_support_css/09.css"),
+    include_str!("ui_support_css/10.css"),
+    include_str!("../../capture/editor/css/16-menus.css"),
+);
+
+pub fn install_recording_editor_css() {
+    if let Some(display) = gdk::Display::default() {
+        let provider = CssProvider::new();
+        provider.load_from_data(RECORDING_EDITOR_CSS);
+        gtk4::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION + 2,
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RECORDING_EDITOR_CSS;
+
+    #[test]
+    fn light_theme_chrome_matches_timeline() {
+        assert!(RECORDING_EDITOR_CSS.contains(
+            ".recording-editor-window-controls {\n                min-height: 32px;\n                padding: 2px 8px 2px 10px;\n                background: transparent;"
+        ));
+        assert!(RECORDING_EDITOR_CSS.contains(
+            ".editor-theme-light .recording-editor-window-controls {\n                background: transparent;"
+        ));
+        assert!(RECORDING_EDITOR_CSS.contains(
+            ".editor-theme-light.recording-editor-shell {\n                background: @recording-editor-surface-light;\n                border: 1px solid alpha(#111827, 0.18);"
+        ));
+        assert!(RECORDING_EDITOR_CSS
+            .contains(".recording-editor-root scale slider {\n                min-width: 12px;"));
+        // The timeline zoom is one pill: the pill paints the surface, the bar
+        // is drawn by the app, and the scale behind it stays invisible so the
+        // theme's own track cannot show through as a second shape.
+        assert!(RECORDING_EDITOR_CSS
+            .contains(".recording-editor-root .recording-editor-timeline-zoom-pill {"));
+        assert!(RECORDING_EDITOR_CSS
+            .contains(".recording-editor-root .recording-editor-timeline-zoom-bar {"));
+        assert!(RECORDING_EDITOR_CSS
+            .contains(".recording-editor-root .recording-editor-timeline-zoom-glyph {"));
+        assert!(RECORDING_EDITOR_CSS.contains(
+            ".recording-editor-root .recording-editor-timeline-zoom-pill scale.recording-editor-timeline-zoom {\n                opacity: 0;"
+        ));
+        assert!(RECORDING_EDITOR_CSS.contains("box-shadow: none;"));
+        assert!(RECORDING_EDITOR_CSS.contains(
+            ".recording-editor-root scrollbar.vertical {\n                min-width: 6px;"
+        ));
+        assert!(RECORDING_EDITOR_CSS.contains(
+            ".recording-editor-root scrollbar slider {\n                background-color: alpha(white, 0.18);\n                border-radius: 999px;\n                min-width: 5px;"
+        ));
+    }
+
+    #[test]
+    fn chrome_and_video_surfaces_are_two_single_source_tokens() {
+        // The editor is skinned by exactly two surfaces per theme: the shared
+        // chrome (title bar, workspace inset, timeline, tool column,
+        // inspector) and the video play area. Pin that each raw value lives
+        // only in its @define-color line, so a future colour change edits the
+        // token and not a dozen rules someone has to hunt down.
+        assert_eq!(
+            RECORDING_EDITOR_CSS.matches("#0f0f0f").count(),
+            1,
+            "chrome surfaces must reference @recording-editor-surface, not a literal"
+        );
+        assert!(RECORDING_EDITOR_CSS.contains("@define-color recording-editor-surface #0f0f0f;"));
+        assert!(
+            RECORDING_EDITOR_CSS.contains("@define-color recording-editor-video-surface #000000;")
+        );
+        assert!(
+            RECORDING_EDITOR_CSS.contains("@define-color recording-editor-surface-light #ffffff;")
+        );
+        assert!(RECORDING_EDITOR_CSS
+            .contains("@define-color recording-editor-video-surface-light #f0f1f4;"));
+        assert!(RECORDING_EDITOR_CSS.contains("background: @recording-editor-video-surface;"));
+        assert!(RECORDING_EDITOR_CSS.contains(
+            ".editor-theme-light .recording-editor-stage {\n                background: @recording-editor-video-surface-light;"
+        ));
+    }
+
+    #[test]
+    fn the_custom_wallpaper_picker_css_parses_without_gtk_errors() {
+        // A string match proves the surface rules are present, not that GTK
+        // accepts them. This loads the picker's slice of the real stylesheet
+        // into a CssProvider so a mistyped property on the card is caught here
+        // rather than as a silently-ignored declaration at runtime. Mirrors the
+        // settings stylesheet's check, including its bogus-declaration sanity
+        // probe — without that probe this assertion could pass because the
+        // error signal never fires.
+        //
+        // Scoped to the picker's sections, not the whole bundle: 01-08 carry 23
+        // pre-existing `max-width`/`overflow` warnings in files the
+        // `light_theme_chrome_matches_timeline` test pins byte for byte, so
+        // asserting the whole stylesheet is clean would fail for reasons this
+        // test cannot fix.
+        const START: &str = "/* ── Custom Wallpaper popover ──";
+        const END: &str = "/* ── Light theme ── */";
+        let css = include_str!("ui_support_css/09.css");
+        let start = css
+            .find(START)
+            .expect("09.css must have a Custom Wallpaper popover section");
+        let end = css[start..]
+            .find(END)
+            .map(|at| start + at)
+            .expect("the popover section must be followed by the light theme");
+        let slice = format!("{}\n{}\n", &css[start..end], &css[end..]);
+
+        let Some((errors, bogus_errors)) = crate::test_support::with_gtk(move || {
+            let provider = gtk4::CssProvider::new();
+            let errors = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+            {
+                let errors = std::rc::Rc::clone(&errors);
+                provider.connect_parsing_error(move |_, section, error| {
+                    errors
+                        .borrow_mut()
+                        .push(format!("{}: {}", section.to_str(), error.message()));
+                });
+            }
+            provider.load_from_data(&slice);
+
+            let bogus = gtk4::CssProvider::new();
+            let bogus_errors = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+            {
+                let bogus_errors = std::rc::Rc::clone(&bogus_errors);
+                bogus.connect_parsing_error(move |_, _, error| {
+                    bogus_errors.borrow_mut().push(error.message().to_string());
+                });
+            }
+            bogus.load_from_data(".bogus { definitely-not-a-property: 1; }");
+
+            // Bind before returning: the `Ref` guards have to drop before the
+            // `Rc`s they borrow from.
+            let parsed: Vec<String> = errors.borrow().clone();
+            let reported: Vec<String> = bogus_errors.borrow().clone();
+            (parsed, reported)
+        }) else {
+            eprintln!("skipping: no display available");
+            return;
+        };
+
+        assert!(
+            errors.is_empty(),
+            "the Custom Wallpaper picker CSS failed to parse: {errors:#?}"
+        );
+        assert!(
+            !bogus_errors.is_empty(),
+            "parsing-error signal is not firing; the CSS check is vacuous"
+        );
+    }
+
+    #[test]
+    fn the_shared_menu_stylesheet_is_the_last_include() {
+        let source = include_str!("ui_support.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        let last_include = production_source
+            .rfind("include_str!")
+            .expect("the sheet is built from includes");
+        assert!(
+            production_source[last_include..]
+                .starts_with("include_str!(\"../../capture/editor/css/16-menus.css\")"),
+            "the shared menu stylesheet must load last so its additive overrides win"
+        );
+        for selector in [
+            "popover.recording-editor-dropdown-popover > contents",
+            "popover.recording-editor-stage-aspect > contents",
+            "popover.recording-editor-clip-menu-popover > contents",
+        ] {
+            assert!(
+                super::RECORDING_EDITOR_CSS.contains(selector),
+                "the recording sheet must carry the shared menu rules for {selector}"
+            );
+        }
+    }
+}

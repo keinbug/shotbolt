@@ -1,0 +1,7945 @@
+//! Export the composition to an H.264 MP4.
+//!
+//! The frame plan walks the kept source spans (trim minus cuts) in composition
+//! order, and every frame is composited by the same code the preview uses:
+//! the follow camera, the click ripple warp, and the cursor sprite with its
+//! press spring. The canvas around the video — the background fill, padding,
+//! frame aspect, and rounded corners — is laid on afterwards by
+//! `canvas::FramedSink`, so every render path produces only the video rect.
+//! The recording's sound is cut to the same spans and muxed in afterwards by
+//! `audio::add`, which copies the video stream instead of re-encoding it.
+
+mod audio;
+mod canvas;
+#[cfg(target_os = "windows")]
+mod compose_gpu;
+#[cfg(target_os = "windows")]
+mod gpu;
+mod hybrid;
+mod machine;
+pub(crate) mod rate;
+
+pub(super) use canvas::CanvasLayout;
+
+use super::cursor::preview_ripple;
+use super::pixels::{Nv12Converter, YuvSpace};
+use super::press::press_cursor_scale;
+use super::timeline::ZoomClip;
+use super::webcam;
+use super::zoom::{self, TimeMapping, ViewRect, ZoomCameraCache};
+use crate::recording::editor::cursor_sprite;
+use crate::recording::editor::ffmpeg;
+use crate::recording::editor::model::ClickEffect;
+use crate::recording::editor::model::CursorSettings;
+use crate::recording::editor::sidecar::{CursorMotion, PointerSidecar};
+use gtk4::cairo::{Context, Format, ImageSurface};
+use rayon::prelude::*;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use std::process::{Child, Stdio};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
+
+const DEFAULT_FPS: f64 = 30.0;
+
+/// The video codec an export writes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub(super) enum Codec {
+    #[default]
+    H264,
+    /// Better quality per byte, but not every player decodes it.
+    Hevc,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ExportSettings {
+    /// None preserves the recording's frame rate.
+    pub fps: Option<u32>,
+    /// The short edge, preserving the recording's aspect ratio. None keeps its size.
+    pub resolution: Option<u32>,
+    /// Use the GPU encoder when the machine has one that opens.
+    pub hardware: bool,
+    /// H.264 or HEVC.
+    pub codec: Codec,
+}
+
+impl Default for ExportSettings {
+    fn default() -> Self {
+        Self {
+            fps: None,
+            resolution: None,
+            hardware: true,
+            codec: Codec::H264,
+        }
+    }
+}
+
+impl ExportSettings {
+    pub fn dimensions(self, source: (u32, u32)) -> (u32, u32) {
+        let Some(edge) = self.resolution else {
+            return output_size(source);
+        };
+        let ratio = f64::from(edge) / f64::from(source.0.min(source.1).max(1));
+        output_size((
+            (f64::from(source.0) * ratio).round() as u32,
+            (f64::from(source.1) * ratio).round() as u32,
+        ))
+    }
+}
+
+/// Everything the exporter needs that only the window knows.
+pub(super) struct ExportModel {
+    pub source: PathBuf,
+    pub source_size: (u32, u32),
+    pub trim_start: f64,
+    pub trim_end: f64,
+    pub cuts: Vec<f64>,
+    /// Composition start of each cut piece, as the timeline holds it. Pieces
+    /// may be pulled apart or reordered, so the plan follows these starts.
+    pub segment_starts: Vec<f64>,
+    /// One speed per kept source interval, in composition order; a missing or
+    /// malformed entry plays at 1x.
+    pub segment_speeds: Vec<f64>,
+    /// Seconds the last frame is held after the footage ends.
+    pub freeze_tail: f64,
+    pub zooms: Vec<ZoomClip>,
+    /// The camera settings the preview is using, so the export's camera is the
+    /// same camera.
+    pub zoom_camera: zoom::ZoomCameraSettings,
+    pub cursor: CursorSettings,
+    /// Hides the rendered cursor, with its click effects, for the whole export,
+    /// exactly as the preview's switch does.
+    pub cursor_hidden: bool,
+    pub sidecar: Option<PointerSidecar>,
+    /// The camera layer to bake, when the recording has one.
+    pub webcam: Option<webcam::WebcamExport>,
+    /// The stage the camera layouts are placed on, in source pixels, when it
+    /// is wider than the screen; `None` keeps the screen's own shape. Only
+    /// used with a camera.
+    pub stage: Option<(u32, u32)>,
+    /// The canvas around the video (fill, padding, frame, rounded corners), or
+    /// None to export the video edge to edge.
+    pub canvas: Option<CanvasLayout>,
+    pub crf: u32,
+    /// Files that may carry the recording's sound, in order of preference;
+    /// the first with an audio stream is used. Empty means the source.
+    pub audio: Vec<PathBuf>,
+    pub effects: super::project::EffectsSettings,
+}
+
+/// One contiguous kept span of footage, rendered back to back. `speed` is how
+/// fast its source runs against composition time; 0 repeats `source_start` for
+/// the span's whole length, which covers a freeze tail and the dead air between
+/// moved pieces.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct SourceSpan {
+    pub composition_start: f64,
+    pub source_start: f64,
+    /// The snapped source time the span ends at, so a sped span keeps its whole
+    /// source range however many output frames it rounds to.
+    pub source_end: f64,
+    pub speed: f64,
+    pub frames: u64,
+}
+
+/// The slowest and fastest playback a span may carry.
+const MIN_SPEED: f64 = 0.125;
+const MAX_SPEED: f64 = 8.0;
+
+/// The speed an interval plays at: its entry when it is a usable number,
+/// otherwise 1x.
+fn interval_speed(speeds: &[f64], index: usize) -> f64 {
+    speeds
+        .get(index)
+        .copied()
+        .filter(|speed| speed.is_finite() && *speed > 0.0)
+        .map_or(1.0, |speed| speed.clamp(MIN_SPEED, MAX_SPEED))
+}
+
+/// Split the trimmed footage at the cuts, rounding frame counts on the shared
+/// grid so the spans join without a gap, a repeat, or frame drift. Each kept
+/// interval plays at its own speed, and its output length is rounded against
+/// the running total so a long sped export does not drift. Pieces stay in
+/// source order: use `frame_plan_with_starts` when the timeline may have
+/// moved them.
+#[cfg(test)]
+pub(super) fn frame_plan(
+    trim_start: f64,
+    trim_end: f64,
+    cuts: &[f64],
+    speeds: &[f64],
+    fps: f64,
+) -> Vec<SourceSpan> {
+    frame_plan_with_starts(trim_start, trim_end, cuts, speeds, &[], fps)
+}
+
+/// The plan the timeline's composition asks for: pieces ordered by their
+/// composition start, with a held span covering any gap between them. A piece
+/// whose start is later than the end of the piece before it leaves dead air,
+/// which the preview shows as a frozen frame; the export repeats the previous
+/// piece's last source frame (the first piece's first frame at the head) for the
+/// same length, so the file keeps the timeline's timing.
+pub(super) fn frame_plan_with_starts(
+    trim_start: f64,
+    trim_end: f64,
+    cuts: &[f64],
+    speeds: &[f64],
+    starts: &[f64],
+    fps: f64,
+) -> Vec<SourceSpan> {
+    let start = trim_start.max(0.0);
+    let end = trim_end.max(start);
+    if !fps.is_finite() || fps <= 0.0 || end - start <= 1e-9 {
+        return Vec::new();
+    }
+    let total = ((end - start) * fps).round() as u64;
+    if total == 0 {
+        return Vec::new();
+    }
+    // Every seek and every sample sits on the recording's frame grid: the trim
+    // edge and the cuts each snap to the nearest frame, so a seam is exactly
+    // one frame step and never repeats or skips footage. The unrounded cut
+    // time travels beside its frame so the gap check compares composition
+    // seconds, as the timeline does, instead of two rounded frame counts.
+    let origin = (start * fps).round() / fps;
+    let mut edges: Vec<(u64, f64)> = cuts
+        .iter()
+        .copied()
+        .filter(|cut| cut.is_finite() && *cut > start + 1e-9 && *cut < end - 1e-9)
+        .map(|cut| (((cut - origin) * fps).round() as u64, cut))
+        .filter(|(frame, _)| *frame > 0 && *frame < total)
+        .collect();
+    edges.sort_by_key(|(frame, _)| *frame);
+    edges.dedup_by_key(|(frame, _)| *frame);
+    let mut boundaries: Vec<(u64, f64)> = Vec::with_capacity(edges.len() + 2);
+    boundaries.push((0, start));
+    boundaries.extend(edges);
+    boundaries.push((total, end));
+    let mut pieces: Vec<(f64, f64, SourceSpan)> = Vec::with_capacity(boundaries.len());
+    let mut elapsed = 0.0f64;
+    let mut composition_frames = 0u64;
+    for (index, pair) in boundaries.windows(2).enumerate() {
+        let frames = pair[1].0 - pair[0].0;
+        if frames == 0 {
+            continue;
+        }
+        let speed = interval_speed(speeds, index);
+        elapsed += frames as f64 / speed;
+        let boundary = elapsed.round() as u64;
+        let output_frames = boundary.saturating_sub(composition_frames);
+        let composition_start = composition_frames as f64 / fps;
+        let explicit_start = starts.get(index).copied().filter(|start| start.is_finite());
+        let piece_start = explicit_start.map_or(composition_start, |start| start.max(0.0));
+        // A piece the timeline placed carries its own unrounded length, so the
+        // next piece that touches it does not read as a gap. A piece with no
+        // start keeps the length the frame grid gives it.
+        let length = explicit_start.map_or(output_frames as f64 / fps, |_| {
+            (pair[1].1 - pair[0].1).max(0.0) / speed
+        });
+        pieces.push((
+            piece_start,
+            length,
+            SourceSpan {
+                composition_start,
+                source_start: origin + pair[0].0 as f64 / fps,
+                source_end: origin + pair[1].0 as f64 / fps,
+                speed,
+                frames: output_frames,
+            },
+        ));
+        composition_frames = boundary;
+    }
+    pieces.sort_by(|left, right| left.0.total_cmp(&right.0));
+    let mut spans = Vec::with_capacity(pieces.len() * 2);
+    let mut placed_frames = 0u64;
+    let mut previous: Option<SourceSpan> = None;
+    let mut timeline_end = 0.0f64;
+    for (piece_start, length, mut piece) in pieces {
+        // A start past the previous piece's end is dead air the timeline draws
+        // as a gap. Half a frame of slack keeps two pieces that touch from
+        // opening one when the plan and the timeline round apart.
+        if piece_start - timeline_end > 0.5 / fps {
+            let start_frames = (piece_start * fps).round() as u64;
+            let gap = start_frames.saturating_sub(placed_frames);
+            if gap > 0 {
+                let source = previous.map_or(piece.source_start, |previous| {
+                    held_source_frame(previous, fps)
+                });
+                spans.push(SourceSpan {
+                    composition_start: placed_frames as f64 / fps,
+                    source_start: source,
+                    source_end: source,
+                    speed: 0.0,
+                    frames: gap,
+                });
+                placed_frames += gap;
+            }
+        }
+        if piece.frames > 0 {
+            piece.composition_start = placed_frames as f64 / fps;
+            placed_frames += piece.frames;
+            previous = Some(piece);
+            spans.push(piece);
+        }
+        timeline_end = piece_start + length;
+    }
+    spans
+}
+
+/// The source frame a held span repeats: the last frame the piece before it
+/// showed, which sits on the recording's frame grid. A held piece already
+/// stands on one frame.
+fn held_source_frame(span: SourceSpan, fps: f64) -> f64 {
+    if span.speed.is_finite() && span.speed > 0.0 {
+        (span.source_end - 1.0 / fps).max(span.source_start)
+    } else {
+        span.source_start
+    }
+}
+
+pub(super) fn total_frames(spans: &[SourceSpan]) -> u64 {
+    spans.iter().map(|span| span.frames).sum()
+}
+
+/// Source time of a global composition frame, through the span that owns it.
+/// A held span answers its first source frame for every frame it covers.
+pub(super) fn frame_source_time(spans: &[SourceSpan], frame: u64, fps: f64) -> Option<f64> {
+    if !fps.is_finite() || fps <= 0.0 {
+        return None;
+    }
+    let mut remaining = frame;
+    for span in spans {
+        if remaining < span.frames {
+            if span.speed <= 0.0 || !span.speed.is_finite() {
+                return Some(span.source_start);
+            }
+            let time = span.source_start + remaining as f64 * span.speed / fps;
+            return Some(time.min(span.source_end));
+        }
+        remaining -= span.frames;
+    }
+    None
+}
+
+/// Export dimensions: the source size, with even edges for yuv420p.
+pub(super) fn output_size(source: (u32, u32)) -> (u32, u32) {
+    (source.0.max(2) & !1, source.1.max(2) & !1)
+}
+
+pub(super) enum ExportUpdate {
+    Progress {
+        done: u64,
+        total: u64,
+    },
+    /// The finished file, and why its sound could not be added when it could not.
+    Finished(PathBuf, Option<String>),
+    Failed(String),
+    Cancelled,
+}
+
+pub(super) struct ExportHandle {
+    pub receiver: Receiver<ExportUpdate>,
+    /// Stops the workers; a worker failure sets it too, so the other workers
+    /// stop as well.
+    cancel: Arc<AtomicBool>,
+    /// Set only by the user's Stop, so a failed hardware attempt can still be
+    /// retried on the CPU without undoing that request.
+    user_cancel: Arc<AtomicBool>,
+}
+
+impl ExportHandle {
+    pub fn cancel(&self) {
+        self.user_cancel.store(true, Ordering::Relaxed);
+        self.cancel.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Whether a failed hardware attempt may run again on the CPU: only when the
+/// encoder failed and the user has not asked to stop.
+fn retry_on_software(result: &Result<(), End>, user_cancel: bool) -> bool {
+    matches!(result, Err(End::Failed(_))) && !user_cancel
+}
+
+#[cfg(test)]
+pub(super) fn start_export(model: ExportModel, output: PathBuf) -> ExportHandle {
+    start_export_with_settings(model, output, ExportSettings::default())
+}
+
+pub(super) fn start_export_with_settings(
+    mut model: ExportModel,
+    output: PathBuf,
+    settings: ExportSettings,
+) -> ExportHandle {
+    let cuts = model.cuts.clone();
+    let shake_threshold = model.cursor.remove_shake_threshold;
+    let stop_movement_in_last_part_ms = model.cursor.stop_movement_in_last_part_ms;
+    let loop_position_before_end_ms = model.cursor.loop_position_before_end_ms;
+    if let Some(sidecar) = model.sidecar.as_mut() {
+        sidecar.set_cut_times(&cuts);
+        sidecar.set_shake_threshold(shake_threshold);
+        sidecar.set_cursor_tail(
+            stop_movement_in_last_part_ms,
+            loop_position_before_end_ms,
+            Some(model.trim_end),
+        );
+    }
+    let (sender, receiver) = mpsc::channel();
+    let cancel = Arc::new(AtomicBool::new(false));
+    let user_cancel = Arc::new(AtomicBool::new(false));
+    if let Err(error) =
+        crate::studio_entitlement::ensure_export_allowed(super::studio::capabilities(&model))
+    {
+        let _ = sender.send(ExportUpdate::Failed(error.to_string()));
+        return ExportHandle {
+            receiver,
+            cancel,
+            user_cancel,
+        };
+    }
+    // Captured before encoding: only a finished file consumes a free export.
+    let trial =
+        crate::studio_entitlement::studio_access(super::studio::capabilities(&model)).is_trial();
+    let thread_cancel = cancel.clone();
+    let thread_user_cancel = user_cancel.clone();
+    std::thread::spawn(move || {
+        let encoder = Encoder::fastest_for(settings.codec);
+        // With hardware off the first attempt already used the software encoder.
+        let hardware = settings.hardware && !software_forced();
+        let mut result = render(&model, &output, &sender, &thread_cancel, encoder, settings);
+        if hardware
+            && !encoder.is_software()
+            && retry_on_software(&result, thread_user_cancel.load(Ordering::Relaxed))
+        {
+            if let Err(End::Failed(message)) = &result {
+                eprintln!(
+                    "[export] {} failed ({message}); retrying with {}",
+                    encoder.codec(),
+                    Encoder::software(settings.codec).codec()
+                );
+            }
+            // The failed attempt stopped its workers through the shared flag;
+            // the retry needs it clear. A Stop that lands in between still
+            // wins, so the retry stops at its first check.
+            thread_cancel.store(false, Ordering::Relaxed);
+            if thread_user_cancel.load(Ordering::Relaxed) {
+                thread_cancel.store(true, Ordering::Relaxed);
+            }
+            result = render(
+                &model,
+                &output,
+                &sender,
+                &thread_cancel,
+                Encoder::software(settings.codec),
+                settings,
+            );
+        }
+        match result {
+            Ok(()) if thread_user_cancel.load(Ordering::Relaxed) => {
+                let _ = std::fs::remove_file(&output);
+                let _ = sender.send(ExportUpdate::Cancelled);
+            }
+            Ok(()) => {
+                let sound = audio::add(&model, settings, &output, &thread_cancel).err();
+                // The frame loop has finished, but the sound is still muxed:
+                // a Stop that arrived during it must still cancel the export.
+                if thread_cancel.load(Ordering::Relaxed)
+                    || thread_user_cancel.load(Ordering::Relaxed)
+                {
+                    let _ = std::fs::remove_file(&output);
+                    let _ = sender.send(ExportUpdate::Cancelled);
+                } else {
+                    if let Some(error) = &sound {
+                        eprintln!("[export] the sound was not added: {error}");
+                    }
+                    // The file is written and no Stop came in: one finished
+                    // Studio export leaves the free trial.
+                    if trial {
+                        crate::studio_trial::record_trial_export();
+                    }
+                    let _ = sender.send(ExportUpdate::Finished(output, sound));
+                }
+            }
+            Err(End::Cancelled) => {
+                let _ = std::fs::remove_file(&output);
+                let _ = sender.send(ExportUpdate::Cancelled);
+            }
+            Err(End::Failed(message)) => {
+                let _ = std::fs::remove_file(&output);
+                let _ = sender.send(ExportUpdate::Failed(message));
+            }
+        }
+    });
+    ExportHandle {
+        receiver,
+        cancel,
+        user_cancel,
+    }
+}
+
+/// The encoders an export can use: per codec, the GPU's own encoder when the
+/// machine has one that opens, then the CPU encoder, which also takes over if a
+/// hardware encoder fails mid-export.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Encoder {
+    Nvenc,
+    QuickSync,
+    Amf,
+    MediaFoundation,
+    X264,
+    HevcNvenc,
+    HevcQuickSync,
+    HevcAmf,
+    HevcMediaFoundation,
+    X265,
+}
+
+impl Encoder {
+    /// The CPU encoder for a codec.
+    fn software(codec: Codec) -> Self {
+        match codec {
+            Codec::H264 => Self::X264,
+            Codec::Hevc => Self::X265,
+        }
+    }
+
+    fn is_software(self) -> bool {
+        matches!(self, Self::X264 | Self::X265)
+    }
+
+    fn is_hevc(self) -> bool {
+        matches!(
+            self,
+            Self::HevcNvenc
+                | Self::HevcQuickSync
+                | Self::HevcAmf
+                | Self::HevcMediaFoundation
+                | Self::X265
+        )
+    }
+
+    /// The fastest encoder this machine can open for a codec, probed once per process.
+    /// Media Foundation comes last among the hardware encoders: it reaches the
+    /// driver's encoder through Windows when ffmpeg's own vendor path cannot.
+    fn fastest_for(codec: Codec) -> Self {
+        static H264: OnceLock<Encoder> = OnceLock::new();
+        static HEVC: OnceLock<Encoder> = OnceLock::new();
+        let (cell, candidates) = match codec {
+            Codec::H264 => (
+                &H264,
+                [
+                    Self::Nvenc,
+                    Self::QuickSync,
+                    Self::Amf,
+                    Self::MediaFoundation,
+                ],
+            ),
+            Codec::Hevc => (
+                &HEVC,
+                [
+                    Self::HevcNvenc,
+                    Self::HevcQuickSync,
+                    Self::HevcAmf,
+                    Self::HevcMediaFoundation,
+                ],
+            ),
+        };
+        *cell.get_or_init(|| {
+            candidates
+                .into_iter()
+                .find(|encoder| encoder.opens())
+                .unwrap_or(Self::software(codec))
+        })
+    }
+
+    /// The fastest encoder this machine can open, probed once per process.
+    #[cfg(test)]
+    #[allow(dead_code)]
+    fn fastest() -> Self {
+        Self::fastest_for(Codec::H264)
+    }
+
+    fn codec(self) -> &'static str {
+        match self {
+            Self::Nvenc => "h264_nvenc",
+            Self::QuickSync => "h264_qsv",
+            Self::Amf => "h264_amf",
+            Self::MediaFoundation => "h264_mf",
+            Self::X264 => "libx264",
+            Self::HevcNvenc => "hevc_nvenc",
+            Self::HevcQuickSync => "hevc_qsv",
+            Self::HevcAmf => "hevc_amf",
+            Self::HevcMediaFoundation => "hevc_mf",
+            Self::X265 => "libx265",
+        }
+    }
+
+    /// The codec, rate control, and the pixel format the encoder takes without
+    /// another conversion. x264 keeps the editor's CRF; a hardware encoder gets
+    /// the bitrate that CRF produces on the shared rate curve, capped at 1.5x
+    /// with a 2x buffer, because the drivers map a quantiser to very different
+    /// sizes.
+    fn args(self, crf: u32, size: (u32, u32), fps: f64) -> Vec<String> {
+        if self.is_hevc() {
+            return self.hevc_args(crf, size, fps);
+        }
+        // Media Foundation takes the profile as its numeric H.264 profile_idc.
+        let profile = if self == Self::X264 && crf == 0 {
+            "high444"
+        } else if self == Self::MediaFoundation {
+            "100"
+        } else {
+            "high"
+        };
+        let bitrate = rate::h264_bits_per_second(crf, size, fps).round().max(1.0) as u64;
+        let bitrate_args = |rc: &[&str]| -> Vec<String> {
+            rc.iter()
+                .map(|value| value.to_string())
+                .chain([
+                    "-b:v".to_string(),
+                    bitrate.to_string(),
+                    "-maxrate".to_string(),
+                    (bitrate * 3 / 2).to_string(),
+                    "-bufsize".to_string(),
+                    (bitrate * 2).to_string(),
+                    "-pix_fmt".to_string(),
+                    "nv12".to_string(),
+                ])
+                .collect()
+        };
+        let crf_text = crf.to_string();
+        let settings: Vec<String> = match self {
+            Self::Nvenc => bitrate_args(&["-preset", "p4", "-tune", "hq", "-rc", "vbr"]),
+            Self::QuickSync => bitrate_args(&["-preset", "medium"]),
+            Self::Amf => bitrate_args(&["-quality", "balanced", "-rc", "vbr_peak"]),
+            Self::MediaFoundation => bitrate_args(&[
+                "-rate_control",
+                "pc_vbr",
+                "-scenario",
+                "archive",
+                "-hw_encoding",
+                "1",
+            ]),
+            Self::X264 => [
+                "-preset", "veryfast", "-crf", &crf_text, "-pix_fmt", "yuv420p",
+            ]
+            .iter()
+            .map(|value| value.to_string())
+            .collect(),
+            _ => Vec::new(),
+        };
+        [
+            "-c:v",
+            self.codec(),
+            "-profile:v",
+            profile,
+            "-level:v",
+            h264_level(size, fps),
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .chain(settings)
+        .collect()
+    }
+
+    /// HEVC is always driven by a bitrate from the tier's bits per pixel, and
+    /// tagged `hvc1` so MP4 players accept it.
+    fn hevc_args(self, crf: u32, size: (u32, u32), fps: f64) -> Vec<String> {
+        let bitrate = rate::hevc_bits_per_second(crf, size, fps).round().max(1.0) as u64;
+        let (control, pix_fmt): (&[&str], &str) = match self {
+            Self::HevcNvenc => (&["-preset", "p4", "-tune", "hq", "-rc", "vbr"], "nv12"),
+            Self::HevcQuickSync => (&["-preset", "medium"], "nv12"),
+            Self::HevcAmf => (&["-quality", "balanced", "-rc", "vbr_peak"], "nv12"),
+            Self::HevcMediaFoundation => (
+                &[
+                    "-rate_control",
+                    "pc_vbr",
+                    "-scenario",
+                    "archive",
+                    "-hw_encoding",
+                    "1",
+                ],
+                "nv12",
+            ),
+            _ => (
+                &["-preset", "veryfast", "-x265-params", "log-level=error"],
+                "yuv420p",
+            ),
+        };
+        // Media Foundation takes the profile as its numeric HEVC profile (1 = Main).
+        let profile = if self == Self::HevcMediaFoundation {
+            "1"
+        } else {
+            "main"
+        };
+        ["-c:v", self.codec(), "-profile:v", profile]
+            .into_iter()
+            .chain(control.iter().copied())
+            .map(str::to_string)
+            .chain([
+                "-b:v".to_string(),
+                bitrate.to_string(),
+                "-maxrate".to_string(),
+                (bitrate * 3 / 2).to_string(),
+                "-bufsize".to_string(),
+                (bitrate * 2).to_string(),
+                "-pix_fmt".to_string(),
+                pix_fmt.to_string(),
+                "-tag:v".to_string(),
+                "hvc1".to_string(),
+            ])
+            .collect()
+    }
+
+    /// Whether ffmpeg can open this encoder here: a build lists every GPU
+    /// encoder it was compiled with, whether or not the machine has the
+    /// hardware or a new enough driver for it.
+    fn opens(self) -> bool {
+        let output = crate::utils::hidden_command(ffmpeg::ffmpeg_executable())
+            .args(["-hide_banner", "-loglevel", "error", "-nostdin"])
+            .args(["-f", "lavfi", "-i", "color=c=black:s=320x240:r=30"])
+            .args(["-frames:v", "2"])
+            .args(self.args(23, (320, 240), 30.0))
+            .args(["-f", "null", "-"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .output();
+        match output {
+            Ok(output) if output.status.success() => true,
+            Ok(output) => {
+                // The first line is the driver's own reason, such as an NVENC
+                // API version the installed driver is too old for.
+                let reason = String::from_utf8_lossy(&output.stderr)
+                    .lines()
+                    .map(str::trim)
+                    .find(|line| !line.is_empty())
+                    .unwrap_or("no reason given")
+                    .to_string();
+                eprintln!("[export] {} unavailable: {reason}", self.codec());
+                false
+            }
+            Err(error) => {
+                eprintln!("[export] {} unavailable: {error}", self.codec());
+                false
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+enum End {
+    Cancelled,
+    Failed(String),
+}
+
+struct RenderPlan {
+    fps: f64,
+    spans: Vec<SourceSpan>,
+    total: u64,
+    mapping: TimeMapping,
+    /// The video rect the render paths produce.
+    size: (u32, u32),
+    /// The screen's own picture inside `size`: equal to it unless the stage
+    /// is widened, then the source fitted inside the stage.
+    screen: (u32, u32),
+    /// The encoded frame: the canvas when the export has one, otherwise `size`.
+    output: (u32, u32),
+    /// The decoded NV12 can go to the encoder unchanged: no crop, cursor,
+    /// ripple, camera layer, or resize touches the frame.
+    passthrough: bool,
+}
+
+fn plan_render(model: &ExportModel, settings: ExportSettings) -> Result<RenderPlan, End> {
+    let fps = settings
+        .fps
+        .map(f64::from)
+        .or_else(|| ffmpeg::probe_frame_rate(&model.source))
+        .filter(|fps| fps.is_finite() && *fps > 0.0)
+        .unwrap_or(DEFAULT_FPS);
+    let mut spans = frame_plan_with_starts(
+        model.trim_start,
+        model.trim_end,
+        &model.cuts,
+        &model.segment_speeds,
+        &model.segment_starts,
+        fps,
+    );
+    if model.freeze_tail.is_finite() && model.freeze_tail > 0.0 {
+        let frames = (model.freeze_tail * fps).round() as u64;
+        let hold = spans
+            .last()
+            .map(|last| (last.source_end - 1.0 / fps).max(last.source_start));
+        if let (Some(hold), true) = (hold, frames > 0) {
+            let composition_start = total_frames(&spans) as f64 / fps;
+            spans.push(SourceSpan {
+                composition_start,
+                source_start: hold,
+                source_end: hold,
+                speed: 0.0,
+                frames,
+            });
+        }
+    }
+    let total = total_frames(&spans);
+    if total == 0 {
+        return Err(End::Failed("there is no footage to export".to_string()));
+    }
+    if model.source_size.0 == 0 || model.source_size.1 == 0 {
+        return Err(End::Failed("the recording has no frame size".to_string()));
+    }
+    let mapping = TimeMapping::new(
+        spans
+            .iter()
+            .map(|span| {
+                (
+                    span.composition_start,
+                    span.composition_start + span.frames as f64 / fps,
+                    span.source_start,
+                    span.source_end,
+                )
+            })
+            .collect(),
+    );
+    let base = model
+        .stage
+        .filter(|_| model.webcam.is_some())
+        .unwrap_or(model.source_size);
+    let output = settings.dimensions(model.canvas.as_ref().map_or(base, |canvas| canvas.size));
+    let size = model
+        .canvas
+        .as_ref()
+        .map_or(output, |canvas| canvas::video_size(canvas, output));
+    let screen = if base == model.source_size {
+        size
+    } else {
+        let scale = (f64::from(size.0) / f64::from(model.source_size.0))
+            .min(f64::from(size.1) / f64::from(model.source_size.1));
+        let even = |value: f64, max: u32| ((value.round() as u32) & !1).clamp(2, max.max(2));
+        (
+            even(f64::from(model.source_size.0) * scale, size.0),
+            even(f64::from(model.source_size.1) * scale, size.1),
+        )
+    };
+    let passthrough = size == model.source_size
+        && screen == size
+        && model.sidecar.is_none()
+        && model.webcam.is_none()
+        && model.zooms.iter().all(|zoom| zoom.hidden);
+    Ok(RenderPlan {
+        fps,
+        spans,
+        total,
+        mapping,
+        size,
+        screen,
+        output,
+        passthrough,
+    })
+}
+
+/// The chunked two-encoder path is opt-in until the compositor stops being
+/// the bottleneck; at that point encoding is split, not the frame loop.
+fn hybrid_requested() -> bool {
+    std::env::var("APEXSHOT_EXPORT_HYBRID").ok().as_deref() == Some("1")
+}
+
+/// A recovery switch for machines whose hardware encoder misbehaves.
+fn software_forced() -> bool {
+    std::env::var("APEXSHOT_EXPORT_HARDWARE").ok().as_deref() == Some("0")
+}
+
+/// D3D11 decoding, opt-in. Copying each decoded frame back from the GPU for
+/// the filters costs more than multithreaded software decoding saves (a 4K
+/// H.264 clip decoded at 10 ms/frame against 3.4 ms/frame in software on the
+/// development machine), so it only pays once frames stay on the GPU.
+fn hardware_decode() -> bool {
+    cfg!(target_os = "windows")
+        && std::env::var("APEXSHOT_EXPORT_HWDECODE").ok().as_deref() == Some("1")
+}
+
+/// The GPU stage composites every frame on the GPU when the machine can;
+/// `APEXSHOT_EXPORT_GPU_STAGE=0` keeps the CPU compositor.
+fn stage_requested() -> bool {
+    std::env::var("APEXSHOT_EXPORT_GPU_STAGE").ok().as_deref() != Some("0")
+}
+
+fn worker_override() -> Option<usize> {
+    std::env::var("APEXSHOT_EXPORT_WORKERS")
+        .ok()?
+        .parse::<usize>()
+        .ok()
+}
+
+fn render(
+    model: &ExportModel,
+    output: &Path,
+    sender: &Sender<ExportUpdate>,
+    cancel: &Arc<AtomicBool>,
+    encoder: Encoder,
+    settings: ExportSettings,
+) -> Result<(), End> {
+    render_with_workers(model, output, sender, cancel, encoder, settings, None)
+}
+
+fn render_with_workers(
+    model: &ExportModel,
+    output: &Path,
+    sender: &Sender<ExportUpdate>,
+    cancel: &Arc<AtomicBool>,
+    encoder: Encoder,
+    settings: ExportSettings,
+    workers: Option<usize>,
+) -> Result<(), End> {
+    let plan = plan_render(model, settings)?;
+    eprintln!(
+        "[export] machine: {}",
+        machine::describe(machine::current())
+    );
+    let hardware = settings.hardware && !software_forced();
+    let primary = if hardware {
+        encoder
+    } else {
+        Encoder::software(settings.codec)
+    };
+    let workers = workers
+        .or_else(worker_override)
+        .unwrap_or_else(|| worker_count(&plan, primary, model.source_size))
+        .clamp(1, 6);
+    let done = Arc::new(AtomicU64::new(0));
+    let finished = Arc::new(AtomicBool::new(false));
+    let reporter = {
+        let done = done.clone();
+        let finished = finished.clone();
+        let sender = sender.clone();
+        let total = plan.total;
+        std::thread::spawn(move || {
+            while !finished.load(Ordering::Relaxed) {
+                let _ = sender.send(ExportUpdate::Progress {
+                    done: done.load(Ordering::Relaxed),
+                    total,
+                });
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        })
+    };
+    let result = if workers > 1 {
+        render_parallel(
+            model, output, cancel, primary, settings, &plan, &done, workers,
+        )
+    } else {
+        render_range(
+            model,
+            output,
+            cancel,
+            primary,
+            settings,
+            &plan,
+            &done,
+            (0, plan.total),
+            true,
+            hybrid_requested() && hardware,
+        )
+    };
+    finished.store(true, Ordering::Relaxed);
+    let _ = reporter.join();
+    result
+}
+
+/// Compositor frames an export range. Every range opens its own decoder,
+/// compositor, and encoder, so ranges run on separate cores and join later.
+#[allow(clippy::too_many_arguments)]
+fn render_range(
+    model: &ExportModel,
+    output: &Path,
+    cancel: &AtomicBool,
+    encoder: Encoder,
+    settings: ExportSettings,
+    plan: &RenderPlan,
+    done: &AtomicU64,
+    range: (u64, u64),
+    faststart: bool,
+    allow_hybrid: bool,
+) -> Result<(), End> {
+    let (first, end) = range;
+    if first >= end {
+        return Ok(());
+    }
+    let fps = plan.fps;
+    let size = plan.size;
+    let screen_size = plan.screen;
+    let widened = screen_size != size;
+    // A padded split shows the background between its panes, so it goes
+    // through the stage even when the stage has the screen's shape.
+    let padded = model
+        .webcam
+        .as_ref()
+        .is_some_and(|webcam| webcam.layouts.split_padded && webcam.split_gap > 0.0);
+    let staged_path = widened || padded;
+    let source = (
+        f64::from(model.source_size.0),
+        f64::from(model.source_size.1),
+    );
+
+    let probed = ffmpeg::probe_color_space(&model.source);
+    let space = YuvSpace::from_probe(probed.0.as_deref(), probed.1.as_deref());
+    let converter = Nv12Converter::new(space);
+    let sink = Sink::open(
+        output,
+        plan.output,
+        fps,
+        model.crf,
+        encoder,
+        plan.total,
+        allow_hybrid && settings.hardware && !encoder.is_software(),
+        faststart,
+    )?;
+    let framer = match &model.canvas {
+        Some(layout) => Some(canvas::Framer::new(layout, plan.output, &converter)?),
+        None => None,
+    };
+    let mut sink = canvas::FramedSink::new(sink, framer);
+    sink.set_captions(canvas::CaptionOverlay::new(model, plan, space));
+    let mut camera = ZoomCameraCache::default();
+    // The studied stage takes the output's shape: the canvas when there is
+    // one, else the widened camera stage or the screen itself.
+    let stage_size = model
+        .canvas
+        .as_ref()
+        .map(|canvas| canvas.size)
+        .or(model.stage)
+        .unwrap_or(model.source_size);
+    let camera_settings = zoom::ZoomCameraSettings {
+        frame_rate: fps,
+        stage_aspect: f64::from(stage_size.0.max(1)) / f64::from(stage_size.1.max(1)),
+        ..model.zoom_camera
+    };
+    let shake_threshold = model.cursor.remove_shake_threshold;
+    let mut decoded = if plan.passthrough {
+        Vec::new()
+    } else {
+        vec![0u8; model.source_size.0 as usize * model.source_size.1 as usize * 4]
+    };
+    let mut packed = vec![0u8; model.source_size.0 as usize * model.source_size.1 as usize * 3 / 2];
+    let mut scaled = if plan.passthrough {
+        Vec::new()
+    } else {
+        vec![0u8; screen_size.0 as usize * screen_size.1 as usize * 4]
+    };
+    let mut cursor_layer = match &model.sidecar {
+        Some(_) => Some(
+            ImageSurface::create(Format::ARgb32, screen_size.0 as i32, screen_size.1 as i32)
+                .map_err(|error| {
+                    End::Failed(format!("could not allocate the cursor layer: {error}"))
+                })?,
+        ),
+        None => None,
+    };
+    let mut cursor_scratch = CursorScratch::default();
+    let webcam = model.webcam.clone();
+    let layouts = webcam
+        .as_ref()
+        .map(|webcam| webcam.layouts.clone().clamped())
+        .unwrap_or_default();
+    let source_aspect = f64::from(model.source_size.0) / f64::from(model.source_size.1);
+    // The studied camera bubble sits on the whole output canvas, so with a
+    // canvas it is drawn after the framer has laid the video onto it.
+    let canvas_rect = model
+        .canvas
+        .as_ref()
+        .map(|layout| webcam::canvas_in_video(layout.video, layout.size));
+    let stage_canvas = canvas_rect.unwrap_or_else(webcam::Rect::full);
+    let camera_on_canvas = webcam.is_some() && canvas_rect.is_some();
+    let mut camera_canvas_scratch = webcam::CameraCanvasScratch::default();
+    let mut staged = if staged_path {
+        vec![0u8; size.0 as usize * size.1 as usize * 4]
+    } else {
+        Vec::new()
+    };
+    let stage_background = if staged_path {
+        model
+            .canvas
+            .as_ref()
+            .map(|layout| canvas::video_background(layout, plan.output))
+    } else {
+        None
+    };
+    let stage_aspect = if widened {
+        f64::from(size.0) / f64::from(size.1.max(1))
+    } else {
+        source_aspect
+    };
+    let camera_aspect = webcam
+        .as_ref()
+        .filter(|webcam| webcam.source_size.0 > 0 && webcam.source_size.1 > 0)
+        .map(|webcam| f64::from(webcam.source_size.0) / f64::from(webcam.source_size.1))
+        .unwrap_or(16.0 / 9.0);
+    // Where the split's screen rests, from the cursor, sprung over the
+    // composition the studied way.
+    let split_rest_plan = webcam.as_ref().map(|webcam| {
+        let key = super::split_rest::SplitRestKey {
+            layouts: layouts.clone(),
+            settings: webcam.settings,
+            stage: webcam::StageShape {
+                aspect: stage_aspect,
+                screen_aspect: source_aspect,
+                split_gap: webcam.split_gap,
+                pane_radius: webcam.pane_radius,
+                split_rest: 0.0,
+                canvas: stage_canvas,
+            },
+            camera_aspect,
+            zooms: model.zooms.clone(),
+            mapping: plan.mapping.clone(),
+            duration: plan.total as f64 / fps,
+            zoom: camera_settings,
+        };
+        let cursor = model
+            .sidecar
+            .as_ref()
+            .map(|sidecar| {
+                super::split_rest::cursor_track(
+                    sidecar,
+                    (
+                        f64::from(model.source_size.0),
+                        f64::from(model.source_size.1),
+                    ),
+                )
+            })
+            .unwrap_or_default();
+        super::split_rest::plan_for(&key, &cursor)
+    });
+    // The whole frame on the GPU: crop, card, background, rounded corners,
+    // motion blur and the click ripple in one pass. The scaler and the CPU
+    // compositor stay as the fallbacks for a machine without a fitting GPU, a
+    // camera layer, or a stage that fails mid-export.
+    #[cfg(target_os = "windows")]
+    let mut stage = if !plan.passthrough
+        && webcam.is_none()
+        && stage_requested()
+        && machine::gpu_stage_fits(machine::current(), model.source_size, plan.output)
+    {
+        match compose_gpu::GpuStage::new(
+            model.source_size,
+            plan.output,
+            space,
+            sink.background_rgba(),
+        ) {
+            Ok(stage) => {
+                eprintln!(
+                    "[export] GPU stage: {}x{} -> {}x{}",
+                    model.source_size.0, model.source_size.1, plan.output.0, plan.output.1
+                );
+                Some(stage)
+            }
+            Err(error) => {
+                eprintln!("[export] GPU stage unavailable: {error}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    #[cfg(target_os = "windows")]
+    let radius_fraction = sink.radius_fraction();
+    // The stage draws the cursor on the whole output frame, which is larger
+    // than the video rect when the export has a canvas.
+    #[cfg(target_os = "windows")]
+    let mut stage_cursor_layer = match (&model.sidecar, stage.is_some()) {
+        (Some(_), true) => Some(
+            ImageSurface::create(Format::ARgb32, plan.output.0 as i32, plan.output.1 as i32)
+                .map_err(|error| {
+                    End::Failed(format!("could not allocate the cursor layer: {error}"))
+                })?,
+        ),
+        _ => None,
+    };
+    #[cfg(target_os = "windows")]
+    let mut stage_cursor_scratch = CursorScratch::default();
+    // Per-phase totals for `APEXSHOT_EXPORT_TRACE=1`, over the frames the stage
+    // renders: waiting on the decoder, the stage's own phases, the cursor, and
+    // waiting for the encoder to take the frame.
+    #[cfg(target_os = "windows")]
+    let trace = compose_gpu::trace_requested();
+    #[cfg(target_os = "windows")]
+    let mut traced = [std::time::Duration::ZERO; 6];
+    #[cfg(target_os = "windows")]
+    let mut traced_frames = 0u64;
+    #[cfg(target_os = "windows")]
+    let mut decode_wait: std::time::Duration;
+    #[cfg(target_os = "windows")]
+    let mut gpu = if !plan.passthrough && webcam.is_none() && stage.is_none() {
+        match gpu::Scaler::new(model.source_size, size, space, fps) {
+            Ok(scaler) => {
+                eprintln!(
+                    "[export] GPU crop and scale: {}x{} -> {}x{}",
+                    model.source_size.0, model.source_size.1, size.0, size.1
+                );
+                Some(scaler)
+            }
+            Err(error) => {
+                eprintln!("[export] GPU crop and scale unavailable: {error}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let mut cutout = if layouts.uses_cutout() {
+        match super::cutout::CutoutProcessor::new() {
+            Ok(processor) => Some(processor),
+            Err(error) => {
+                return Err(End::Failed(format!(
+                    "the camera cutout could not start: {error}"
+                )));
+            }
+        }
+    } else {
+        None
+    };
+    let mut done_index = first;
+    let started = Instant::now();
+    let log_frame = |done_index: u64| {
+        if done_index.is_multiple_of(100) || done_index == end {
+            let elapsed = started.elapsed().as_secs_f64();
+            eprintln!(
+                "[export] frame {done_index}/{} at {:.1} ms/frame",
+                plan.total,
+                elapsed * 1000.0 / (done_index - first + 1) as f64
+            );
+        }
+    };
+    let mut span_base = 0u64;
+    let mut camera_hold: Vec<u8> = Vec::new();
+    let mut camera_hold_size = (0u32, 0u32);
+
+    // The rest rect and zoom area when the export has a canvas: a zoom then
+    // grows the card over the padding, as the preview does.
+    let card_layout = sink.card_geometry();
+    let mut outer_rgba: Vec<u8> = Vec::new();
+    let mut outer_nv12: Vec<u8> = Vec::new();
+
+    for span in &plan.spans {
+        let span_end = span_base + span.frames;
+        if span_end <= first {
+            span_base = span_end;
+            continue;
+        }
+        if span_base >= end {
+            break;
+        }
+        let local_first = first.saturating_sub(span_base);
+        let local_last = (end - span_base).min(span.frames);
+        let count = local_last.saturating_sub(local_first);
+        if count == 0 {
+            span_base = span_end;
+            continue;
+        }
+        let (mut decoder, mut stdout) = match spawn_decoder(
+            &model.source,
+            *span,
+            local_first,
+            count,
+            fps,
+            model.source_size,
+        ) {
+            Ok(mut decoder) => match decoder.stdout.take() {
+                Some(stdout) => (decoder, stdout),
+                None => {
+                    return Err(End::Failed(
+                        "the decoder did not open its output".to_string(),
+                    ));
+                }
+            },
+            Err(error) => {
+                return Err(error);
+            }
+        };
+        let mut track_reader = match webcam.as_ref() {
+            Some(webcam) => {
+                let hold = span.speed <= 0.0 || !span.speed.is_finite();
+                let at = if hold {
+                    span.source_start
+                } else {
+                    span.source_start + local_first as f64 * span.speed / fps
+                };
+                let start = webcam.start_at(at);
+                let lead = if hold {
+                    webcam.lead_at(at)
+                } else {
+                    webcam.lead_at(at) / span.speed
+                };
+                let duration = if hold { 1.0 / fps } else { count as f64 / fps };
+                let time_scale = if hold {
+                    webcam.time_scale()
+                } else {
+                    webcam.time_scale() / span.speed
+                };
+                let decode = webcam::camera_decode_size(webcam.source_size, size);
+                match webcam::TrackReader::open(
+                    &webcam.path,
+                    start,
+                    duration,
+                    fps,
+                    decode,
+                    time_scale,
+                    lead,
+                ) {
+                    Some(reader) => Some(reader),
+                    None => {
+                        let _ = decoder.kill();
+                        let _ = decoder.wait();
+                        return Err(End::Failed(format!(
+                            "could not open the camera track: {}",
+                            webcam.path.display()
+                        )));
+                    }
+                }
+            }
+            None => None,
+        };
+        camera_hold.clear();
+        let mut span_frame = 0u64;
+        while span_frame < count {
+            if cancel.load(Ordering::Relaxed) {
+                let _ = decoder.kill();
+                let _ = decoder.wait();
+                return Err(End::Cancelled);
+            }
+            let read_started = Instant::now();
+            if stdout.read_exact(&mut packed).is_err() {
+                break;
+            }
+            #[cfg(target_os = "windows")]
+            {
+                decode_wait = read_started.elapsed();
+            }
+            #[cfg(not(target_os = "windows"))]
+            let _ = read_started;
+            span_frame += 1;
+            if plan.passthrough {
+                let mut nv12 = match sink.buffer(done_index) {
+                    Ok(buffer) => buffer,
+                    Err(error) => {
+                        let _ = decoder.kill();
+                        let _ = decoder.wait();
+                        return Err(error);
+                    }
+                };
+                std::mem::swap(&mut packed, &mut nv12);
+                if let Err(error) = sink.submit(nv12) {
+                    let _ = decoder.kill();
+                    let _ = decoder.wait();
+                    return Err(error);
+                }
+                done_index += 1;
+                done.fetch_add(1, Ordering::Relaxed);
+                log_frame(done_index);
+                continue;
+            }
+            let source_time = frame_source_time(&plan.spans, done_index, fps)
+                .ok_or_else(|| End::Failed("the frame plan ran out of frames".to_string()))?;
+            let composition_time = done_index as f64 / fps;
+            let hide_alpha = if model.cursor_hidden { 0.0 } else { 1.0 };
+            let camera_value = camera.evaluate(
+                &model.zooms,
+                source,
+                &plan.mapping,
+                camera_settings,
+                shake_threshold,
+                composition_time,
+                || model.sidecar.clone(),
+            );
+            let early_layout = webcam.as_ref().map(|webcam| {
+                layouts.frame_at_staged(
+                    composition_time,
+                    webcam.settings,
+                    webcam::StageShape {
+                        canvas: stage_canvas,
+                        ..webcam::StageShape::plain(source_aspect)
+                    },
+                    camera_aspect,
+                    0.0,
+                )
+            });
+            // The card for a camera value, as the preview frames it: none
+            // without a canvas or while a split layout crops inside its pane.
+            let card_for = |value: zoom::Camera| -> Option<(zoom::StageRect, zoom::StageRect)> {
+                let (rest, area) = card_layout?;
+                // A widened or padded camera stage frames the screen itself, so
+                // the card does not grow over the padding there.
+                if staged_path || early_layout.is_some_and(|layout| !layout.screen.is_full()) {
+                    return None;
+                }
+                let centre = (area.0 + area.2 / 2.0, area.1 + area.3 / 2.0);
+                let focal = match early_layout.filter(|layout| layout.camera_alpha > 0.0) {
+                    Some(layout) => {
+                        let camera = (
+                            rest.0 + layout.camera.x * rest.2,
+                            rest.1 + layout.camera.y * rest.3,
+                            layout.camera.width * rest.2,
+                            layout.camera.height * rest.3,
+                        );
+                        let aim = zoom::focal_point(area, Some(camera));
+                        let alpha = layout.camera_alpha.clamp(0.0, 1.0);
+                        (
+                            centre.0 + (aim.0 - centre.0) * alpha,
+                            centre.1 + (aim.1 - centre.1) * alpha,
+                        )
+                    }
+                    None => centre,
+                };
+                let target01 = (
+                    value.1 .0 / source.0.max(1.0),
+                    value.1 .1 / source.1.max(1.0),
+                );
+                Some((zoom::card_rect(rest, area, focal, value.0, target01), rest))
+            };
+            let view_for = |value: zoom::Camera| match card_for(value) {
+                Some((card, rest)) => zoom::card_view(rest, card, source),
+                None => zoom::view_rect(value.0, value.1, source),
+            };
+            let view = view_for(camera_value);
+            let card =
+                card_for(camera_value).filter(|(card, rest)| canvas::card_moved(*card, *rest));
+            let previous_value = (!zoom::instant_blur_disabled(&model.zooms, composition_time))
+                .then(|| {
+                    camera.evaluate(
+                        &model.zooms,
+                        source,
+                        &plan.mapping,
+                        camera_settings,
+                        shake_threshold,
+                        (composition_time - 1.0 / fps).max(0.0),
+                        || model.sidecar.clone(),
+                    )
+                });
+            let trail = previous_value.and_then(|previous| {
+                super::motion_blur::ScreenTrail::new(
+                    view,
+                    view_for(previous),
+                    source,
+                    screen_size,
+                    fps,
+                    model.zoom_camera.motion_blur,
+                )
+            });
+            let cropped = trail.is_some()
+                || !(view_is_full(view, source) && screen_size == model.source_size);
+            let ripple = model.sidecar.as_ref().and_then(|sidecar| {
+                preview_ripple(sidecar, model.cursor, source_time, model.source_size, view)
+            });
+            #[cfg(target_os = "windows")]
+            if let Some(gpu_stage) = stage.as_mut() {
+                let screen = card_layout.is_none();
+                let ripples = compose_gpu::ripple_slots(
+                    ripple
+                        .as_ref()
+                        .map_or(&[][..], |ripple| ripple.clicks.as_slice()),
+                    source.0,
+                );
+                // Where the whole source lands in the output for a camera value:
+                // the card on a canvas, or the crop stretched over the frame.
+                let place = |value: zoom::Camera| -> [f32; 4] {
+                    let rect = match card_for(value) {
+                        Some((rect, _)) => rect,
+                        None => {
+                            let view = view_for(value);
+                            let (w, h) = (f64::from(size.0), f64::from(size.1));
+                            (
+                                -view.0 * w / view.2,
+                                -view.1 * h / view.3,
+                                source.0 * w / view.2,
+                                source.1 * h / view.3,
+                            )
+                        }
+                    };
+                    [rect.0 as f32, rect.1 as f32, rect.2 as f32, rect.3 as f32]
+                };
+                let card_now = place(camera_value);
+                // The trail starts where the motion blur's strength puts the
+                // previous frame, as ScreenTrail and CardTrail compute it.
+                let strength = (model.zoom_camera.motion_blur.clamp(0.0, 1.0) * fps / 60.0) as f32;
+                let before = match previous_value {
+                    Some(previous) if model.zoom_camera.motion_blur > 0.0 => {
+                        let previous = place(previous);
+                        std::array::from_fn(|i| {
+                            card_now[i] + (previous[i] - card_now[i]) * strength
+                        })
+                    }
+                    _ => card_now,
+                };
+                let mut nv12 = match sink.canvas_buffer(done_index) {
+                    Ok(buffer) => buffer,
+                    Err(error) => {
+                        let _ = decoder.kill();
+                        let _ = decoder.wait();
+                        return Err(error);
+                    }
+                };
+                // An unzoomed, unblurred, unrippled frame that fills the
+                // output needs no compositing: it goes to the encoder as decoded.
+                let rendered = if screen && !cropped && ripple.is_none() {
+                    std::mem::swap(&mut packed, &mut nv12);
+                    Ok(())
+                } else {
+                    gpu_stage.render(
+                        &packed,
+                        compose_gpu::StageFrame {
+                            card: card_now,
+                            before,
+                            radius_fraction: if screen { 0.0 } else { radius_fraction },
+                            background_zoom: if screen {
+                                1.0
+                            } else {
+                                zoom::background_zoom(camera_value.0) as f32
+                            },
+                            pivot: [
+                                (camera_value.1 .0 / source.0.max(1.0)).clamp(0.0, 1.0) as f32,
+                                (camera_value.1 .1 / source.1.max(1.0)).clamp(0.0, 1.0) as f32,
+                            ],
+                            screen,
+                            ripples,
+                        },
+                        &mut nv12,
+                    )
+                };
+                match rendered {
+                    Ok(()) => {
+                        let cursor_started = Instant::now();
+                        if let (Some(sidecar), Some(layer)) =
+                            (&model.sidecar, stage_cursor_layer.as_mut())
+                        {
+                            // The cursor maps through the same placement: the
+                            // source rect at `card_now` over the whole output.
+                            let whole =
+                                (0.0, 0.0, f64::from(plan.output.0), f64::from(plan.output.1));
+                            let placed = (
+                                f64::from(card_now[0]),
+                                f64::from(card_now[1]),
+                                f64::from(card_now[2]),
+                                f64::from(card_now[3]),
+                            );
+                            draw_cursor_nv12(
+                                &mut nv12,
+                                plan.output,
+                                Some(placed),
+                                zoom::card_view(whole, placed, source),
+                                sidecar,
+                                model.source.as_path(),
+                                model.cursor,
+                                source_time,
+                                model.source_size,
+                                placed.2,
+                                hide_alpha,
+                                layer,
+                                &converter,
+                                &mut stage_cursor_scratch,
+                            );
+                        }
+                        let submit_started = Instant::now();
+                        if let Err(error) = sink.submit_canvas(nv12) {
+                            let _ = decoder.kill();
+                            let _ = decoder.wait();
+                            return Err(error);
+                        }
+                        if trace && !(screen && !cropped && ripple.is_none()) {
+                            let timings = gpu_stage.timings;
+                            traced[0] += decode_wait;
+                            traced[1] += timings.upload;
+                            traced[2] += timings.gpu;
+                            traced[3] += timings.readback;
+                            traced[4] += submit_started - cursor_started;
+                            traced[5] += submit_started.elapsed();
+                            traced_frames += 1;
+                        }
+                        done_index += 1;
+                        done.fetch_add(1, Ordering::Relaxed);
+                        log_frame(done_index);
+                        continue;
+                    }
+                    Err(error) => {
+                        eprintln!("[export] GPU stage failed: {error}; continuing on the CPU");
+                        stage = None;
+                    }
+                }
+            }
+            // The GPU path crops and scales, and the cursor is drawn on the NV12
+            // frame afterwards. A blurred or rippled frame takes the CPU path, and
+            // so does a moving card, which needs the footage around the video rect
+            // that only the CPU path draws.
+            #[cfg(target_os = "windows")]
+            if trail.is_none() && ripple.is_none() && card.is_none() {
+                if let Some(scaler) = gpu.as_mut() {
+                    let mut nv12 = match sink.buffer(done_index) {
+                        Ok(buffer) => buffer,
+                        Err(error) => {
+                            let _ = decoder.kill();
+                            let _ = decoder.wait();
+                            return Err(error);
+                        }
+                    };
+                    let rendered = if cropped {
+                        scaler.scale(&packed, view, &mut nv12)
+                    } else {
+                        std::mem::swap(&mut packed, &mut nv12);
+                        Ok(())
+                    };
+                    match rendered {
+                        Ok(()) => {
+                            if let (Some(sidecar), Some(layer)) =
+                                (&model.sidecar, cursor_layer.as_mut())
+                            {
+                                draw_cursor_nv12(
+                                    &mut nv12,
+                                    size,
+                                    None,
+                                    view,
+                                    sidecar,
+                                    model.source.as_path(),
+                                    model.cursor,
+                                    source_time,
+                                    model.source_size,
+                                    f64::from(size.0),
+                                    hide_alpha,
+                                    layer,
+                                    &converter,
+                                    &mut cursor_scratch,
+                                );
+                            }
+                            if let Err(error) = sink.submit(nv12) {
+                                let _ = decoder.kill();
+                                let _ = decoder.wait();
+                                return Err(error);
+                            }
+                            done_index += 1;
+                            done.fetch_add(1, Ordering::Relaxed);
+                            log_frame(done_index);
+                            continue;
+                        }
+                        Err(error) => {
+                            eprintln!(
+                                "[export] GPU crop and scale failed: {error}; continuing on the CPU"
+                            );
+                            gpu = None;
+                        }
+                    }
+                }
+            }
+            converter.to_rgba_into(&packed, model.source_size, &mut decoded);
+            if let Some(trail) = trail {
+                trail.render(
+                    &decoded,
+                    model.source_size,
+                    screen_size,
+                    &mut scaled,
+                    16,
+                    4.0,
+                    4,
+                );
+            } else if cropped {
+                crop_scale_into(&decoded, model.source_size, view, screen_size, &mut scaled);
+            }
+            let card_frame = card.map(|(rect, _)| {
+                let out = plan.output;
+                let whole = (0.0, 0.0, f64::from(out.0), f64::from(out.1));
+                let outer_view = zoom::card_view(whole, rect, source);
+                outer_rgba.resize(out.0 as usize * out.1 as usize * 4, 0);
+                crop_scale_into(
+                    &decoded,
+                    model.source_size,
+                    outer_view,
+                    out,
+                    &mut outer_rgba,
+                );
+                outer_nv12.resize(out.0 as usize * out.1 as usize * 3 / 2, 0);
+                converter.convert_into(&outer_rgba, out, &mut outer_nv12);
+                canvas::CardFrame {
+                    rect,
+                    background_zoom: zoom::background_zoom(camera_value.0),
+                    pivot: (
+                        (camera_value.1 .0 / source.0.max(1.0)).clamp(0.0, 1.0),
+                        (camera_value.1 .1 / source.1.max(1.0)).clamp(0.0, 1.0),
+                    ),
+                }
+            });
+            let base: &[u8] = if cropped { &scaled } else { &decoded };
+
+            let mut warped = None;
+            if let Some(ripple) = &ripple {
+                let pixels = ripple.warp_pixels(
+                    base,
+                    screen_size,
+                    (0.0, 0.0, f64::from(screen_size.0), f64::from(screen_size.1)),
+                    screen_size,
+                );
+                if pixels.len() == base.len() {
+                    warped = Some(pixels);
+                }
+            }
+            let frame: &mut [u8] = if let Some(warped) = warped.as_mut() {
+                warped
+            } else if cropped {
+                &mut scaled
+            } else {
+                &mut decoded
+            };
+
+            if let (Some(sidecar), Some(layer)) = (&model.sidecar, cursor_layer.as_mut()) {
+                draw_cursor(
+                    frame,
+                    screen_size,
+                    view,
+                    sidecar,
+                    model.source.as_path(),
+                    model.cursor,
+                    source_time,
+                    model.source_size,
+                    f64::from(screen_size.0),
+                    hide_alpha,
+                    layer,
+                );
+            }
+            // The camera layer sits over the cursor, the way the bubble window
+            // sat over the desktop while the recording ran.
+            let camera_frame = match track_reader.as_mut() {
+                Some(reader) if span.speed > 0.0 => reader.next_frame(),
+                Some(reader) => {
+                    if camera_hold.is_empty() {
+                        if let Some((pixels, hold_size)) = reader.next_frame() {
+                            camera_hold.extend_from_slice(pixels);
+                            camera_hold_size = hold_size;
+                        }
+                    }
+                    (!camera_hold.is_empty()).then_some((camera_hold.as_slice(), camera_hold_size))
+                }
+                None => None,
+            };
+            let mut canvas_trail: Vec<webcam::LayoutFrame> = Vec::new();
+            let mut canvas_mask: Option<Vec<f32>> = None;
+            if let Some(webcam) = webcam.as_ref() {
+                let hidden = webcam::silence_hide_at(
+                    &webcam.silence,
+                    source_time,
+                    webcam.settings.hide_during_silence,
+                );
+                let layout_at = |time: f64| {
+                    let shrink = webcam::zoom_shrink_at(
+                        &model.zooms,
+                        time,
+                        model.zoom_camera.lead_in_seconds(),
+                    );
+                    webcam::hide_for_silence(
+                        layouts.frame_at_staged(
+                            time,
+                            webcam.settings,
+                            webcam::StageShape {
+                                aspect: stage_aspect,
+                                screen_aspect: source_aspect,
+                                split_gap: webcam.split_gap,
+                                pane_radius: webcam.pane_radius,
+                                split_rest: split_rest_plan
+                                    .as_ref()
+                                    .map(|plan| plan.value_at(time))
+                                    .unwrap_or(0.0),
+                                canvas: stage_canvas,
+                            },
+                            camera_aspect,
+                            shrink,
+                        ),
+                        hidden,
+                    )
+                };
+                let layout = layout_at(composition_time);
+                // The studied camera blur: a trail back over `strength` frames,
+                // only while the camera shows and something moved.
+                let strength = webcam::camera_blur_strength(
+                    model.zoom_camera.motion_blur,
+                    fps,
+                    layout.camera_alpha,
+                );
+                let trail = if strength > 0.0 {
+                    let span = strength / fps;
+                    let before = layout_at((composition_time - span).max(0.0));
+                    let count = webcam::trail_sample_count(layout, before, size);
+                    if count <= 1 {
+                        vec![layout]
+                    } else {
+                        (0..count)
+                            .map(|k| {
+                                let back = span * (count - 1 - k) as f64 / (count - 1) as f64;
+                                layout_at((composition_time - back).max(0.0))
+                            })
+                            .collect()
+                    }
+                } else {
+                    vec![layout]
+                };
+                if trail.iter().any(|f| f.camera_alpha > 0.0) && camera_frame.is_none() {
+                    let _ = decoder.kill();
+                    let _ = decoder.wait();
+                    return Err(End::Failed(format!(
+                        "the camera track could not be decoded: {}",
+                        webcam.path.display()
+                    )));
+                }
+                let mask = if trail
+                    .iter()
+                    .any(|f| f.cutout > 1e-3 && f.camera_alpha > 0.0)
+                {
+                    let (pixels, matte_size) = camera_frame.expect("checked above");
+                    let Some(processor) = cutout.as_mut() else {
+                        let _ = decoder.kill();
+                        let _ = decoder.wait();
+                        return Err(End::Failed(
+                            "the camera cutout has no segmentation model".to_string(),
+                        ));
+                    };
+                    match processor.matte(pixels, matte_size) {
+                        Ok(mut mask) => {
+                            webcam::refine_matte(
+                                &mut mask,
+                                matte_size,
+                                webcam.layouts.cutout_softness,
+                                webcam.layouts.cutout_inset * f64::from(matte_size.0)
+                                    / f64::from(webcam.source_size.0.max(1)),
+                            );
+                            Some(mask)
+                        }
+                        Err(error) => {
+                            let _ = decoder.kill();
+                            let _ = decoder.wait();
+                            return Err(End::Failed(format!("the camera cutout failed: {error}")));
+                        }
+                    }
+                } else {
+                    None
+                };
+                let (camera_pixels, camera_size) = match camera_frame {
+                    Some((pixels, size)) => (pixels, size),
+                    None => (&[][..], (0, 0)),
+                };
+                // With a canvas the stage only places the screen; the camera
+                // goes onto the canvas after framing.
+                let stage_trail: Vec<webcam::LayoutFrame> = if camera_on_canvas {
+                    trail
+                        .iter()
+                        .map(|frame| webcam::LayoutFrame {
+                            camera_alpha: 0.0,
+                            ..*frame
+                        })
+                        .collect()
+                } else {
+                    trail.clone()
+                };
+                let composited = if staged_path {
+                    webcam::composite_stage_trail_into(
+                        &mut staged,
+                        size,
+                        &stage_trail,
+                        frame,
+                        screen_size,
+                        stage_background.as_deref(),
+                        camera_pixels,
+                        camera_size,
+                        mask.as_deref(),
+                    )
+                } else {
+                    webcam::composite_layout_trail_into(
+                        frame,
+                        size,
+                        &stage_trail,
+                        camera_pixels,
+                        camera_size,
+                        mask.as_deref(),
+                    )
+                };
+                if let Err(error) = composited {
+                    let _ = decoder.kill();
+                    let _ = decoder.wait();
+                    return Err(End::Failed(error));
+                }
+                if camera_on_canvas {
+                    canvas_trail = trail
+                        .iter()
+                        .map(|frame| webcam::LayoutFrame {
+                            screen: webcam::Rect::full(),
+                            camera: webcam::rect_in_canvas(frame.camera, stage_canvas),
+                            ..*frame
+                        })
+                        .collect();
+                    canvas_mask = mask;
+                }
+            }
+
+            let mut nv12 = match sink.buffer(done_index) {
+                Ok(buffer) => buffer,
+                Err(error) => {
+                    let _ = decoder.kill();
+                    let _ = decoder.wait();
+                    return Err(error);
+                }
+            };
+            let picture: &[u8] = if staged_path { &staged } else { frame };
+            // A moving card is blurred whole over the canvas, as the preview
+            // blurs it: the layer carries the card's smeared edges, so it
+            // replaces the sharp card. It samples the finished picture so the
+            // cursor, click ripple, crop and camera stay on the blurred card.
+            let card_trail: Option<Vec<u8>> = match (card, previous_value) {
+                (Some((rect, _)), Some(previous)) if model.zoom_camera.motion_blur > 0.0 => {
+                    card_for(previous)
+                        .and_then(|(before, _)| {
+                            super::motion_blur::CardTrail::new(
+                                rect,
+                                before,
+                                (f64::from(plan.output.0), f64::from(plan.output.1)),
+                                plan.output,
+                                fps,
+                                model.zoom_camera.motion_blur,
+                                f64::from(sink.radius_fraction()),
+                            )
+                        })
+                        .map(|trail| {
+                            let mut layer =
+                                vec![0u8; plan.output.0 as usize * plan.output.1 as usize * 4];
+                            trail.render(picture, size, plan.output, &mut layer, 16, 4.0, 4);
+                            layer
+                        })
+                }
+                _ => None,
+            };
+            converter.convert_into(picture, size, &mut nv12);
+            let overlay_camera = |canvas: &mut [u8]| -> Result<(), End> {
+                if canvas_trail.is_empty() {
+                    return Ok(());
+                }
+                let Some((pixels, frame_size)) = camera_frame else {
+                    return Ok(());
+                };
+                webcam::composite_camera_nv12(
+                    canvas,
+                    plan.output,
+                    &canvas_trail,
+                    pixels,
+                    frame_size,
+                    canvas_mask.as_deref(),
+                    &converter,
+                    &mut camera_canvas_scratch,
+                )
+                .map_err(End::Failed)
+            };
+            let submitted = match (card_frame, card_trail) {
+                (Some(card_frame), Some(layer)) => sink.submit_card_layer_with(
+                    nv12,
+                    card_frame,
+                    &layer,
+                    &converter,
+                    overlay_camera,
+                ),
+                (Some(card_frame), None) => {
+                    sink.submit_card_with(nv12, card_frame, &outer_nv12, &converter, overlay_camera)
+                }
+                (None, _) => sink.submit_with(nv12, overlay_camera),
+            };
+            if let Err(error) = submitted {
+                let _ = decoder.kill();
+                let _ = decoder.wait();
+                return Err(error);
+            }
+            done_index += 1;
+            done.fetch_add(1, Ordering::Relaxed);
+            log_frame(done_index);
+        }
+        let _ = decoder.kill();
+        let _ = decoder.wait();
+        if span_frame < count {
+            return Err(End::Failed(
+                "the recording ended before the planned frames".to_string(),
+            ));
+        }
+        span_base = span_end;
+    }
+
+    if cancel.load(Ordering::Relaxed) {
+        return Err(End::Cancelled);
+    }
+    #[cfg(target_os = "windows")]
+    if trace && traced_frames > 0 {
+        let per = |total: std::time::Duration| total.as_secs_f64() * 1000.0 / traced_frames as f64;
+        eprintln!(
+            "[export trace] frames {first}..{end}: {traced_frames} through the stage, ms/frame: \
+             decoder wait {:.2}, upload {:.2}, gpu {:.2}, readback {:.2}, cursor {:.2}, \
+             encoder wait {:.2}; range {:.2} ms/frame overall",
+            per(traced[0]),
+            per(traced[1]),
+            per(traced[2]),
+            per(traced[3]),
+            per(traced[4]),
+            per(traced[5]),
+            started.elapsed().as_secs_f64() * 1000.0 / (end - first).max(1) as f64,
+        );
+    }
+    sink.finish()?;
+    Ok(())
+}
+
+fn worker_count(plan: &RenderPlan, primary: Encoder, source: (u32, u32)) -> usize {
+    if plan.passthrough || plan.total < (plan.fps * 8.0).round() as u64 {
+        return 1;
+    }
+    let cores = std::thread::available_parallelism().map_or(1, |count| count.get());
+    let by_cores = cores / 3;
+    let pixels = u64::from(plan.output.0) * u64::from(plan.output.1);
+    let by_resolution = if pixels >= 3840 * 2160 {
+        2
+    } else if pixels >= 2560 * 1440 {
+        3
+    } else {
+        4
+    };
+    let by_sessions = if primary.is_software() { 4 } else { 3 };
+    let by_frames = (plan.total / (plan.fps * 4.0).round().max(1.0) as u64).max(1) as usize;
+    by_cores
+        .clamp(1, 6)
+        .min(by_resolution)
+        .min(by_sessions)
+        .min(by_frames)
+        .min(machine::memory_workers(
+            machine::current(),
+            source,
+            plan.output,
+            primary.is_software(),
+        ))
+}
+
+fn split_ranges(total: u64, workers: usize) -> Vec<(u64, u64)> {
+    let workers = workers.max(1) as u64;
+    let base = total / workers;
+    let extra = total % workers;
+    let mut start = 0u64;
+    (0..workers)
+        .filter_map(|index| {
+            let length = base + u64::from(index < extra);
+            let range = (start, start + length);
+            start += length;
+            (range.1 > range.0).then_some(range)
+        })
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_parallel(
+    model: &ExportModel,
+    output: &Path,
+    cancel: &Arc<AtomicBool>,
+    encoder: Encoder,
+    settings: ExportSettings,
+    plan: &RenderPlan,
+    done: &AtomicU64,
+    workers: usize,
+) -> Result<(), End> {
+    let dir = hybrid::PartDir::create(output)?;
+    let ranges = split_ranges(plan.total, workers);
+    let mut parts = Vec::with_capacity(ranges.len());
+    let mut failure = None;
+    std::thread::scope(|scope| {
+        let mut handles = Vec::with_capacity(ranges.len());
+        for (index, range) in ranges.iter().copied().enumerate() {
+            let part = dir.path().join(format!("part-{index:03}.mp4"));
+            parts.push(part.clone());
+            handles.push(scope.spawn(move || {
+                render_range(
+                    model, &part, cancel, encoder, settings, plan, done, range, false, false,
+                )
+                .map_err(|error| (index, error))
+            }));
+        }
+        for handle in handles {
+            match handle.join() {
+                Ok(Ok(())) => {}
+                Ok(Err((index, error))) => {
+                    if failure.is_none() {
+                        failure = Some((index, error));
+                    }
+                    cancel.store(true, Ordering::Relaxed);
+                }
+                Err(_) => {
+                    if failure.is_none() {
+                        failure = Some((
+                            usize::MAX,
+                            End::Failed("an export worker panicked".to_string()),
+                        ));
+                    }
+                    cancel.store(true, Ordering::Relaxed);
+                }
+            }
+        }
+    });
+    if let Some((_, error)) = failure {
+        return Err(error);
+    }
+    if cancel.load(Ordering::Relaxed) {
+        return Err(End::Cancelled);
+    }
+    hybrid::join_segments(dir.path(), &parts, output, encoder.is_hevc())
+}
+
+/// Where composited frames go: one encoder for the whole file, or the chunked
+/// pair that lets a hardware encoder and the CPU encoder share the timeline.
+enum Sink {
+    Single(SingleSink),
+    Segmented(Box<hybrid::SegmentedSink>),
+}
+
+impl Sink {
+    #[allow(clippy::too_many_arguments)]
+    fn open(
+        output: &Path,
+        size: (u32, u32),
+        fps: f64,
+        crf: u32,
+        primary: Encoder,
+        total: u64,
+        hybrid: bool,
+        faststart: bool,
+    ) -> Result<Self, End> {
+        if hybrid && hybrid::supported(primary, total, fps) {
+            let sink = hybrid::SegmentedSink::new(primary, output, size, fps, crf, total)?;
+            eprintln!(
+                "[export] encoder: {} + libx264 (chunked pieces)",
+                primary.codec()
+            );
+            return Ok(Self::Segmented(Box::new(sink)));
+        }
+        eprintln!("[export] encoder: {}", primary.codec());
+        let mut child = spawn_encoder(output, size, fps, crf, primary, faststart)?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| End::Failed("the encoder did not open its input".to_string()))?;
+        let frame_bytes = size.0 as usize * size.1 as usize * 3 / 2;
+        Ok(Self::Single(SingleSink {
+            pipe: Some(EncoderPipe::new(
+                stdin,
+                frame_bytes,
+                pipe_depth(frame_bytes),
+            )),
+            child: Some(child),
+        }))
+    }
+
+    fn buffer(&mut self, index: u64) -> Result<Vec<u8>, End> {
+        match self {
+            Self::Single(sink) => sink.buffer(),
+            Self::Segmented(sink) => sink.buffer(index),
+        }
+    }
+
+    fn submit(&mut self, frame: Vec<u8>) -> Result<(), End> {
+        match self {
+            Self::Single(sink) => sink.submit(frame),
+            Self::Segmented(sink) => sink.submit(frame),
+        }
+    }
+
+    fn finish(self) -> Result<(), End> {
+        match self {
+            Self::Single(sink) => sink.finish(),
+            Self::Segmented(sink) => sink.finish(),
+        }
+    }
+}
+
+struct SingleSink {
+    pipe: Option<EncoderPipe>,
+    child: Option<Child>,
+}
+
+impl SingleSink {
+    fn buffer(&self) -> Result<Vec<u8>, End> {
+        self.pipe
+            .as_ref()
+            .map(EncoderPipe::buffer)
+            .ok_or_else(|| End::Failed("the encoder stopped accepting frames".to_string()))
+    }
+
+    fn submit(&self, frame: Vec<u8>) -> Result<(), End> {
+        self.pipe
+            .as_ref()
+            .ok_or_else(|| End::Failed("the encoder stopped accepting frames".to_string()))?
+            .submit(frame)
+    }
+
+    fn finish(mut self) -> Result<(), End> {
+        let pipe = self
+            .pipe
+            .take()
+            .ok_or_else(|| End::Failed("the encoder stopped accepting frames".to_string()))?;
+        let mut child = self
+            .child
+            .take()
+            .ok_or_else(|| End::Failed("the encoder disappeared".to_string()))?;
+        if let Err(error) = pipe.finish() {
+            stop(&mut child);
+            return Err(error);
+        }
+        let result = child
+            .wait_with_output()
+            .map_err(|error| End::Failed(format!("the encoder did not finish: {error}")))?;
+        if !result.status.success() {
+            let detail = String::from_utf8_lossy(&result.stderr);
+            return Err(End::Failed(format!(
+                "the encoder failed: {}",
+                detail.trim()
+            )));
+        }
+        Ok(())
+    }
+}
+
+impl Drop for SingleSink {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            stop(&mut child);
+        }
+        self.pipe.take();
+    }
+}
+
+fn stop(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// The decoder for one span: NV12 frames on the export's grid. With
+/// `hardware`, D3D11 decodes and ffmpeg copies each frame back for the
+/// filters; a stream the GPU cannot decode falls back to software inside
+/// ffmpeg.
+fn decoder_command(
+    source: &Path,
+    span: SourceSpan,
+    first: u64,
+    count: u64,
+    fps: f64,
+    size: (u32, u32),
+    hardware: bool,
+) -> std::process::Command {
+    let hold = span.speed <= 0.0 || !span.speed.is_finite();
+    let source_start = if hold {
+        span.source_start
+    } else {
+        (span.source_start + first as f64 * span.speed / fps).min(span.source_end)
+    };
+    let duration = count as f64 / fps;
+    let filter = if hold {
+        format!(
+            "trim=end_frame=1,setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration={duration:.6},\
+             fps={fps}:start_time=0,scale={}:{}",
+            size.0, size.1
+        )
+    } else {
+        format!(
+            "setpts=(PTS-STARTPTS)/{:.9},fps={fps}:start_time=0,scale={}:{}",
+            span.speed, size.0, size.1
+        )
+    };
+    let mut command = crate::utils::hidden_command(ffmpeg::ffmpeg_executable());
+    command.args(["-hide_banner", "-loglevel", "error", "-nostdin"]);
+    if hardware {
+        command.args(["-hwaccel", "d3d11va"]);
+    }
+    command
+        .args(["-ss", &format!("{source_start:.6}")])
+        .arg("-i")
+        .arg(source)
+        .args(["-t", &format!("{duration:.6}")])
+        .arg("-an")
+        // A seek between source frames leaves a positive first timestamp.
+        // Fill that leading gap on the output grid instead of losing a frame.
+        .args(["-vf", &filter])
+        .args(["-frames:v", &count.to_string()])
+        .args(["-f", "rawvideo", "-pix_fmt", "nv12", "pipe:1"]);
+    command
+}
+
+fn spawn_decoder(
+    source: &Path,
+    span: SourceSpan,
+    first: u64,
+    count: u64,
+    fps: f64,
+    size: (u32, u32),
+) -> Result<Child, End> {
+    decoder_command(source, span, first, count, fps, size, hardware_decode())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| End::Failed(format!("could not start decoding: {error}")))
+}
+
+fn spawn_encoder(
+    output: &Path,
+    size: (u32, u32),
+    fps: f64,
+    crf: u32,
+    encoder: Encoder,
+    faststart: bool,
+) -> Result<Child, End> {
+    let mut command = crate::utils::hidden_command(ffmpeg::ffmpeg_executable());
+    command
+        .args(["-hide_banner", "-loglevel", "error", "-nostdin", "-y"])
+        .args([
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "nv12",
+            "-s",
+            &format!("{}x{}", size.0, size.1),
+            "-r",
+            &format!("{fps:.6}"),
+            "-i",
+            "pipe:0",
+        ])
+        .arg("-an")
+        .args(encoder.args(crf, size, fps));
+    if faststart {
+        command.args(["-movflags", "+faststart"]);
+    }
+    command
+        .arg(output)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| End::Failed(format!("could not start the encoder: {error}")))
+}
+
+/// The smallest H.264 level that holds the frame size and rate.
+///
+/// Every encoder in a chunked export is opened with this level, so the pieces
+/// share a stream format and the join can copy packets instead of re-encoding.
+/// The table is the level's macroblock and macroblock-rate limit.
+fn h264_level(size: (u32, u32), fps: f64) -> &'static str {
+    const LEVELS: [(&str, u64, u64); 8] = [
+        ("3.1", 3_600, 108_000),
+        ("3.2", 5_120, 216_000),
+        ("4.0", 8_192, 245_760),
+        ("4.1", 8_192, 245_760),
+        ("4.2", 8_704, 522_240),
+        ("5.0", 22_080, 589_824),
+        ("5.1", 36_864, 983_040),
+        ("5.2", 36_864, 2_073_600),
+    ];
+    let macroblocks = u64::from(size.0.div_ceil(16)) * u64::from(size.1.div_ceil(16));
+    let rate = macroblocks as f64 * fps.max(1.0);
+    LEVELS
+        .iter()
+        .find(|(_, frame, throughput)| macroblocks <= *frame && rate <= *throughput as f64)
+        .map(|(name, _, _)| *name)
+        .unwrap_or("5.2")
+}
+
+/// How many finished frames may wait for the encoder.
+///
+/// x264 wants frames faster than the compositor can usually make them, so a
+/// short queue is enough to keep both sides busy; the cap keeps the memory a
+/// 4K export holds for buffering around 25 MB rather than a frame apiece for
+/// every core.
+fn pipe_depth(frame_bytes: usize) -> usize {
+    const BUDGET: usize = 32 * 1024 * 1024;
+    (BUDGET / frame_bytes.max(1)).clamp(2, 4)
+}
+
+/// Hands finished frames to the encoder from a writer thread.
+///
+/// Writing on the compositor thread would make the two stages take turns:
+/// a Windows pipe holds about 64 KB, so `write_all` blocks as soon as the
+/// encoder is a frame behind. A writer thread and a small pool of recycled
+/// buffers let the encoder drain frame N while the compositor builds N+1.
+struct EncoderPipe {
+    queue: Option<mpsc::SyncSender<Vec<u8>>>,
+    recycled: Receiver<Vec<u8>>,
+    writer: Option<std::thread::JoinHandle<std::io::Result<()>>>,
+    frame_bytes: usize,
+}
+
+impl EncoderPipe {
+    fn new<W: Write + Send + 'static>(mut input: W, frame_bytes: usize, depth: usize) -> Self {
+        let (queue, pending) = mpsc::sync_channel::<Vec<u8>>(depth);
+        let (back, recycled) = mpsc::channel::<Vec<u8>>();
+        let writer = std::thread::spawn(move || {
+            while let Ok(frame) = pending.recv() {
+                input.write_all(&frame)?;
+                let _ = back.send(frame);
+            }
+            input.flush()
+        });
+        Self {
+            queue: Some(queue),
+            recycled,
+            writer: Some(writer),
+            frame_bytes,
+        }
+    }
+
+    /// A buffer to composite into: a recycled one when the writer has handed
+    /// one back, otherwise a fresh allocation. At most `depth + 1` exist.
+    fn buffer(&self) -> Vec<u8> {
+        self.recycled
+            .try_recv()
+            .unwrap_or_else(|_| vec![0u8; self.frame_bytes])
+    }
+
+    /// Queue a finished frame, blocking while the encoder is `depth` frames
+    /// behind.
+    fn submit(&self, frame: Vec<u8>) -> Result<(), End> {
+        let Some(queue) = self.queue.as_ref() else {
+            return Err(End::Failed(
+                "the encoder stopped accepting frames".to_string(),
+            ));
+        };
+        queue
+            .send(frame)
+            .map_err(|_| End::Failed("the encoder stopped accepting frames".to_string()))
+    }
+
+    /// Stop accepting frames without waiting for the encoder to finish. The
+    /// writer drains what is already queued while the next piece starts.
+    fn close(&mut self) {
+        self.queue.take();
+    }
+
+    fn is_finished(&self) -> bool {
+        self.writer
+            .as_ref()
+            .is_none_or(|writer| writer.is_finished())
+    }
+
+    /// Close the pipe and wait for the writer, reporting the first write
+    /// error the encoder caused.
+    fn finish(mut self) -> Result<(), End> {
+        self.close();
+        match self.writer.take().map(|writer| writer.join()) {
+            Some(Ok(Ok(()))) | None => Ok(()),
+            Some(Ok(Err(error))) => {
+                Err(End::Failed(format!("could not feed the encoder: {error}")))
+            }
+            Some(Err(_)) => Err(End::Failed("the encoder writer panicked".to_string())),
+        }
+    }
+}
+
+impl Drop for EncoderPipe {
+    fn drop(&mut self) {
+        self.queue.take();
+        if let Some(writer) = self.writer.take() {
+            let _ = writer.join();
+        }
+    }
+}
+
+fn view_is_full(view: ViewRect, source: (f64, f64)) -> bool {
+    view.0 <= 0.001
+        && view.1 <= 0.001
+        && view.0 + view.2 >= source.0 - 0.001
+        && view.1 + view.3 >= source.1 - 0.001
+}
+
+/// Bilinear crop from the source frame to the camera view, at export size.
+///
+/// Rows are independent, so the whole pass runs in parallel over the one
+/// reused output buffer. The weights are fixed point rather than `f64`: at 4K
+/// the float version spent more time converting bytes to doubles than sampling
+/// them, and 16-bit weights land on the same pixel a float bilinear does to
+/// within one level. Alpha is written as opaque because the decoder only ever
+/// produces opaque frames.
+fn crop_scale_into(
+    pixels: &[u8],
+    size: (u32, u32),
+    view: ViewRect,
+    out: (u32, u32),
+    output: &mut [u8],
+) {
+    const ONE: i64 = 1 << 16;
+    const ROUND: i64 = (ONE * ONE) / 2;
+    let width = size.0 as usize;
+    let height = size.1 as usize;
+    let out_width = out.0 as usize;
+    let step_x = view.2 / f64::from(out.0);
+    let step_y = view.3 / f64::from(out.1);
+    // The horizontal taps are the same for every row, so each column's
+    // neighbours and weight are computed once instead of per sampled pixel.
+    let columns: Vec<(usize, usize, i64)> = (0..out_width)
+        .map(|x| {
+            let source_x = (view.0 + (x as f64 + 0.5) * step_x - 0.5)
+                .clamp(0.0, width.saturating_sub(1) as f64);
+            let x0 = source_x as usize;
+            (
+                x0,
+                (x0 + 1).min(width - 1),
+                ((source_x - x0 as f64) * ONE as f64).round() as i64,
+            )
+        })
+        .collect();
+    output
+        .par_chunks_mut(out_width * 4)
+        .enumerate()
+        .for_each(|(y, row)| {
+            let source_y = (view.1 + (y as f64 + 0.5) * step_y - 0.5)
+                .clamp(0.0, height.saturating_sub(1) as f64);
+            let y0 = source_y as usize;
+            let y1 = (y0 + 1).min(height - 1);
+            let fy = ((source_y - y0 as f64) * ONE as f64).round() as i64;
+            let inv_y = ONE - fy;
+            let top_row = &pixels[y0 * width * 4..];
+            let bottom_row = &pixels[y1 * width * 4..];
+            for (x, &(x0, x1, fx)) in columns.iter().enumerate() {
+                let (left, right) = (x0 * 4, x1 * 4);
+                let inv_x = ONE - fx;
+                let offset = x * 4;
+                for channel in 0..3 {
+                    let top = i64::from(top_row[left + channel]) * inv_x
+                        + i64::from(top_row[right + channel]) * fx;
+                    let bottom = i64::from(bottom_row[left + channel]) * inv_x
+                        + i64::from(bottom_row[right + channel]) * fx;
+                    row[offset + channel] = ((top * inv_y + bottom * fy + ROUND) >> 32) as u8;
+                }
+                row[offset + 3] = 255;
+            }
+        });
+}
+
+/// Half the width of the largest thing the cursor overlay can paint, in stage
+/// pixels: the sprite (art, press scale, shadow) or the widest click ring.
+/// Drawing and copying stay inside this box instead of the whole frame.
+fn overlay_half_extent(settings: CursorSettings, reference_width: f64) -> f64 {
+    let scale = settings.size * settings.click_scale;
+    let sprite = 80.0 * settings.size + 8.0;
+    let ring = match settings.click_effect {
+        ClickEffect::Circle => reference_width * 0.031 + 4.0,
+        ClickEffect::Spotlight => 30.0 * scale + 8.0,
+        ClickEffect::Echo => 44.0 * scale + 8.0,
+        ClickEffect::None | ClickEffect::Ripple => 0.0,
+    };
+    sprite.max(ring)
+}
+
+/// The box `draw_cursor` touches for this frame, in frame pixels: x, y,
+/// width, height. None when it draws nothing. Must stay in step with the box
+/// `draw_cursor` computes.
+#[allow(clippy::too_many_arguments)]
+fn cursor_box(
+    size: (u32, u32),
+    view: ViewRect,
+    sidecar: &PointerSidecar,
+    settings: CursorSettings,
+    source_time: f64,
+    source_size: (u32, u32),
+    reference_width: f64,
+) -> Option<(u32, u32, u32, u32)> {
+    if !sidecar.can_render_cursor_overlay() {
+        return None;
+    }
+    let motion = CursorMotion {
+        smooth: settings.smooth,
+        hide_idle: settings.hide_idle,
+        idle_ms: settings.idle_ms,
+        speed: settings.speed,
+        rotation_mode: settings.rotation_mode,
+        rotation_ratio: settings.rotate_on_x_movement_ratio,
+        base_rotation_deg: settings.base_rotation_deg,
+    };
+    let frame = sidecar.presented_in_video_at(
+        source_time,
+        motion,
+        f64::from(source_size.0),
+        f64::from(source_size.1),
+    )?;
+    let settings = settings.clamped();
+    let map = |point| zoom::source_to_stage(point, view, f64::from(size.0), f64::from(size.1));
+    let cursor_point = map((frame.x, frame.y));
+    // A ripple is a footage warp in the export just as in the preview, so its
+    // ring is never drawn; every other effect is.
+    let rings: Vec<(f64, f64, f64)> = if settings.click_effect == ClickEffect::Ripple {
+        Vec::new()
+    } else {
+        sidecar
+            .click_ripples_in_video_at(
+                source_time,
+                settings.click_window_seconds(),
+                f64::from(source_size.0),
+                f64::from(source_size.1),
+            )
+            .into_iter()
+            .map(|(x, y, progress)| {
+                let (x, y) = map((x, y));
+                (x, y, progress)
+            })
+            .collect()
+    };
+
+    let half = overlay_half_extent(settings, reference_width);
+    let mut left = cursor_point.0 - half;
+    let mut top = cursor_point.1 - half;
+    let mut right = cursor_point.0 + half;
+    let mut bottom = cursor_point.1 + half;
+    for &(x, y, _) in &rings {
+        left = left.min(x - half);
+        top = top.min(y - half);
+        right = right.max(x + half);
+        bottom = bottom.max(y + half);
+    }
+    let x0 = left.floor().max(0.0) as u32;
+    let y0 = top.floor().max(0.0) as u32;
+    let x1 = (right.ceil() as i64).clamp(0, i64::from(size.0)) as u32;
+    let y1 = (bottom.ceil() as i64).clamp(0, i64::from(size.1)) as u32;
+    let width = x1.saturating_sub(x0);
+    let height = y1.saturating_sub(y0);
+    if width == 0 || height == 0 {
+        return None;
+    }
+    Some((x0, y0, width, height))
+}
+
+/// Draw the cursor, its press scale and any non-ripple click effect onto the
+/// composited frame, exactly as the preview's overlay does.
+///
+/// The cairo surface is reused for the whole export and only the box the
+/// sprite and its rings can touch is copied in, drawn, and copied back, so the
+/// cost does not scale with the frame size.
+#[allow(clippy::too_many_arguments)]
+fn draw_cursor(
+    pixels: &mut [u8],
+    size: (u32, u32),
+    view: ViewRect,
+    sidecar: &PointerSidecar,
+    source_path: &Path,
+    settings: CursorSettings,
+    source_time: f64,
+    source_size: (u32, u32),
+    reference_width: f64,
+    hide_alpha: f64,
+    layer: &mut ImageSurface,
+) {
+    if !sidecar.can_render_cursor_overlay() {
+        return;
+    }
+    let typing_alpha = super::typing::typing_alpha(
+        &sidecar.keys,
+        &sidecar.pointer,
+        &sidecar.presses,
+        source_time,
+    );
+    if typing_alpha <= 0.001 {
+        return;
+    }
+    let motion = CursorMotion {
+        smooth: settings.smooth,
+        hide_idle: settings.hide_idle,
+        idle_ms: settings.idle_ms,
+        speed: settings.speed,
+        rotation_mode: settings.rotation_mode,
+        rotation_ratio: settings.rotate_on_x_movement_ratio,
+        base_rotation_deg: settings.base_rotation_deg,
+    };
+    let Some(mut frame) = sidecar.presented_in_video_at(
+        source_time,
+        motion,
+        f64::from(source_size.0),
+        f64::from(source_size.1),
+    ) else {
+        return;
+    };
+    frame.alpha *= typing_alpha;
+    // The whole-video switch takes the sprite and its click rings out
+    // together, as in the preview, so one alpha carries both.
+    frame.alpha *= hide_alpha;
+    let settings = settings.clamped();
+    let map = |point| zoom::source_to_stage(point, view, f64::from(size.0), f64::from(size.1));
+    let cursor_point = map((frame.x, frame.y));
+    // A ripple is a footage warp in the export just as in the preview, so its
+    // ring is never drawn; every other effect is.
+    let rings: Vec<(f64, f64, f64)> = if settings.click_effect == ClickEffect::Ripple {
+        Vec::new()
+    } else {
+        sidecar
+            .click_ripples_in_video_at(
+                source_time,
+                settings.click_window_seconds(),
+                f64::from(source_size.0),
+                f64::from(source_size.1),
+            )
+            .into_iter()
+            .map(|(x, y, progress)| {
+                let (x, y) = map((x, y));
+                (x, y, progress)
+            })
+            .collect()
+    };
+
+    let half = overlay_half_extent(settings, reference_width);
+    let mut left = cursor_point.0 - half;
+    let mut top = cursor_point.1 - half;
+    let mut right = cursor_point.0 + half;
+    let mut bottom = cursor_point.1 + half;
+    for &(x, y, _) in &rings {
+        left = left.min(x - half);
+        top = top.min(y - half);
+        right = right.max(x + half);
+        bottom = bottom.max(y + half);
+    }
+    let x0 = left.floor().max(0.0) as u32;
+    let y0 = top.floor().max(0.0) as u32;
+    let x1 = (right.ceil() as i64).clamp(0, i64::from(size.0)) as u32;
+    let y1 = (bottom.ceil() as i64).clamp(0, i64::from(size.1)) as u32;
+    let width = x1.saturating_sub(x0);
+    let height = y1.saturating_sub(y0);
+    if width == 0 || height == 0 {
+        return;
+    }
+
+    {
+        let stride = layer.stride() as usize;
+        let Ok(mut data) = layer.data() else {
+            return;
+        };
+        // The box is overwritten with the frame's own pixels, so there is no
+        // stale sprite to smear: cairo then composites onto the video exactly
+        // as the whole-frame path did, and only this box is ever touched.
+        let frame_stride = size.0 as usize * 4;
+        for y in 0..height as usize {
+            let source_row = (y0 as usize + y) * stride;
+            let frame_row = (y0 as usize + y) * frame_stride + x0 as usize * 4;
+            for x in 0..width as usize {
+                let source = &pixels[frame_row + x * 4..frame_row + x * 4 + 4];
+                let target = &mut data
+                    [source_row + (x0 as usize + x) * 4..source_row + (x0 as usize + x) * 4 + 4];
+                target[0] = source[2];
+                target[1] = source[1];
+                target[2] = source[0];
+                target[3] = 255;
+            }
+        }
+    }
+    layer.mark_dirty();
+    {
+        let Ok(context) = Context::new(&*layer) else {
+            return;
+        };
+        context.rectangle(
+            f64::from(x0),
+            f64::from(y0),
+            f64::from(width),
+            f64::from(height),
+        );
+        context.clip();
+        for &(x, y, progress) in &rings {
+            cursor_sprite::draw_click(
+                &context,
+                x,
+                y,
+                progress,
+                settings,
+                frame.alpha,
+                reference_width,
+            );
+        }
+        let capture = sidecar.cursor_capture(source_path, &frame);
+        cursor_sprite::draw_recorded(
+            &context,
+            cursor_point.0,
+            cursor_point.1,
+            1.0,
+            press_cursor_scale(sidecar, source_time),
+            &frame,
+            capture.as_ref(),
+            settings,
+            frame.alpha,
+        );
+    }
+    layer.flush();
+    {
+        let stride = layer.stride() as usize;
+        let Ok(data) = layer.data() else {
+            return;
+        };
+        let frame_stride = size.0 as usize * 4;
+        for y in 0..height as usize {
+            let source_row = (y0 as usize + y) * stride;
+            let frame_row = (y0 as usize + y) * frame_stride + x0 as usize * 4;
+            for x in 0..width as usize {
+                let layer_x = (x0 as usize + x) * 4;
+                let source = &data[source_row + layer_x..source_row + layer_x + 4];
+                let target = &mut pixels[frame_row + x * 4..frame_row + x * 4 + 4];
+                target[0] = source[2];
+                target[1] = source[1];
+                target[2] = source[0];
+                target[3] = 255;
+            }
+        }
+    }
+}
+
+/// Draw the cursor onto an NV12 frame: only the cursor's box, widened to
+/// even edges for the 4:2:0 chroma, is converted to RGBA, drawn by
+/// `draw_cursor`, and converted back, so a GPU-scaled frame never makes the
+/// whole-frame round trip. `clip` bounds the box to the video card when the
+/// stage draws over a canvas.
+#[allow(clippy::too_many_arguments)]
+fn draw_cursor_nv12(
+    nv12: &mut [u8],
+    size: (u32, u32),
+    clip: Option<zoom::StageRect>,
+    view: ViewRect,
+    sidecar: &PointerSidecar,
+    source_path: &Path,
+    settings: CursorSettings,
+    source_time: f64,
+    source_size: (u32, u32),
+    reference_width: f64,
+    hide_alpha: f64,
+    layer: &mut ImageSurface,
+    converter: &Nv12Converter,
+    scratch: &mut CursorScratch,
+) {
+    let Some((x, y, width, height)) = cursor_box(
+        size,
+        view,
+        sidecar,
+        settings,
+        source_time,
+        source_size,
+        reference_width,
+    ) else {
+        return;
+    };
+    let mut x0 = x & !1;
+    let mut y0 = y & !1;
+    let mut x1 = ((x + width + 1) & !1).min(size.0 & !1);
+    let mut y1 = ((y + height + 1) & !1).min(size.1 & !1);
+    // The stage draws the cursor over the whole output, which is larger than
+    // the video card when the export has a canvas; the card's rect bounds it
+    // there so the sprite never paints on the padding, as the preview clips it.
+    if let Some(rect) = clip {
+        let Some(clipped) = clip_cursor_box((x0, y0, x1, y1), rect) else {
+            return;
+        };
+        x0 = clipped.0;
+        y0 = clipped.1;
+        x1 = clipped.2;
+        y1 = clipped.3;
+    }
+    if x1 <= x0 || y1 <= y0 {
+        return;
+    }
+    // Chroma is upsampled from neighbouring samples, so the box is converted
+    // with a margin of one chroma sample and only the box itself is written
+    // back: its edge pixels then see their real neighbours and leave no seam.
+    const MARGIN: u32 = 2;
+    let ox0 = x0.saturating_sub(MARGIN) as usize;
+    let oy0 = y0.saturating_sub(MARGIN) as usize;
+    let ox1 = (x1 + MARGIN).min(size.0 & !1) as usize;
+    let oy1 = (y1 + MARGIN).min(size.1 & !1) as usize;
+    let (x0, y0, x1, y1) = (x0 as usize, y0 as usize, x1 as usize, y1 as usize);
+    let (ow, oh) = (ox1 - ox0, oy1 - oy0);
+    let (fw, fh) = (size.0 as usize, size.1 as usize);
+    scratch.frame.resize(fw * fh * 4, 0);
+    scratch.box_nv12.resize(ow * oh * 3 / 2, 0);
+    scratch.box_rgba.resize(ow * oh * 4, 0);
+
+    let luma = ow * oh;
+    for row in 0..oh {
+        let start = (oy0 + row) * fw + ox0;
+        scratch.box_nv12[row * ow..(row + 1) * ow].copy_from_slice(&nv12[start..start + ow]);
+    }
+    for row in 0..oh / 2 {
+        let start = fw * fh + (oy0 / 2 + row) * fw + ox0;
+        scratch.box_nv12[luma + row * ow..luma + (row + 1) * ow]
+            .copy_from_slice(&nv12[start..start + ow]);
+    }
+
+    converter.to_rgba_into(
+        &scratch.box_nv12,
+        (ow as u32, oh as u32),
+        &mut scratch.box_rgba,
+    );
+    for row in 0..oh {
+        let start = ((oy0 + row) * fw + ox0) * 4;
+        scratch.frame[start..start + ow * 4]
+            .copy_from_slice(&scratch.box_rgba[row * ow * 4..(row + 1) * ow * 4]);
+    }
+
+    draw_cursor(
+        &mut scratch.frame,
+        size,
+        view,
+        sidecar,
+        source_path,
+        settings,
+        source_time,
+        source_size,
+        reference_width,
+        hide_alpha,
+        layer,
+    );
+
+    for row in 0..oh {
+        let start = ((oy0 + row) * fw + ox0) * 4;
+        scratch.box_rgba[row * ow * 4..(row + 1) * ow * 4]
+            .copy_from_slice(&scratch.frame[start..start + ow * 4]);
+    }
+    converter.convert_into(
+        &scratch.box_rgba,
+        (ow as u32, oh as u32),
+        &mut scratch.box_nv12,
+    );
+    let width = x1 - x0;
+    for y in y0..y1 {
+        let source = (y - oy0) * ow + (x0 - ox0);
+        nv12[y * fw + x0..y * fw + x1].copy_from_slice(&scratch.box_nv12[source..source + width]);
+    }
+    for row in y0 / 2..y1 / 2 {
+        let source = luma + (row - oy0 / 2) * ow + (x0 - ox0);
+        let start = fw * fh + row * fw + x0;
+        nv12[start..start + width].copy_from_slice(&scratch.box_nv12[source..source + width]);
+    }
+}
+
+/// The first even column or row at or after `value`, so a clipped box keeps
+/// its chroma pairs aligned.
+fn even_up(value: f64) -> u32 {
+    let value = value.ceil().max(0.0) as u32;
+    value + (value & 1)
+}
+
+/// The last even column or row at or before `value`.
+fn even_down(value: f64) -> u32 {
+    (value.floor().max(0.0) as u32) & !1
+}
+
+/// Restrict an even-aligned box (x0, y0, x1, y1) to a card rect, keeping both
+/// edges on chroma pairs. None when the box and the card do not overlap.
+fn clip_cursor_box(
+    (x0, y0, x1, y1): (u32, u32, u32, u32),
+    rect: zoom::StageRect,
+) -> Option<(u32, u32, u32, u32)> {
+    let x0 = x0.max(even_up(rect.0));
+    let y0 = y0.max(even_up(rect.1));
+    let x1 = x1.min(even_down(rect.0 + rect.2));
+    let y1 = y1.min(even_down(rect.1 + rect.3));
+    (x1 > x0 && y1 > y0).then_some((x0, y0, x1, y1))
+}
+
+/// Buffers `draw_cursor_nv12` reuses from frame to frame.
+#[derive(Default)]
+struct CursorScratch {
+    /// A full-frame RGBA canvas; only the cursor's box is ever filled.
+    frame: Vec<u8>,
+    box_nv12: Vec<u8>,
+    box_rgba: Vec<u8>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        clip_cursor_box, decoder_command, frame_plan, frame_plan_with_starts, frame_source_time,
+        h264_level, output_size, plan_render, rate, render, render_with_workers, retry_on_software,
+        split_ranges, start_export, start_export_with_settings, total_frames, zoom, Codec, Encoder,
+        End, ExportModel, ExportSettings, ExportUpdate, SourceSpan,
+    };
+    use crate::recording::editor::ffmpeg;
+    use crate::recording::editor::model::{CursorRotationMode, CursorSettings};
+    use std::path::{Path, PathBuf};
+    use std::sync::{atomic::AtomicBool, mpsc, Arc};
+    use std::time::Duration;
+
+    #[test]
+    fn the_decoder_asks_for_d3d11_only_when_hardware_decoding() {
+        let span = SourceSpan {
+            composition_start: 0.0,
+            source_start: 1.0,
+            source_end: 2.0,
+            speed: 1.0,
+            frames: 30,
+        };
+        let args = |hardware| -> Vec<String> {
+            decoder_command(Path::new("in.mp4"), span, 0, 30, 30.0, (640, 360), hardware)
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect()
+        };
+        let with = args(true);
+        let at = with
+            .iter()
+            .position(|arg| arg == "-hwaccel")
+            .expect("hwaccel requested");
+        assert_eq!(with[at + 1], "d3d11va");
+        assert!(at < with.iter().position(|arg| arg == "-i").unwrap());
+        assert!(!with.iter().any(|arg| arg == "-hwaccel_output_format"));
+        let without = args(false);
+        assert!(!without.iter().any(|arg| arg == "-hwaccel"));
+        assert_eq!(with.len(), without.len() + 2);
+    }
+
+    #[test]
+    fn a_failed_hardware_attempt_retries_unless_the_user_stopped() {
+        let failure: Result<(), End> = Err(End::Failed("the encoder failed".to_string()));
+        assert!(retry_on_software(&failure, false));
+        assert!(!retry_on_software(&failure, true));
+        assert!(!retry_on_software(&Ok(()), false));
+        assert!(!retry_on_software(&Err(End::Cancelled), false));
+    }
+
+    #[test]
+    fn the_stage_cursor_box_is_clipped_to_the_card() {
+        let bounds = (10, 20, 210, 180);
+        // The card is inset by padding: the box loses its outside columns and
+        // rows, and the kept edges stay on even pixels.
+        assert_eq!(
+            clip_cursor_box(bounds, (101.0, 41.0, 80.0, 60.0)),
+            Some((102, 42, 180, 100))
+        );
+        // A box that does not reach the card draws nothing.
+        assert_eq!(clip_cursor_box(bounds, (400.0, 400.0, 80.0, 60.0)), None);
+        // A box inside the card keeps its own even edges.
+        assert_eq!(
+            clip_cursor_box(bounds, (0.0, 0.0, 320.0, 180.0)),
+            Some(bounds)
+        );
+    }
+
+    #[test]
+    fn the_encoder_pipe_writes_frames_in_order_and_recycles_buffers() {
+        use std::io::Write;
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Clone, Default)]
+        struct Sink(Arc<Mutex<Vec<u8>>>);
+
+        impl Write for Sink {
+            fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(buffer);
+                Ok(buffer.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let sink = Sink::default();
+        let pipe = super::EncoderPipe::new(sink.clone(), 4, 2);
+        for index in 0..8u8 {
+            let mut frame = pipe.buffer();
+            assert_eq!(frame.len(), 4);
+            frame.copy_from_slice(&[index; 4]);
+            assert!(pipe.submit(frame).is_ok(), "the frame is queued");
+        }
+        assert!(pipe.finish().is_ok(), "the writer finishes cleanly");
+
+        let expected: Vec<u8> = (0..8u8).flat_map(|index| [index; 4]).collect();
+        assert_eq!(*sink.0.lock().unwrap(), expected);
+    }
+
+    #[test]
+    fn the_pipe_holds_only_a_few_frames_of_a_large_export() {
+        assert_eq!(super::pipe_depth(1920 * 1080 * 3 / 2), 4);
+        assert_eq!(super::pipe_depth(3840 * 2160 * 3 / 2), 2);
+        assert_eq!(super::pipe_depth(1), 4);
+    }
+
+    #[test]
+    fn kept_spans_skip_cuts_without_gaps_or_repeats() {
+        let fps = 30.0;
+        let spans = frame_plan(1.0, 9.0, &[3.0, 5.0], &[], fps);
+        assert_eq!(spans.len(), 3);
+        assert_eq!(total_frames(&spans), 240);
+        assert_eq!(spans[0].frames, 60);
+        assert_eq!(spans[1].frames, 60);
+        assert_eq!(spans[2].frames, 120);
+        assert!((spans[0].composition_start - 0.0).abs() < 1e-9);
+        assert!((spans[1].composition_start - 2.0).abs() < 1e-9);
+        assert!((spans[2].composition_start - 4.0).abs() < 1e-9);
+
+        let last_before_cut = frame_source_time(&spans, 59, fps).unwrap();
+        let first_after_cut = frame_source_time(&spans, 60, fps).unwrap();
+        assert!((last_before_cut - (1.0 + 59.0 / 30.0)).abs() < 1e-9);
+        assert!((first_after_cut - 3.0).abs() < 1e-9);
+        assert!(last_before_cut < first_after_cut);
+        assert!((frame_source_time(&spans, 120, fps).unwrap() - 5.0).abs() < 1e-9);
+        assert_eq!(frame_source_time(&spans, 240, fps), None);
+    }
+
+    #[test]
+    fn pieces_in_source_order_plan_exactly_as_before() {
+        let fps = 30.0;
+        let cuts = [1.017, 2.53];
+        let speeds = [1.0, 1.5, 2.0];
+        // The starts the timeline normalizes for these pieces: each is the
+        // previous start plus that piece's unrounded length.
+        let starts = [0.0, 1.017, 1.017 + (2.53 - 1.017) / 1.5];
+        assert_eq!(
+            frame_plan_with_starts(0.0, 3.0, &cuts, &speeds, &starts, fps),
+            frame_plan(0.0, 3.0, &cuts, &speeds, fps)
+        );
+    }
+
+    #[test]
+    fn a_gap_before_a_piece_adds_held_frames() {
+        let fps = 30.0;
+        let gapless = frame_plan(0.0, 4.0, &[2.0], &[], fps);
+        let spans = frame_plan_with_starts(0.0, 4.0, &[2.0], &[], &[0.0, 4.0], fps);
+        assert_eq!(spans.len(), 3);
+        assert_eq!(
+            total_frames(&spans),
+            total_frames(&gapless) + (2.0 * fps) as u64
+        );
+        let held = spans[1];
+        assert_eq!(held.speed, 0.0);
+        assert_eq!(held.frames, 60);
+        assert_eq!(held.source_start, held.source_end);
+        assert!((held.source_start - (2.0 - 1.0 / fps)).abs() < 1e-9);
+        assert!((spans[2].composition_start - 4.0).abs() < 1e-9);
+        assert_eq!(frame_source_time(&spans, 60, fps), Some(held.source_start));
+        assert_eq!(frame_source_time(&spans, 119, fps), Some(held.source_start));
+        assert!((frame_source_time(&spans, 120, fps).unwrap() - 2.0).abs() < 1e-9);
+        assert_eq!(frame_source_time(&spans, 180, fps), None);
+    }
+
+    #[test]
+    fn pieces_are_ordered_by_their_start() {
+        let fps = 30.0;
+        let spans = frame_plan_with_starts(0.0, 4.0, &[2.0], &[], &[2.0, 0.0], fps);
+        assert_eq!(spans.len(), 2);
+        assert_eq!(total_frames(&spans), 120);
+        assert!((spans[0].source_start - 2.0).abs() < 1e-9);
+        assert!((spans[1].source_start - 0.0).abs() < 1e-9);
+        assert!((spans[0].composition_start - 0.0).abs() < 1e-9);
+        assert!((spans[1].composition_start - 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_leading_gap_holds_the_first_pieces_first_frame() {
+        let fps = 30.0;
+        let spans = frame_plan_with_starts(0.0, 4.0, &[2.0], &[], &[1.0, 3.0], fps);
+        assert_eq!(spans.len(), 3);
+        assert_eq!(spans[0].speed, 0.0);
+        assert_eq!(spans[0].frames, 30);
+        assert_eq!(spans[0].source_start, 0.0);
+        assert!((spans[1].composition_start - 1.0).abs() < 1e-9);
+        assert_eq!(total_frames(&spans), 150);
+    }
+
+    #[test]
+    fn a_cut_between_frames_lands_on_the_nearest_frame_boundary() {
+        let fps = 30.0;
+        let spans = frame_plan(0.0, 2.0, &[1.05], &[], fps);
+        assert_eq!(total_frames(&spans), 60);
+        assert_eq!(spans[0].frames, 32);
+        assert_eq!(spans[1].frames, 28);
+        let last_kept = frame_source_time(&spans, 31, fps).unwrap();
+        let first_next = frame_source_time(&spans, 32, fps).unwrap();
+        assert!((first_next - last_kept - 1.0 / fps).abs() < 1e-9);
+        assert!((first_next - spans[1].source_start).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_trim_inside_a_frame_snaps_to_the_frame_grid() {
+        let fps = 30.0;
+        let spans = frame_plan(1.017, 3.017, &[], &[], fps);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(total_frames(&spans), 60);
+        assert!((spans[0].source_start - 1.0 / 30.0 * 31.0).abs() < 1e-6);
+        assert!((frame_source_time(&spans, 0, fps).unwrap() - 31.0 / 30.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn ignored_cuts_and_empty_ranges_produce_no_plan() {
+        assert!(frame_plan(2.0, 2.0, &[], &[], 30.0).is_empty());
+        assert!(frame_plan(0.0, 5.0, &[], &[], 0.0).is_empty());
+        assert!(frame_plan(0.0, f64::NAN, &[], &[], 30.0).is_empty());
+        let spans = frame_plan(1.0, 9.0, &[0.5, 9.5, f64::NAN], &[], 30.0);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(total_frames(&spans), 240);
+    }
+
+    #[test]
+    fn a_speed_changes_the_output_length_and_keeps_the_source_range() {
+        let fps = 30.0;
+        let spans = frame_plan(0.0, 6.0, &[2.0], &[1.0, 3.0], fps);
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].frames, 60);
+        assert_eq!(spans[1].frames, 40);
+        assert_eq!(total_frames(&spans), 100);
+        assert!((spans[0].composition_start - 0.0).abs() < 1e-9);
+        assert!((spans[0].source_start - 0.0).abs() < 1e-9);
+        assert!((spans[0].source_end - 2.0).abs() < 1e-9);
+        assert!((spans[0].speed - 1.0).abs() < 1e-9);
+        assert!((spans[1].composition_start - 2.0).abs() < 1e-9);
+        assert!((spans[1].source_start - 2.0).abs() < 1e-9);
+        assert!((spans[1].source_end - 6.0).abs() < 1e-9);
+        assert!((spans[1].speed - 3.0).abs() < 1e-9);
+        assert!((frame_source_time(&spans, 59, fps).unwrap() - 59.0 / 30.0).abs() < 1e-9);
+        assert!((frame_source_time(&spans, 60, fps).unwrap() - 2.0).abs() < 1e-9);
+        assert!((frame_source_time(&spans, 99, fps).unwrap() - 5.9).abs() < 1e-9);
+        assert_eq!(frame_source_time(&spans, 100, fps), None);
+    }
+
+    #[test]
+    fn a_sped_span_never_maps_past_its_source_end() {
+        let fps = 30.0;
+        let spans = frame_plan(0.0, 4.0, &[], &[8.0], fps);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].frames, 15);
+        let last = frame_source_time(&spans, 14, fps).unwrap();
+        assert!(last <= spans[0].source_end + 1e-9, "{last}");
+        assert!((last - (4.0 - 8.0 / fps)).abs() < 1e-9, "{last}");
+    }
+
+    #[test]
+    fn sped_intervals_round_against_the_running_total() {
+        let fps = 30.0;
+        let cuts = [1.0 / fps, 2.0 / fps];
+        let spans = frame_plan(0.0, 3.0 / fps, &cuts, &[3.0, 3.0, 3.0], fps);
+        assert_eq!(total_frames(&spans), 1);
+        assert_eq!(spans.len(), 1);
+        assert!((spans[0].source_start - 1.0 / fps).abs() < 1e-9);
+        assert!((spans[0].source_end - 2.0 / fps).abs() < 1e-9);
+    }
+
+    #[test]
+    fn malformed_speeds_fall_back_to_one_and_out_of_range_speeds_clamp() {
+        let fps = 30.0;
+        let odd = frame_plan(
+            0.0,
+            4.0,
+            &[1.0, 2.0, 3.0],
+            &[f64::NAN, 0.0, f64::INFINITY],
+            fps,
+        );
+        assert_eq!(odd.len(), 4);
+        assert!(odd.iter().all(|span| (span.speed - 1.0).abs() < 1e-9));
+        assert_eq!(total_frames(&odd), 120);
+        assert_eq!(total_frames(&frame_plan(0.0, 4.0, &[], &[], fps)), 120);
+        assert_eq!(total_frames(&frame_plan(0.0, 1.0, &[], &[0.01], fps)), 240);
+        assert_eq!(total_frames(&frame_plan(0.0, 1.0, &[], &[-1.0], fps)), 30);
+        assert_eq!(total_frames(&frame_plan(0.0, 1.0, &[], &[100.0], fps)), 4);
+        let missing = frame_plan(0.0, 2.0, &[1.0], &[2.0], fps);
+        assert_eq!(missing.len(), 2);
+        assert!((missing[0].speed - 2.0).abs() < 1e-9);
+        assert!((missing[1].speed - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_freeze_tail_holds_the_last_source_frame_for_its_length() {
+        let model = ExportModel {
+            source: PathBuf::from("in.mp4"),
+            source_size: (320, 240),
+            trim_start: 0.0,
+            trim_end: 2.0,
+            cuts: Vec::new(),
+            segment_starts: Vec::new(),
+            segment_speeds: vec![2.0],
+            freeze_tail: 1.0,
+            zooms: Vec::new(),
+            zoom_camera: zoom::ZoomCameraSettings::default(),
+            cursor: CursorSettings::default(),
+            sidecar: None,
+            webcam: None,
+            stage: None,
+            canvas: None,
+            crf: 20,
+            audio: Vec::new(),
+            effects: Default::default(),
+            cursor_hidden: false,
+        };
+        let plan = plan_render(
+            &model,
+            ExportSettings {
+                fps: Some(30),
+                ..ExportSettings::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(plan.total, 60);
+        let hold = plan.spans.last().unwrap();
+        assert_eq!(hold.speed, 0.0);
+        assert_eq!(hold.frames, 30);
+        assert_eq!(hold.source_start, hold.source_end);
+        assert!((hold.source_start - (2.0 - 1.0 / 30.0)).abs() < 1e-9);
+        assert!((hold.composition_start - 1.0).abs() < 1e-9);
+        assert_eq!(
+            frame_source_time(&plan.spans, 45, 30.0),
+            Some(hold.source_start)
+        );
+        assert!((plan.mapping.source_at(1.5).unwrap() - hold.source_start).abs() < 1e-9);
+        assert!((plan.mapping.source_at(0.5).unwrap() - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_missing_or_malformed_freeze_tail_adds_nothing() {
+        let model = ExportModel {
+            source: PathBuf::from("in.mp4"),
+            source_size: (320, 240),
+            trim_start: 0.0,
+            trim_end: 2.0,
+            cuts: Vec::new(),
+            segment_starts: Vec::new(),
+            segment_speeds: Vec::new(),
+            freeze_tail: f64::NAN,
+            zooms: Vec::new(),
+            zoom_camera: zoom::ZoomCameraSettings::default(),
+            cursor: CursorSettings::default(),
+            sidecar: None,
+            webcam: None,
+            stage: None,
+            canvas: None,
+            crf: 20,
+            audio: Vec::new(),
+            effects: Default::default(),
+            cursor_hidden: false,
+        };
+        let plan = plan_render(
+            &model,
+            ExportSettings {
+                fps: Some(30),
+                ..ExportSettings::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(plan.total, 60);
+        assert!(plan.spans.iter().all(|span| span.speed > 0.0));
+        assert_eq!(plan.mapping.source_at(1.5), Some(1.5));
+    }
+
+    #[test]
+    fn a_sped_span_seeks_on_the_source_clock_and_retimes_the_decoder() {
+        let span = SourceSpan {
+            composition_start: 0.0,
+            source_start: 2.0,
+            source_end: 4.0,
+            speed: 3.0,
+            frames: 20,
+        };
+        let args = |first, count| -> Vec<String> {
+            decoder_command(
+                Path::new("in.mp4"),
+                span,
+                first,
+                count,
+                30.0,
+                (640, 360),
+                false,
+            )
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect()
+        };
+        let followed = |args: &[String], flag: &str| {
+            args.iter()
+                .position(|arg| arg == flag)
+                .map(|index| args[index + 1].clone())
+        };
+        let first = args(5, 15);
+        assert_eq!(followed(&first, "-ss").as_deref(), Some("2.500000"));
+        assert_eq!(followed(&first, "-t").as_deref(), Some("0.500000"));
+        assert_eq!(followed(&first, "-frames:v").as_deref(), Some("15"));
+        assert_eq!(
+            followed(&first, "-vf").as_deref(),
+            Some("setpts=(PTS-STARTPTS)/3.000000000,fps=30:start_time=0,scale=640:360")
+        );
+        let last = args(19, 1);
+        assert_eq!(followed(&last, "-ss").as_deref(), Some("3.900000"));
+    }
+
+    #[test]
+    fn a_held_span_decodes_one_frame_and_clones_it() {
+        let span = SourceSpan {
+            composition_start: 2.0,
+            source_start: 1.966_667,
+            source_end: 1.966_667,
+            speed: 0.0,
+            frames: 30,
+        };
+        let args: Vec<String> =
+            decoder_command(Path::new("in.mp4"), span, 0, 30, 30.0, (640, 360), false)
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect();
+        let followed = |flag: &str| {
+            args.iter()
+                .position(|arg| arg == flag)
+                .map(|index| args[index + 1].clone())
+        };
+        assert_eq!(followed("-ss").as_deref(), Some("1.966667"));
+        assert_eq!(followed("-t").as_deref(), Some("1.000000"));
+        assert_eq!(followed("-frames:v").as_deref(), Some("30"));
+        assert_eq!(
+            followed("-vf").as_deref(),
+            Some(
+                "trim=end_frame=1,setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=1.000000,fps=30:start_time=0,scale=640:360"
+            )
+        );
+    }
+
+    #[test]
+    fn a_slow_motion_span_reaches_the_end_of_its_footage() {
+        let dir = std::env::temp_dir().join(format!(
+            "apexshot-export-slow-motion-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("one-second.mp4");
+        let generated = crate::utils::hidden_command(ffmpeg::ffmpeg_executable())
+            .args(["-y", "-hide_banner", "-loglevel", "error"])
+            .args([
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=320x240:rate=30:duration=1",
+            ])
+            .args(["-pix_fmt", "yuv420p", "-c:v", "libx264"])
+            .arg(&source)
+            .output();
+        if !generated.is_ok_and(|output| output.status.success()) {
+            crate::test_support::skip_without_media(
+                "skipping the slow motion export test: ffmpeg is unavailable",
+            );
+            return;
+        }
+        let settings = ExportSettings {
+            fps: Some(30),
+            hardware: false,
+            ..ExportSettings::default()
+        };
+        for (speed, frames, seconds) in [(0.5, 60u64, 2.0), (0.125, 240, 8.0)] {
+            let model = ExportModel {
+                source: source.clone(),
+                source_size: (320, 240),
+                trim_start: 0.0,
+                trim_end: 1.0,
+                cuts: Vec::new(),
+                segment_starts: Vec::new(),
+                segment_speeds: vec![speed],
+                freeze_tail: 0.0,
+                zooms: Vec::new(),
+                zoom_camera: zoom::ZoomCameraSettings::default(),
+                cursor: CursorSettings::default(),
+                sidecar: None,
+                webcam: None,
+                stage: None,
+                canvas: None,
+                crf: 28,
+                audio: Vec::new(),
+                effects: Default::default(),
+                cursor_hidden: false,
+            };
+            let output = dir.join(format!("out-{speed}.mp4"));
+            let (sender, _receiver) = mpsc::channel();
+            let cancel = Arc::new(AtomicBool::new(false));
+            render_with_workers(
+                &model,
+                &output,
+                &sender,
+                &cancel,
+                Encoder::X264,
+                settings,
+                Some(1),
+            )
+            .unwrap_or_else(|error| panic!("{speed}x failed: {error:?}"));
+            let probe = crate::utils::hidden_command(ffmpeg::ffprobe_executable())
+                .args([
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-count_frames",
+                    "-show_entries",
+                    "stream=nb_read_frames,duration",
+                    "-of",
+                    "json",
+                ])
+                .arg(&output)
+                .output()
+                .unwrap();
+            let report: serde_json::Value = serde_json::from_slice(&probe.stdout).unwrap();
+            let stream = &report["streams"][0];
+            let field = |key: &str| -> f64 {
+                let value = &stream[key];
+                value
+                    .as_f64()
+                    .or_else(|| value.as_str().and_then(|text| text.parse().ok()))
+                    .unwrap_or_else(|| panic!("the {speed}x export has no {key}: {report}"))
+            };
+            assert_eq!(
+                field("nb_read_frames") as u64,
+                frames,
+                "the {speed}x export has {report}"
+            );
+            let duration = field("duration");
+            assert!(
+                (duration - seconds).abs() <= 2.0 / 30.0,
+                "the {speed}x export runs {duration} s: {report}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn export_size_matches_the_source_with_even_edges() {
+        assert_eq!(output_size((1920, 1080)), (1920, 1080));
+        assert_eq!(output_size((1919, 1079)), (1918, 1078));
+        assert_eq!(output_size((0, 0)), (2, 2));
+    }
+
+    #[test]
+    fn resolution_presets_keep_aspect_ratio_and_even_edges() {
+        let settings = ExportSettings {
+            resolution: Some(720),
+            ..ExportSettings::default()
+        };
+        assert_eq!(settings.dimensions((1920, 1080)), (1280, 720));
+        assert_eq!(settings.dimensions((1080, 1920)), (720, 1280));
+        assert_eq!(settings.dimensions((1440, 1080)), (960, 720));
+        assert_eq!(
+            ExportSettings::default().dimensions((1919, 1079)),
+            (1918, 1078)
+        );
+    }
+
+    #[test]
+    fn h264_levels_cover_common_export_sizes() {
+        assert_eq!(h264_level((1280, 720), 30.0), "3.1");
+        assert_eq!(h264_level((1920, 1080), 30.0), "4.0");
+        assert_eq!(h264_level((1920, 1080), 60.0), "4.2");
+        assert_eq!(h264_level((2560, 1440), 30.0), "5.0");
+        assert_eq!(h264_level((3840, 2160), 30.0), "5.1");
+        assert_eq!(h264_level((3840, 2160), 60.0), "5.2");
+    }
+
+    #[test]
+    fn hardware_encoders_get_the_curve_bitrate() {
+        let expected = rate::h264_bits_per_second(24, (1920, 1080), 60.0)
+            .round()
+            .to_string();
+        for encoder in [
+            Encoder::Nvenc,
+            Encoder::QuickSync,
+            Encoder::Amf,
+            Encoder::MediaFoundation,
+        ] {
+            let args = encoder.args(24, (1920, 1080), 60.0);
+            let bitrate = args
+                .iter()
+                .position(|value| value == "-b:v")
+                .map(|index| args[index + 1].clone());
+            assert_eq!(bitrate.as_deref(), Some(expected.as_str()));
+            for quantiser in ["-cq", "-global_quality", "-qp_i"] {
+                assert!(!args.iter().any(|value| value == quantiser));
+            }
+        }
+        let args = Encoder::X264.args(24, (1920, 1080), 60.0);
+        assert!(args.iter().any(|value| value == "-crf"));
+        assert!(args.iter().any(|value| value == "24"));
+        assert!(!args.iter().any(|value| value == "-b:v"));
+    }
+
+    #[test]
+    fn hevc_encoders_use_a_bitrate_and_the_hvc1_tag() {
+        let expected =
+            (rate::hevc_bits_per_second(24, (1920, 1080), 60.0).round() as u64).to_string();
+        for encoder in [
+            Encoder::HevcNvenc,
+            Encoder::HevcQuickSync,
+            Encoder::HevcAmf,
+            Encoder::HevcMediaFoundation,
+            Encoder::X265,
+        ] {
+            let args = encoder.args(24, (1920, 1080), 60.0);
+            let followed = |flag: &str| {
+                args.iter()
+                    .position(|value| value == flag)
+                    .map(|index| args[index + 1].as_str())
+            };
+            assert_eq!(followed("-tag:v"), Some("hvc1"));
+            let profile = if encoder == Encoder::HevcMediaFoundation {
+                "1"
+            } else {
+                "main"
+            };
+            assert_eq!(followed("-profile:v"), Some(profile));
+            assert_eq!(followed("-b:v"), Some(expected.as_str()));
+            assert!(!args.iter().any(|value| value == "-level:v"));
+            assert!(!args.iter().any(|value| value == "-crf"));
+        }
+        assert_eq!(Encoder::software(Codec::Hevc), Encoder::X265);
+        assert!(Encoder::X265.is_software());
+        assert!(!Encoder::HevcQuickSync.is_software());
+    }
+
+    #[test]
+    fn media_foundation_encoders_force_the_hardware_path() {
+        let h264 = Encoder::MediaFoundation.args(24, (1920, 1080), 60.0);
+        let hevc = Encoder::HevcMediaFoundation.args(24, (1920, 1080), 60.0);
+        for (args, codec, profile) in [(&h264, "h264_mf", "100"), (&hevc, "hevc_mf", "1")] {
+            let followed = |flag: &str| {
+                args.iter()
+                    .position(|value| value == flag)
+                    .map(|index| args[index + 1].as_str())
+            };
+            assert_eq!(followed("-c:v"), Some(codec));
+            assert_eq!(followed("-profile:v"), Some(profile));
+            assert_eq!(followed("-hw_encoding"), Some("1"));
+            assert_eq!(followed("-rate_control"), Some("pc_vbr"));
+            assert_eq!(followed("-pix_fmt"), Some("nv12"));
+        }
+        assert!(!Encoder::MediaFoundation.is_software());
+        assert!(Encoder::HevcMediaFoundation.is_hevc());
+        assert!(!Encoder::MediaFoundation.is_hevc());
+    }
+
+    #[test]
+    fn an_hevc_export_plays_as_hvc1_with_its_sound() {
+        let dir =
+            std::env::temp_dir().join(format!("apexshot-export-hevc-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("src.mp4");
+        let generated = crate::utils::hidden_command(ffmpeg::ffmpeg_executable())
+            .args([
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=320x240:rate=30:duration=3",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=3",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:v",
+                "libx264",
+                "-c:a",
+                "aac",
+                "-shortest",
+            ])
+            .arg(&source)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        if !generated.is_ok_and(|status| status.success()) {
+            crate::test_support::skip_without_media(
+                "skipping the HEVC export test: ffmpeg is unavailable",
+            );
+            return;
+        }
+        let probe_stream = |path: &std::path::Path, stream: &str, entries: &str| -> String {
+            let probe = crate::utils::hidden_command(ffmpeg::ffprobe_executable())
+                .args([
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    stream,
+                    "-show_entries",
+                    entries,
+                    "-of",
+                    "csv=p=0",
+                ])
+                .arg(path)
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&probe.stdout).trim().to_string()
+        };
+        let model = ExportModel {
+            source: source.clone(),
+            source_size: (320, 240),
+            trim_start: 0.0,
+            trim_end: 3.0,
+            cuts: Vec::new(),
+            segment_starts: Vec::new(),
+            segment_speeds: Vec::new(),
+            freeze_tail: 0.0,
+            zooms: Vec::new(),
+            zoom_camera: zoom::ZoomCameraSettings::default(),
+            cursor: CursorSettings::default(),
+            sidecar: None,
+            webcam: None,
+            stage: None,
+            canvas: None,
+            crf: 24,
+            audio: Vec::new(),
+            effects: Default::default(),
+            cursor_hidden: false,
+        };
+        let output = dir.join("out.mp4");
+        let handle = start_export_with_settings(
+            model,
+            output.clone(),
+            ExportSettings {
+                hardware: false,
+                codec: Codec::Hevc,
+                ..ExportSettings::default()
+            },
+        );
+        loop {
+            match handle.receiver.recv_timeout(Duration::from_secs(120)) {
+                Ok(ExportUpdate::Progress { .. }) => {}
+                Ok(ExportUpdate::Finished(path, sound)) => {
+                    assert_eq!(path, output);
+                    assert!(sound.is_none(), "{sound:?}");
+                    break;
+                }
+                Ok(ExportUpdate::Failed(message)) => panic!("export failed: {message}"),
+                Ok(ExportUpdate::Cancelled) => panic!("export cancelled itself"),
+                Err(error) => panic!("export did not report back: {error}"),
+            }
+        }
+        assert_eq!(
+            probe_stream(
+                &output,
+                "v:0",
+                "stream=codec_name,codec_tag_string,width,height"
+            ),
+            "hevc,hvc1,320,240"
+        );
+        assert_eq!(probe_stream(&output, "a", "stream=codec_name"), "aac");
+
+        let model2 = ExportModel {
+            source,
+            source_size: (320, 240),
+            trim_start: 0.0,
+            trim_end: 3.0,
+            cuts: Vec::new(),
+            segment_starts: Vec::new(),
+            segment_speeds: Vec::new(),
+            freeze_tail: 0.0,
+            zooms: Vec::new(),
+            zoom_camera: zoom::ZoomCameraSettings::default(),
+            cursor: CursorSettings::default(),
+            sidecar: None,
+            webcam: None,
+            stage: None,
+            canvas: None,
+            crf: 24,
+            audio: Vec::new(),
+            effects: Default::default(),
+            cursor_hidden: false,
+        };
+        let joined = dir.join("joined.mp4");
+        let (sender, _receiver) = mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+        render_with_workers(
+            &model2,
+            &joined,
+            &sender,
+            &cancel,
+            Encoder::X265,
+            ExportSettings {
+                hardware: false,
+                codec: Codec::Hevc,
+                ..ExportSettings::default()
+            },
+            Some(2),
+        )
+        .unwrap_or_else(|error| panic!("the parallel HEVC export failed: {error:?}"));
+        assert_eq!(
+            probe_stream(
+                &joined,
+                "v:0",
+                "stream=codec_name,codec_tag_string,width,height"
+            ),
+            "hevc,hvc1,320,240"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn parallel_ranges_cover_each_frame_once() {
+        for (total, workers) in [(300, 2), (301, 4), (5, 6), (1, 4)] {
+            let ranges = split_ranges(total, workers);
+            let covered: u64 = ranges.iter().map(|(first, end)| end - first).sum();
+            assert_eq!(covered, total);
+            assert_eq!(ranges.first().unwrap().0, 0);
+            assert_eq!(ranges.last().unwrap().1, total);
+            for pair in ranges.windows(2) {
+                assert_eq!(pair[0].1, pair[1].0);
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "integration: shells out to ffmpeg"]
+    fn parallel_ranges_match_the_sequential_render() {
+        let dir =
+            std::env::temp_dir().join(format!("apexshot-parallel-parity-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("source.mp4");
+        let generated = crate::utils::hidden_command(ffmpeg::ffmpeg_executable())
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=s=640x360:r=30:d=6",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-crf",
+                "18",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&source)
+            .status()
+            .expect("ffmpeg should be available");
+        assert!(generated.success());
+        let model = ExportModel {
+            source,
+            source_size: (640, 360),
+            trim_start: 0.0,
+            trim_end: 6.0,
+            cuts: vec![2.0],
+            segment_starts: Vec::new(),
+            segment_speeds: Vec::new(),
+            freeze_tail: 0.0,
+            zooms: vec![crate::video_editor::timeline::ZoomClip {
+                start: 1.0,
+                end: 4.0,
+                scale: 1.5,
+                center: (320.0, 180.0),
+                hidden: false,
+                mode: crate::video_editor::timeline::ZoomMode::Manual,
+                instant: false,
+                anchor: None,
+            }],
+            zoom_camera: crate::video_editor::zoom::ZoomCameraSettings::default(),
+            cursor: CursorSettings::default(),
+            sidecar: None,
+            webcam: None,
+            stage: None,
+            canvas: None,
+            crf: 0,
+            audio: Vec::new(),
+            effects: Default::default(),
+            cursor_hidden: false,
+        };
+        let settings = ExportSettings {
+            fps: Some(30),
+            hardware: false,
+            ..ExportSettings::default()
+        };
+        let mut outputs = Vec::new();
+        for (workers, name) in [(1usize, "sequential"), (2, "parallel")] {
+            let output = dir.join(format!("{name}.mp4"));
+            let (sender, _receiver) = mpsc::channel();
+            let cancel = Arc::new(AtomicBool::new(false));
+            render_with_workers(
+                &model,
+                &output,
+                &sender,
+                &cancel,
+                Encoder::X264,
+                settings,
+                Some(workers),
+            )
+            .unwrap_or_else(|error| panic!("{name} failed: {error:?}"));
+            outputs.push(output);
+        }
+        let compare = crate::utils::hidden_command(ffmpeg::ffmpeg_executable())
+            .args(["-hide_banner", "-loglevel", "info", "-i"])
+            .arg(&outputs[0])
+            .arg("-i")
+            .arg(&outputs[1])
+            .args(["-lavfi", "[0:v][1:v]psnr", "-f", "null", "-"])
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&compare.stderr);
+        assert!(compare.status.success(), "{text}");
+        // The CPU compositor is bit-exact across a split. The D3D11 video
+        // processor can pick a different filter when a range starts mid-zoom,
+        // which moves a few levels; the frames still line up, so accept a high
+        // PSNR instead of `inf` for that path.
+        let average = text
+            .split("average:")
+            .nth(1)
+            .and_then(|tail| tail.split_whitespace().next())
+            .and_then(|value| value.parse::<f64>().ok());
+        assert!(
+            text.contains("average:inf") || average.is_some_and(|value| value >= 45.0),
+            "parallel output differs: {text}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn motion_blur_reaches_real_export_frames() {
+        if std::env::var("APEXSHOT_EXPORT_TEST").ok().as_deref() != Some("1") {
+            return;
+        }
+        use crate::video_editor::timeline::{ZoomClip, ZoomMode};
+        let dir =
+            std::env::temp_dir().join(format!("apexshot-blur-export-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("source.mp4");
+        let status = crate::utils::hidden_command(ffmpeg::ffmpeg_executable())
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=320x180:rate=60:duration=2",
+                "-threads",
+                "2",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&source)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let mut model = ExportModel {
+            source,
+            source_size: (320, 180),
+            trim_start: 0.0,
+            trim_end: 2.0,
+            cuts: vec![],
+            segment_starts: Vec::new(),
+            segment_speeds: Vec::new(),
+            freeze_tail: 0.0,
+            zooms: vec![ZoomClip {
+                start: 0.2,
+                end: 1.4,
+                scale: 2.0,
+                center: (220.0, 110.0),
+                hidden: false,
+                mode: ZoomMode::Manual,
+                instant: false,
+                anchor: None,
+            }],
+            zoom_camera: zoom::ZoomCameraSettings::default(),
+            cursor: CursorSettings::default(),
+            sidecar: None,
+            webcam: None,
+            stage: None,
+            canvas: None,
+            crf: 18,
+            audio: Vec::new(),
+            effects: Default::default(),
+            cursor_hidden: false,
+        };
+        for fps in [24, 60] {
+            let mut videos = Vec::new();
+            for amount in [0.0, 1.0] {
+                model.zoom_camera.motion_blur = amount;
+                let output = dir.join(format!("output-{fps}-{amount}.mp4"));
+                let (sender, _receiver) = mpsc::channel();
+                let cancel = Arc::new(AtomicBool::new(false));
+                match render(
+                    &model,
+                    &output,
+                    &sender,
+                    &cancel,
+                    Encoder::X264,
+                    ExportSettings {
+                        fps: Some(fps),
+                        ..ExportSettings::default()
+                    },
+                ) {
+                    Ok(()) => (),
+                    Err(End::Failed(message)) => panic!("export failed: {message}"),
+                    Err(End::Cancelled) => panic!("export cancelled"),
+                }
+                videos.push(output);
+            }
+            let read_frame = |video: &PathBuf, time: &str| {
+                let output = crate::utils::hidden_command(ffmpeg::ffmpeg_executable())
+                    .args(["-hide_banner", "-loglevel", "error", "-ss", time, "-i"])
+                    .arg(video)
+                    .args(["-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"])
+                    .output()
+                    .unwrap();
+                assert!(output.status.success());
+                assert_eq!(output.stdout.len(), 320 * 180 * 3);
+                output.stdout
+            };
+            let difference = |time: &str| {
+                let first = read_frame(&videos[0], time);
+                let second = read_frame(&videos[1], time);
+                first
+                    .iter()
+                    .zip(second.iter())
+                    .map(|(a, b)| a.abs_diff(*b) as u64)
+                    .sum::<u64>() as f64
+                    / first.len() as f64
+            };
+            let moving = difference("0.35");
+            let resting = difference("1.0");
+            assert!(moving > 1.0, "{fps} fps motion did not blur: {moving}");
+            assert!(
+                moving > resting * 2.0,
+                "{fps} fps rest changed too much: moving={moving}, resting={resting}"
+            );
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn selected_settings_reach_the_mp4_encoder() {
+        if std::env::var("APEXSHOT_EXPORT_TEST").ok().as_deref() != Some("1") {
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!(
+            "apexshot-export-options-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("source.mp4");
+        let generated = crate::utils::hidden_command(ffmpeg::ffmpeg_executable())
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=s=320x180:r=30:d=0.5",
+                "-threads",
+                "2",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&source)
+            .status()
+            .expect("ffmpeg should be available");
+        assert!(generated.success());
+        let model = ExportModel {
+            source,
+            source_size: (320, 180),
+            trim_start: 0.0,
+            trim_end: 0.5,
+            cuts: vec![0.25],
+            segment_starts: Vec::new(),
+            segment_speeds: Vec::new(),
+            freeze_tail: 0.0,
+            zooms: Vec::new(),
+            zoom_camera: zoom::ZoomCameraSettings::default(),
+            cursor: CursorSettings::default(),
+            sidecar: None,
+            webcam: None,
+            stage: None,
+            canvas: None,
+            crf: 20,
+            audio: Vec::new(),
+            effects: Default::default(),
+            cursor_hidden: false,
+        };
+        for fps in [24, 60] {
+            let settings = ExportSettings {
+                fps: Some(fps),
+                resolution: Some(90),
+                ..ExportSettings::default()
+            };
+            let output = dir.join(format!("output-{fps}.mp4"));
+            let (sender, _receiver) = mpsc::channel();
+            let cancel = Arc::new(AtomicBool::new(false));
+            if let Err(end) = render(&model, &output, &sender, &cancel, Encoder::X264, settings) {
+                match end {
+                    End::Failed(message) => panic!("MP4 export failed: {message}"),
+                    End::Cancelled => panic!("export cancelled itself"),
+                }
+            }
+            let probe = crate::utils::hidden_command(ffmpeg::ffprobe_executable())
+                .args([
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-count_frames",
+                    "-show_entries",
+                    "stream=width,height,nb_read_frames",
+                    "-of",
+                    "json",
+                ])
+                .arg(&output)
+                .output()
+                .unwrap();
+            assert!(probe.status.success());
+            let data: serde_json::Value = serde_json::from_slice(&probe.stdout).unwrap();
+            let stream = &data["streams"][0];
+            assert_eq!(stream["width"], 160);
+            assert_eq!(stream["height"], 90);
+            assert_eq!(
+                stream["nb_read_frames"]
+                    .as_str()
+                    .unwrap()
+                    .parse::<u32>()
+                    .unwrap(),
+                fps / 2
+            );
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    #[ignore = "manual recording comparison"]
+    fn export_recording_for_manual_comparison() {
+        let source = PathBuf::from(std::env::var_os("APEXSHOT_COMPARISON_CLIP").unwrap());
+        let output = PathBuf::from(std::env::var_os("APEXSHOT_COMPARISON_OUTPUT").unwrap());
+        assert!(
+            !output.exists(),
+            "refusing to overwrite the comparison output"
+        );
+        let width = std::env::var("APEXSHOT_COMPARISON_WIDTH")
+            .unwrap()
+            .parse()
+            .unwrap();
+        let height = std::env::var("APEXSHOT_COMPARISON_HEIGHT")
+            .unwrap()
+            .parse()
+            .unwrap();
+        let duration = ffmpeg::probe_duration(&source).unwrap();
+        let sidecar_path = PathBuf::from(std::env::var_os("APEXSHOT_COMPARISON_SIDECAR").unwrap());
+        let sidecar = crate::recording::editor::sidecar::PointerSidecar::load(&sidecar_path)
+            .expect("the recording must have a sidecar");
+        let theme = match std::env::var("APEXSHOT_COMPARISON_THEME").as_deref() {
+            Ok("macos") => crate::recording::editor::model::CursorTheme::Macos,
+            _ => CursorSettings::default().theme,
+        };
+        let rotation_mode = match std::env::var("APEXSHOT_COMPARISON_ROTATION").as_deref() {
+            Ok("directional") => CursorRotationMode::Directional,
+            _ => CursorRotationMode::Velocity,
+        };
+        let rotation_ratio = std::env::var("APEXSHOT_COMPARISON_ROTATION_RATIO")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0.5);
+        let base_rotation_deg = std::env::var("APEXSHOT_COMPARISON_BASE_DEG")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0.0);
+        let always_use_default = std::env::var("APEXSHOT_COMPARISON_ALWAYS_DEFAULT").is_ok();
+        let shake_threshold = std::env::var("APEXSHOT_COMPARISON_SHAKE")
+            .ok()
+            .and_then(|value| value.parse::<f64>().ok())
+            .unwrap_or(crate::recording::editor::cursor_shake::DEFAULT_REMOVE_SHAKE_THRESHOLD);
+        let cuts: Vec<f64> = std::env::var("APEXSHOT_COMPARISON_CUTS")
+            .ok()
+            .map(|text| {
+                text.split(',')
+                    .filter_map(|value| value.trim().parse().ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let trim_start = std::env::var("APEXSHOT_COMPARISON_TRIM_START")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0.0);
+        let trim_end = std::env::var("APEXSHOT_COMPARISON_TRIM_END")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(duration);
+        let stop_tail_ms = std::env::var("APEXSHOT_COMPARISON_STOP_TAIL_MS")
+            .ok()
+            .and_then(|value| value.parse::<f64>().ok())
+            .unwrap_or(0.0);
+        let loop_ms = std::env::var("APEXSHOT_COMPARISON_LOOP_MS")
+            .ok()
+            .and_then(|value| value.parse::<f64>().ok());
+        eprintln!(
+            "export: theme {theme:?} rotation {rotation_mode:?} ratio {rotation_ratio} base {base_rotation_deg} default {always_use_default} trim {trim_start}..{trim_end} cuts {cuts:?} stop {stop_tail_ms} loop {loop_ms:?}"
+        );
+        if std::env::var("APEXSHOT_COMPARISON_DUMP").is_ok() {
+            for t in [0.4, 0.8, 1.2, 2.2, 2.6, 2.9, 3.4, 3.9, 4.4] {
+                eprintln!(
+                    "rotation {t}: {:.1} deg",
+                    sidecar
+                        .cursor_rotation_at(t, rotation_mode, rotation_ratio, base_rotation_deg)
+                        .to_degrees()
+                );
+            }
+        }
+        if std::env::var("APEXSHOT_COMPARISON_PLAN").is_ok() {
+            let motion = crate::recording::editor::sidecar::CursorMotion {
+                smooth: CursorSettings::default().smooth,
+                speed: 1.0,
+                ..crate::recording::editor::sidecar::CursorMotion::default()
+            };
+            let free = {
+                let mut free = sidecar.clone();
+                free.set_cut_times(&[]);
+                free
+            };
+            let with_cuts = {
+                let mut with_cuts = sidecar.clone();
+                with_cuts.set_cut_times(&cuts);
+                with_cuts
+            };
+            let text = std::env::var("APEXSHOT_COMPARISON_PLAN_TIMES")
+                .unwrap_or_else(|_| "1.40,1.45,1.49,1.50,1.55".to_string());
+            for t in text
+                .split(',')
+                .filter_map(|value| value.trim().parse::<f64>().ok())
+            {
+                let free_x = free.presented_at(t, motion).map(|frame| frame.x);
+                let cut_x = with_cuts.presented_at(t, motion).map(|frame| frame.x);
+                let mut unfiltered = free.clone();
+                unfiltered.set_shake_threshold(0.0);
+                let mut filtered = free.clone();
+                filtered.set_shake_threshold(shake_threshold);
+                let raw = |sidecar: &crate::recording::editor::sidecar::PointerSidecar| {
+                    sidecar
+                        .presented_at(t, motion)
+                        .map(|frame| (frame.x.round(), frame.y.round()))
+                };
+                eprintln!(
+                    "plan {t}: free {free_x:?} cut {cut_x:?} shake-off {:?} shake-on {:?}",
+                    raw(&unfiltered),
+                    raw(&filtered)
+                );
+            }
+        }
+        let model = ExportModel {
+            source,
+            source_size: (width, height),
+            trim_start,
+            trim_end,
+            cuts,
+            segment_starts: Vec::new(),
+            segment_speeds: Vec::new(),
+            freeze_tail: 0.0,
+            zooms: Vec::new(),
+            zoom_camera: crate::video_editor::zoom::ZoomCameraSettings::default(),
+            cursor: CursorSettings {
+                theme,
+                rotation_mode,
+                rotate_on_x_movement_ratio: rotation_ratio,
+                base_rotation_deg,
+                always_use_default,
+                remove_shake_threshold: shake_threshold,
+                stop_movement_in_last_part_ms: stop_tail_ms,
+                loop_position_before_end_ms: loop_ms,
+                ..CursorSettings::default()
+            },
+            sidecar: Some(sidecar),
+            webcam: None,
+            stage: None,
+            canvas: None,
+            crf: 20,
+            audio: Vec::new(),
+            effects: Default::default(),
+            cursor_hidden: false,
+        };
+        let handle = start_export(model, output.clone());
+        loop {
+            match handle.receiver.recv_timeout(Duration::from_secs(180)) {
+                Ok(ExportUpdate::Progress { .. }) => {}
+                Ok(ExportUpdate::Finished(path, _)) => {
+                    assert_eq!(path, output);
+                    break;
+                }
+                Ok(ExportUpdate::Failed(message)) => panic!("export failed: {message}"),
+                Ok(ExportUpdate::Cancelled) => panic!("export cancelled itself"),
+                Err(error) => panic!("export did not report back: {error}"),
+            }
+        }
+    }
+
+    /// Export a saved editor project through the real export pipeline, so the
+    /// zoom camera can be checked on a real recording. Nothing runs unless asked.
+    ///
+    /// `APEXSHOT_PROJECT_FILE` is a project JSON from `video-projects-windows`,
+    /// `APEXSHOT_PROJECT_OUTPUT` the MP4 to write (it must not exist yet), and
+    /// `APEXSHOT_PROJECT_WIDTH` / `APEXSHOT_PROJECT_HEIGHT` the source size.
+    /// `APEXSHOT_PROJECT_SIDECAR` replaces the recording's pointer sidecar,
+    /// `APEXSHOT_PROJECT_SHAKE` the cursor's shake threshold, and
+    /// `APEXSHOT_PROJECT_TRIM_START` / `APEXSHOT_PROJECT_TRIM_END` export only
+    /// that span of a project without cuts.
+    #[test]
+    #[ignore = "manual project export"]
+    fn export_project_for_manual_comparison() {
+        use crate::recording::editor::sidecar::PointerSidecar;
+        use crate::video_editor::project::{EditorProjectFile, ZoomModeFile};
+        use crate::video_editor::timeline::{ZoomClip, ZoomMode};
+
+        let env = |name: &str| std::env::var(name).ok();
+        let number = |name: &str| env(name).and_then(|value| value.parse::<f64>().ok());
+        let project_path =
+            PathBuf::from(env("APEXSHOT_PROJECT_FILE").expect("APEXSHOT_PROJECT_FILE"));
+        let output =
+            PathBuf::from(env("APEXSHOT_PROJECT_OUTPUT").expect("APEXSHOT_PROJECT_OUTPUT"));
+        assert!(!output.exists(), "refusing to overwrite the project export");
+        let width: u32 = env("APEXSHOT_PROJECT_WIDTH")
+            .expect("APEXSHOT_PROJECT_WIDTH")
+            .parse()
+            .unwrap();
+        let height: u32 = env("APEXSHOT_PROJECT_HEIGHT")
+            .expect("APEXSHOT_PROJECT_HEIGHT")
+            .parse()
+            .unwrap();
+        let text = std::fs::read_to_string(&project_path).expect("the project must be readable");
+        let file: EditorProjectFile = serde_json::from_str(&text).expect("the project must parse");
+        assert!(
+            file.cuts.is_empty(),
+            "the harness exports projects without cuts"
+        );
+        let source = file.source_path.clone();
+        let trim_start = number("APEXSHOT_PROJECT_TRIM_START").unwrap_or(file.trim_start_seconds);
+        let trim_end = number("APEXSHOT_PROJECT_TRIM_END").unwrap_or(file.trim_end_seconds);
+        let sidecar = match env("APEXSHOT_PROJECT_SIDECAR") {
+            Some(path) => {
+                Some(PointerSidecar::load(Path::new(&path)).expect("the sidecar must load"))
+            }
+            None => PointerSidecar::load_next_to_video(&source),
+        };
+        let mut cursor = file.cursor.settings();
+        if let Some(shake) = number("APEXSHOT_PROJECT_SHAKE") {
+            cursor.remove_shake_threshold = shake;
+        }
+        // Zoom clips are saved in composition time; exporting a later span
+        // moves the composition's start to `trim_start`.
+        let shift = trim_start - file.trim_start_seconds;
+        let length = trim_end - trim_start;
+        let zooms: Vec<ZoomClip> = file
+            .zoom_clips
+            .iter()
+            .filter_map(|clip| {
+                let start = clip.start - shift;
+                let end = clip.end - shift;
+                (end > 0.0 && start < length).then(|| ZoomClip {
+                    start: start.max(0.0),
+                    end: end.min(length),
+                    scale: clip.scale,
+                    center: clip.center,
+                    hidden: clip.hidden,
+                    mode: if clip.mode == ZoomModeFile::Auto {
+                        ZoomMode::Auto
+                    } else {
+                        ZoomMode::Manual
+                    },
+                    instant: clip.instant,
+                    anchor: None,
+                })
+            })
+            .collect();
+        let zoom_camera = zoom::ZoomCameraSettings {
+            speed: file.zoom_camera.speed,
+            smoothness: file.zoom_camera.smoothness,
+            start_early: file.zoom_camera.start_early,
+            motion_blur: file.zoom_camera.motion_blur,
+            ..zoom::ZoomCameraSettings::default()
+        }
+        .clamped();
+        eprintln!(
+            "project export: {} zooms, span {trim_start}..{trim_end}, shake {}",
+            zooms.len(),
+            cursor.remove_shake_threshold
+        );
+        let model = ExportModel {
+            source,
+            source_size: (width, height),
+            trim_start,
+            trim_end,
+            cuts: Vec::new(),
+            segment_starts: Vec::new(),
+            segment_speeds: Vec::new(),
+            freeze_tail: 0.0,
+            zooms,
+            zoom_camera,
+            cursor,
+            sidecar,
+            webcam: None,
+            stage: None,
+            canvas: None,
+            crf: 20,
+            audio: Vec::new(),
+            effects: Default::default(),
+            cursor_hidden: false,
+        };
+        let handle = start_export(model, output.clone());
+        loop {
+            match handle.receiver.recv_timeout(Duration::from_secs(600)) {
+                Ok(ExportUpdate::Progress { .. }) => {}
+                Ok(ExportUpdate::Finished(path, _)) => {
+                    assert_eq!(path, output);
+                    break;
+                }
+                Ok(ExportUpdate::Failed(message)) => panic!("export failed: {message}"),
+                Ok(ExportUpdate::Cancelled) => panic!("export cancelled itself"),
+                Err(error) => panic!("export did not report back: {error}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_trimmed_cut_composition_exports_to_an_mp4() {
+        if std::env::var("APEXSHOT_EXPORT_TEST").ok().as_deref() != Some("1") {
+            return;
+        }
+        let source = PathBuf::from(
+            std::env::var("APEXSHOT_EXPORT_CLIP")
+                .unwrap_or_else(|_| "C:/tmp/demo/apexshot-demo-burst.mp4".to_string()),
+        );
+        if !source.is_file() {
+            eprintln!("skipping export test: {} is missing", source.display());
+            return;
+        }
+        let Some(fps) = crate::recording::editor::ffmpeg::probe_frame_rate(&source) else {
+            crate::test_support::skip_without_media("skipping export test: ffprobe is unavailable");
+            return;
+        };
+        let output = std::env::temp_dir().join("apexshot-export-gated-test.mp4");
+        let _ = std::fs::remove_file(&output);
+        // An optional pointer sidecar exercises the sprite and the click
+        // ripple in the same run; without one the pipeline still encodes.
+        let sidecar = std::env::var_os("APEXSHOT_EXPORT_SIDECAR")
+            .map(PathBuf::from)
+            .filter(|path| path.is_file())
+            .and_then(|path| crate::recording::editor::sidecar::PointerSidecar::load(&path).ok());
+        // `APEXSHOT_EXPORT_SPAN=0:20` times a longer run; the default span
+        // sits on the demo's click burst so the cursor and ripple are exercised.
+        let (trim_start, trim_end, cuts) = match std::env::var("APEXSHOT_EXPORT_SPAN")
+            .ok()
+            .and_then(|text| parse_span(&text))
+        {
+            Some((start, end)) => (start, end, Vec::new()),
+            None => (9.9, 11.9, vec![10.6]),
+        };
+        let expected = trim_end - trim_start;
+        let model = ExportModel {
+            source,
+            source_size: (1920, 1080),
+            trim_start,
+            trim_end,
+            cuts,
+            segment_starts: Vec::new(),
+            segment_speeds: Vec::new(),
+            freeze_tail: 0.0,
+            zooms: vec![crate::video_editor::timeline::ZoomClip {
+                start: 0.0,
+                end: expected,
+                scale: 1.5,
+                center: (960.0, 540.0),
+                hidden: false,
+                mode: crate::video_editor::timeline::ZoomMode::Manual,
+                instant: false,
+                anchor: None,
+            }],
+            zoom_camera: crate::video_editor::zoom::ZoomCameraSettings::default(),
+            cursor: CursorSettings {
+                hide_idle: false,
+                ..CursorSettings::default()
+            },
+            sidecar,
+            webcam: None,
+            stage: None,
+            canvas: None,
+            crf: 23,
+            audio: Vec::new(),
+            effects: Default::default(),
+            cursor_hidden: false,
+        };
+        let handle = start_export(model, output.clone());
+        loop {
+            match handle.receiver.recv_timeout(Duration::from_secs(180)) {
+                Ok(ExportUpdate::Progress { .. }) => {}
+                Ok(ExportUpdate::Finished(path, _)) => {
+                    assert_eq!(path, output);
+                    break;
+                }
+                Ok(ExportUpdate::Failed(message)) => panic!("export failed: {message}"),
+                Ok(ExportUpdate::Cancelled) => panic!("export cancelled itself"),
+                Err(error) => panic!("export did not report back: {error}"),
+            }
+        }
+        let size = std::fs::metadata(&output).unwrap().len();
+        assert!(size > 1024, "encoded file is only {size} bytes");
+        let probed = probe_duration(&output).expect("ffprobe should read the export");
+        assert!(
+            (probed - expected).abs() <= 2.0 / fps + 1e-6,
+            "duration {probed} differs from {expected}"
+        );
+    }
+
+    #[test]
+    fn cancelling_an_export_stops_it_and_removes_the_partial_file() {
+        if std::env::var("APEXSHOT_EXPORT_TEST").ok().as_deref() != Some("1") {
+            return;
+        }
+        let source = PathBuf::from(
+            std::env::var("APEXSHOT_EXPORT_CLIP")
+                .unwrap_or_else(|_| "C:/tmp/demo/apexshot-demo-burst.mp4".to_string()),
+        );
+        if !source.is_file() {
+            eprintln!("skipping export test: {} is missing", source.display());
+            return;
+        }
+        let output = std::env::temp_dir().join("apexshot-export-cancel-test.mp4");
+        let _ = std::fs::remove_file(&output);
+        let model = ExportModel {
+            source,
+            source_size: (1920, 1080),
+            trim_start: 0.0,
+            trim_end: 60.0,
+            cuts: Vec::new(),
+            segment_starts: Vec::new(),
+            segment_speeds: Vec::new(),
+            freeze_tail: 0.0,
+            zooms: Vec::new(),
+            zoom_camera: crate::video_editor::zoom::ZoomCameraSettings::default(),
+            cursor: CursorSettings::default(),
+            sidecar: None,
+            webcam: None,
+            stage: None,
+            canvas: None,
+            crf: 23,
+            audio: Vec::new(),
+            effects: Default::default(),
+            cursor_hidden: false,
+        };
+        let handle = start_export(model, output.clone());
+        let progress = handle
+            .receiver
+            .recv_timeout(Duration::from_secs(60))
+            .expect("the export should report progress");
+        assert!(matches!(progress, ExportUpdate::Progress { .. }));
+        handle.cancel();
+        loop {
+            match handle.receiver.recv_timeout(Duration::from_secs(60)) {
+                Ok(ExportUpdate::Cancelled) => break,
+                Ok(ExportUpdate::Progress { .. }) => {}
+                Ok(other) => panic!("expected cancellation, got {:?}", kind(&other)),
+                Err(error) => panic!("the export did not report back: {error}"),
+            }
+        }
+        assert!(!output.exists(), "the partial export should be deleted");
+    }
+
+    fn kind(update: &ExportUpdate) -> &'static str {
+        match update {
+            ExportUpdate::Progress { .. } => "progress",
+            ExportUpdate::Finished(_, _) => "finished",
+            ExportUpdate::Failed(_) => "failed",
+            ExportUpdate::Cancelled => "cancelled",
+        }
+    }
+
+    #[test]
+    fn the_parallel_crop_matches_the_per_pixel_reference() {
+        let size = (640, 360);
+        let out = (320, 180);
+        let view = (10.3, 8.7, 300.5, 168.25);
+        let mut pixels = vec![0u8; size.0 as usize * size.1 as usize * 4];
+        for (index, pixel) in pixels.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+            let x = (index % size.0 as usize) as u8;
+            let y = (index / size.0 as usize) as u8;
+            pixel.copy_from_slice(&[x, y.wrapping_mul(7), 90u8.wrapping_add(x), 255]);
+        }
+        let mut cropped = vec![0u8; out.0 as usize * out.1 as usize * 4];
+        super::crop_scale_into(&pixels, size, view, out, &mut cropped);
+        let reference = reference_crop(&pixels, size, view, out);
+        assert_eq!(cropped.len(), reference.len());
+        // Fixed-point weights may land one level from the float reference;
+        // alpha is written opaque.
+        for (index, (got, want)) in cropped.iter().zip(&reference).enumerate() {
+            if index % 4 == 3 {
+                assert_eq!(*got, 255, "alpha at byte {index}");
+            } else {
+                assert!(
+                    got.abs_diff(*want) <= 1,
+                    "byte {index}: crop {got}, reference {want}"
+                );
+            }
+        }
+    }
+
+    fn reference_crop(
+        pixels: &[u8],
+        size: (u32, u32),
+        view: (f64, f64, f64, f64),
+        out: (u32, u32),
+    ) -> Vec<u8> {
+        let mut output = vec![0u8; out.0 as usize * out.1 as usize * 4];
+        let step_x = view.2 / f64::from(out.0);
+        let step_y = view.3 / f64::from(out.1);
+        let width = size.0 as usize;
+        let height = size.1 as usize;
+        for oy in 0..out.1 as usize {
+            let source_y = view.1 + (oy as f64 + 0.5) * step_y - 0.5;
+            for ox in 0..out.0 as usize {
+                let source_x = view.0 + (ox as f64 + 0.5) * step_x - 0.5;
+                let x = source_x.clamp(0.0, width.saturating_sub(1) as f64);
+                let y = source_y.clamp(0.0, height.saturating_sub(1) as f64);
+                let x0 = x as usize;
+                let y0 = y as usize;
+                let x1 = (x0 + 1).min(width - 1);
+                let y1 = (y0 + 1).min(height - 1);
+                let fx = x - x0 as f64;
+                let fy = y - y0 as f64;
+                let offsets = [
+                    (y0 * width + x0) * 4,
+                    (y0 * width + x1) * 4,
+                    (y1 * width + x0) * 4,
+                    (y1 * width + x1) * 4,
+                ];
+                let offset = (oy * out.0 as usize + ox) * 4;
+                for channel in 0..4 {
+                    let top = f64::from(pixels[offsets[0] + channel]) * (1.0 - fx)
+                        + f64::from(pixels[offsets[1] + channel]) * fx;
+                    let bottom = f64::from(pixels[offsets[2] + channel]) * (1.0 - fx)
+                        + f64::from(pixels[offsets[3] + channel]) * fx;
+                    output[offset + channel] = (top * (1.0 - fy) + bottom * fy + 0.5) as u8;
+                }
+            }
+        }
+        output
+    }
+
+    #[test]
+    fn the_boxed_cursor_overlay_matches_the_whole_frame_draw() {
+        use crate::recording::editor::model::{ClickEffect, CursorSettings};
+        use crate::recording::editor::sidecar::{
+            CaptureRegion, ClickSample, CursorKind, PointerSample, PointerSidecar,
+        };
+        let size = (320, 180);
+        let mut frame = vec![0u8; size.0 as usize * size.1 as usize * 4];
+        for (index, pixel) in frame.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+            let x = (index % size.0 as usize) as u8;
+            let y = (index / size.0 as usize) as u8;
+            pixel.copy_from_slice(&[x, y.wrapping_mul(3), 200 - x / 2, 255]);
+        }
+        let mut sidecar = PointerSidecar::new(
+            0,
+            CaptureRegion {
+                x: 0,
+                y: 0,
+                w: size.0,
+                h: size.1,
+            },
+        );
+        sidecar.pointer = (0..30)
+            .map(|step| PointerSample {
+                t: step as f64 / 30.0,
+                x: 180.0 + step as f64 * 2.0,
+                y: 60.0 + step as f64 * 2.0,
+                kind: CursorKind::Default,
+                cursor_id: None,
+            })
+            .collect();
+        sidecar.clicks = vec![ClickSample {
+            t: 0.2,
+            x: 190.0,
+            y: 72.0,
+            button: 1,
+            cursor_id: None,
+        }];
+        let view = (100.0, 40.0, 200.0, 120.0);
+        for effect in [ClickEffect::Ripple, ClickEffect::Circle] {
+            let settings = CursorSettings {
+                click_effect: effect,
+                ..CursorSettings::default()
+            };
+            let mut fast = frame.clone();
+            let mut layer = gtk4::cairo::ImageSurface::create(
+                gtk4::cairo::Format::ARgb32,
+                size.0 as i32,
+                size.1 as i32,
+            )
+            .unwrap();
+            super::draw_cursor(
+                &mut fast,
+                size,
+                view,
+                &sidecar,
+                std::path::Path::new(""),
+                settings,
+                0.21,
+                size,
+                f64::from(size.0),
+                1.0,
+                &mut layer,
+            );
+            let mut reference = frame.clone();
+            legacy_draw_cursor(
+                &mut reference,
+                size,
+                view,
+                &sidecar,
+                std::path::Path::new(""),
+                settings,
+                0.21,
+                size,
+            );
+            let max_delta = fast
+                .iter()
+                .zip(reference.iter())
+                .map(|(left, right)| left.abs_diff(*right))
+                .max()
+                .unwrap_or(0);
+            assert!(
+                max_delta == 0,
+                "{effect:?} overlay differs from the whole-frame draw by {max_delta}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_nv12_cursor_overlay_matches_the_rgba_draw() {
+        use super::{cursor_box, draw_cursor, draw_cursor_nv12, CursorScratch};
+        use crate::recording::editor::model::ClickEffect;
+        use crate::recording::editor::sidecar::{
+            CaptureRegion, ClickSample, CursorKind, PointerSample, PointerSidecar,
+        };
+        use crate::video_editor::pixels::{Nv12Converter, YuvSpace};
+        let size = (320u32, 180u32);
+        let (width, height) = (size.0 as usize, size.1 as usize);
+        // Smooth footage, so a whole-frame round trip is near exact and the
+        // RGBA path is a fair reference.
+        let mut frame = vec![0u8; width * height * 4];
+        for (index, pixel) in frame.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+            let x = (index % width) as f64 / width as f64;
+            let y = (index / width) as f64 / height as f64;
+            pixel.copy_from_slice(&[
+                (40.0 + 160.0 * x) as u8,
+                (60.0 + 120.0 * y) as u8,
+                (180.0 - 100.0 * x) as u8,
+                255,
+            ]);
+        }
+        let mut sidecar = PointerSidecar::new(
+            0,
+            CaptureRegion {
+                x: 0,
+                y: 0,
+                w: size.0,
+                h: size.1,
+            },
+        );
+        sidecar.pointer = (0..30)
+            .map(|step| PointerSample {
+                t: step as f64 / 30.0,
+                x: 180.0 + step as f64 * 2.0,
+                y: 60.0 + step as f64 * 2.0,
+                kind: CursorKind::Default,
+                cursor_id: None,
+            })
+            .collect();
+        sidecar.clicks = vec![ClickSample {
+            t: 0.2,
+            x: 190.0,
+            y: 72.0,
+            button: 1,
+            cursor_id: None,
+        }];
+        let view = (100.0, 40.0, 200.0, 120.0);
+        let converter = Nv12Converter::new(YuvSpace::from_probe(None, None));
+        let mut base = vec![0u8; width * height * 3 / 2];
+        converter.convert_into(&frame, size, &mut base);
+        let layer = || {
+            gtk4::cairo::ImageSurface::create(
+                gtk4::cairo::Format::ARgb32,
+                size.0 as i32,
+                size.1 as i32,
+            )
+            .unwrap()
+        };
+        for effect in [ClickEffect::Circle, ClickEffect::None] {
+            let settings = CursorSettings {
+                click_effect: effect,
+                ..CursorSettings::default()
+            };
+            let mut rgba = vec![0u8; width * height * 4];
+            converter.to_rgba_into(&base, size, &mut rgba);
+            draw_cursor(
+                &mut rgba,
+                size,
+                view,
+                &sidecar,
+                std::path::Path::new(""),
+                settings,
+                0.21,
+                size,
+                f64::from(size.0),
+                1.0,
+                &mut layer(),
+            );
+            let mut expected = vec![0u8; base.len()];
+            converter.convert_into(&rgba, size, &mut expected);
+            let mut fast = base.clone();
+            draw_cursor_nv12(
+                &mut fast,
+                size,
+                None,
+                view,
+                &sidecar,
+                std::path::Path::new(""),
+                settings,
+                0.21,
+                size,
+                f64::from(size.0),
+                1.0,
+                &mut layer(),
+                &converter,
+                &mut CursorScratch::default(),
+            );
+            assert_ne!(fast, base, "{effect:?} drew nothing");
+            let (x, y, w, h) = cursor_box(
+                size,
+                view,
+                &sidecar,
+                settings,
+                0.21,
+                size,
+                f64::from(size.0),
+            )
+            .expect("the cursor is on screen");
+            let (x0, y0) = ((x & !1) as usize, (y & !1) as usize);
+            let x1 = (((x + w + 1) & !1).min(size.0 & !1)) as usize;
+            let y1 = (((y + h + 1) & !1).min(size.1 & !1)) as usize;
+            let inside = |index: usize| {
+                let (row, column) = if index < width * height {
+                    (index / width, index % width)
+                } else {
+                    let offset = index - width * height;
+                    (offset / width * 2, offset % width)
+                };
+                row >= y0 && row < y1 && column >= x0 && column < x1
+            };
+            let mut max_delta = 0u8;
+            let mut total = 0.0;
+            let mut count = 0usize;
+            for (index, (&got, (&want, &before))) in fast
+                .iter()
+                .zip(expected.iter().zip(base.iter()))
+                .enumerate()
+            {
+                if inside(index) {
+                    let delta = got.abs_diff(want);
+                    max_delta = max_delta.max(delta);
+                    total += f64::from(delta);
+                    count += 1;
+                } else {
+                    assert_eq!(
+                        got, before,
+                        "{effect:?} changed a byte outside the box at {index}"
+                    );
+                }
+            }
+            assert!(
+                max_delta <= 3,
+                "{effect:?} NV12 overlay differs from the RGBA draw by {max_delta}"
+            );
+            assert!(
+                total / count.max(1) as f64 <= 1.0,
+                "{effect:?} NV12 overlay drifts from the RGBA draw"
+            );
+        }
+    }
+
+    /// The previous exporter's compositing path: copy the whole frame into a
+    /// cairo surface, draw, and copy the whole frame back. Kept in the tests as
+    /// the reference the boxed overlay has to reproduce.
+    #[allow(clippy::too_many_arguments)]
+    fn legacy_draw_cursor(
+        pixels: &mut [u8],
+        size: (u32, u32),
+        view: (f64, f64, f64, f64),
+        sidecar: &crate::recording::editor::sidecar::PointerSidecar,
+        source_path: &std::path::Path,
+        settings: crate::recording::editor::model::CursorSettings,
+        time: f64,
+        source_size: (u32, u32),
+    ) {
+        use crate::recording::editor::model::ClickEffect;
+        let motion = crate::recording::editor::sidecar::CursorMotion {
+            smooth: settings.smooth,
+            hide_idle: settings.hide_idle,
+            idle_ms: settings.idle_ms,
+            speed: settings.speed,
+            rotation_mode: settings.rotation_mode,
+            rotation_ratio: settings.rotate_on_x_movement_ratio,
+            base_rotation_deg: settings.base_rotation_deg,
+        };
+        let Some(frame) = sidecar.presented_in_video_at(
+            time,
+            motion,
+            f64::from(source_size.0),
+            f64::from(source_size.1),
+        ) else {
+            return;
+        };
+        let mut bgra = pixels.to_vec();
+        for pixel in bgra.as_chunks_mut::<4>().0 {
+            pixel.swap(0, 2);
+        }
+        let settings = settings.clamped();
+        let mut surface = gtk4::cairo::ImageSurface::create_for_data(
+            bgra,
+            gtk4::cairo::Format::ARgb32,
+            size.0 as i32,
+            size.1 as i32,
+            size.0 as i32 * 4,
+        )
+        .unwrap();
+        {
+            let context = gtk4::cairo::Context::new(&surface).unwrap();
+            let map = |point| {
+                super::zoom::source_to_stage(point, view, f64::from(size.0), f64::from(size.1))
+            };
+            if settings.click_effect != ClickEffect::Ripple {
+                for (x, y, progress) in sidecar.click_ripples_in_video_at(
+                    time,
+                    settings.click_window_seconds(),
+                    f64::from(source_size.0),
+                    f64::from(source_size.1),
+                ) {
+                    let (x, y) = map((x, y));
+                    crate::recording::editor::cursor_sprite::draw_click(
+                        &context,
+                        x,
+                        y,
+                        progress,
+                        settings,
+                        frame.alpha,
+                        f64::from(size.0),
+                    );
+                }
+            }
+            let (x, y) = map((frame.x, frame.y));
+            let capture = sidecar.cursor_capture(source_path, &frame);
+            crate::recording::editor::cursor_sprite::draw_recorded(
+                &context,
+                x,
+                y,
+                1.0,
+                super::press_cursor_scale(sidecar, time),
+                &frame,
+                capture.as_ref(),
+                settings,
+                frame.alpha,
+            );
+        }
+        surface.flush();
+        let data = surface.data().unwrap();
+        for (target, source) in pixels
+            .as_chunks_mut::<4>()
+            .0
+            .iter_mut()
+            .zip(data.as_chunks::<4>().0)
+        {
+            target[0] = source[2];
+            target[1] = source[1];
+            target[2] = source[0];
+            target[3] = 255;
+        }
+    }
+
+    fn parse_span(text: &str) -> Option<(f64, f64)> {
+        let (start, end) = text.split_once(':')?;
+        let start: f64 = start.trim().parse().ok()?;
+        let end: f64 = end.trim().parse().ok()?;
+        (start.is_finite() && end.is_finite() && start >= 0.0 && end > start)
+            .then_some((start, end))
+    }
+
+    #[test]
+    fn a_measurement_span_is_two_seconds_in_source_time() {
+        assert_eq!(parse_span("0:20"), Some((0.0, 20.0)));
+        assert_eq!(parse_span(" 9.9 : 11.9 "), Some((9.9, 11.9)));
+        assert_eq!(parse_span("20:20"), None);
+        assert_eq!(parse_span("abc"), None);
+        assert_eq!(parse_span("-1:20"), None);
+    }
+
+    /// End-to-end export throughput on a generated 1080p clip, with and
+    /// without a zoom, printed as ms/frame.
+    /// Ignored because it shells out to ffmpeg and runs for a few seconds; run
+    /// it explicitly when changing the export pipeline:
+    ///
+    /// ```text
+    /// cargo test --release --lib -- --ignored --nocapture export_throughput
+    /// ```
+    #[test]
+    #[ignore = "benchmark: shells out to ffmpeg"]
+    fn export_throughput_benchmark() {
+        use super::{start_export, ExportModel, ExportUpdate};
+        use crate::recording::editor::model::CursorSettings;
+        use crate::video_editor::timeline::ZoomClip;
+
+        let dir = std::env::temp_dir().join("apexshot-export-bench");
+        std::fs::create_dir_all(&dir).expect("benchmark scratch dir");
+        let source = dir.join("src1080p30.mp4");
+        if !source.is_file() {
+            let status =
+                crate::utils::hidden_command(crate::recording::editor::ffmpeg::ffmpeg_executable())
+                    .args([
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-y",
+                        "-f",
+                        "lavfi",
+                        "-i",
+                        "testsrc2=size=1920x1080:rate=30",
+                        "-frames:v",
+                        "300",
+                        "-c:v",
+                        "libx264",
+                        "-preset",
+                        "ultrafast",
+                        "-crf",
+                        "16",
+                    ])
+                    .arg(&source)
+                    .status()
+                    .expect("generate benchmark clip");
+            assert!(
+                status.success(),
+                "ffmpeg could not build the benchmark clip"
+            );
+        }
+        let camera = dir.join("cam720p30.mp4");
+        if !camera.is_file() {
+            let status =
+                crate::utils::hidden_command(crate::recording::editor::ffmpeg::ffmpeg_executable())
+                    .args([
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-y",
+                        "-f",
+                        "lavfi",
+                        "-i",
+                        "testsrc=size=1280x720:rate=30",
+                        "-frames:v",
+                        "300",
+                        "-c:v",
+                        "libx264",
+                        "-preset",
+                        "ultrafast",
+                        "-crf",
+                        "18",
+                    ])
+                    .arg(&camera)
+                    .status()
+                    .expect("generate benchmark camera clip");
+            assert!(
+                status.success(),
+                "ffmpeg could not build the benchmark camera clip"
+            );
+        }
+        let bubble = crate::video_editor::webcam::WebcamExport {
+            path: camera.clone(),
+            settings: crate::video_editor::webcam::LayerSettings {
+                x: 0.72,
+                y: 0.68,
+                w: 0.24,
+                h: 0.28,
+                radius: 0.5,
+                ..Default::default()
+            },
+            layouts: crate::video_editor::webcam::LayoutSettings::default(),
+            split_gap: 0.0,
+            pane_radius: 0.0,
+            start: 0.0,
+            silence: Vec::new(),
+            track_seconds: 10.0,
+            video_seconds: 10.0,
+            last_frame: 9.95,
+            source_size: (1280, 720),
+        };
+
+        let zoom = ZoomClip {
+            start: 0.0,
+            end: 10.0,
+            scale: 1.6,
+            center: (960.0, 540.0),
+            hidden: false,
+            mode: crate::video_editor::timeline::ZoomMode::Manual,
+            instant: false,
+            anchor: None,
+        };
+        for (label, zooms, webcam) in [
+            ("no zoom", Vec::new(), None),
+            ("zoom 1.6x", vec![zoom], None),
+            ("zoom 1.6x with camera", vec![zoom], Some(bubble)),
+        ] {
+            let output = dir.join(format!("out-{}.mp4", label.replace(' ', "-")));
+            let _ = std::fs::remove_file(&output);
+            let model = ExportModel {
+                source: source.clone(),
+                source_size: (1920, 1080),
+                trim_start: 0.0,
+                trim_end: 10.0,
+                cuts: Vec::new(),
+                segment_starts: Vec::new(),
+                segment_speeds: Vec::new(),
+                freeze_tail: 0.0,
+                zooms,
+                zoom_camera: crate::video_editor::zoom::ZoomCameraSettings::default(),
+                cursor: CursorSettings::default(),
+                sidecar: None,
+                webcam,
+                stage: None,
+                canvas: None,
+                crf: 20,
+                audio: Vec::new(),
+                effects: Default::default(),
+                cursor_hidden: false,
+            };
+            let started = std::time::Instant::now();
+            let handle = start_export(model, output.clone());
+            let total = loop {
+                match handle.receiver.recv_timeout(Duration::from_secs(300)) {
+                    Ok(ExportUpdate::Finished(_, _)) => break 300.0,
+                    Ok(ExportUpdate::Progress { total, .. }) => {
+                        if total > 0 {
+                            continue;
+                        }
+                    }
+                    Ok(ExportUpdate::Failed(message)) => panic!("export failed: {message}"),
+                    Ok(ExportUpdate::Cancelled) => panic!("export cancelled"),
+                    Err(error) => panic!("export stalled: {error}"),
+                }
+            };
+            let elapsed = started.elapsed().as_secs_f64();
+            eprintln!(
+                "[bench] {label}: {:.1} ms/frame ({:.0} fps) over {total:.0} frames",
+                elapsed * 1000.0 / total,
+                total / elapsed
+            );
+            let bytes = std::fs::metadata(&output).expect("output written").len();
+            assert!(bytes > 1000, "{label}: output looks empty ({bytes} bytes)");
+        }
+    }
+
+    fn probe_duration(path: &std::path::Path) -> Option<f64> {
+        let output =
+            crate::utils::hidden_command(crate::recording::editor::ffmpeg::ffprobe_executable())
+                .args([
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                ])
+                .arg(path)
+                .output()
+                .ok()?;
+        String::from_utf8_lossy(&output.stdout).trim().parse().ok()
+    }
+}
+
+#[cfg(test)]
+mod webcam_export_tests {
+    use super::*;
+    use crate::recording::editor::model::CursorTheme;
+    use crate::recording::editor::sidecar::WebcamTrack;
+    use crate::video_editor::webcam::{CameraLayout, LayerSettings, LayoutCue, LayoutSettings};
+    use std::fs;
+    use std::time::Duration;
+
+    /// Generate a solid clip with the bundled ffmpeg, or None when there is
+    /// none to run.
+    fn solid_clip(path: &Path, colour: &str, size: &str, seconds: f64) -> bool {
+        let status = crate::utils::hidden_command(ffmpeg::ffmpeg_executable())
+            .args(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi"])
+            .args(["-i", &format!("color=c={colour}:s={size}:d={seconds}:r=30")])
+            .args(["-pix_fmt", "yuv420p"])
+            .arg(path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        matches!(status, Ok(status) if status.success())
+    }
+
+    /// A clip whose left half is black and right half white, for edge checks.
+    fn halves_clip(path: &Path, size: (u32, u32), seconds: f64) -> bool {
+        let half = format!("{}x{}", size.0 / 2, size.1);
+        let status = crate::utils::hidden_command(ffmpeg::ffmpeg_executable())
+            .args(["-y", "-hide_banner", "-loglevel", "error"])
+            .args([
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("color=c=black:s={half}:d={seconds}:r=30"),
+            ])
+            .args([
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("color=c=white:s={half}:d={seconds}:r=30"),
+            ])
+            .args([
+                "-filter_complex",
+                "[0:v][1:v]hstack=inputs=2",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        matches!(status, Ok(status) if status.success())
+    }
+
+    /// One frame of the file as RGB rows, for pixel checks.
+    fn frame_rgb(path: &Path, seconds: f64, size: (u32, u32)) -> Option<Vec<u8>> {
+        let output = crate::utils::hidden_command(ffmpeg::ffmpeg_executable())
+            .args(["-hide_banner", "-loglevel", "error", "-nostdin"])
+            .args(["-ss", &format!("{seconds:.3}")])
+            .arg("-i")
+            .arg(path)
+            .args(["-frames:v", "1"])
+            .args(["-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"])
+            .output()
+            .ok()?;
+        let expected = size.0 as usize * size.1 as usize * 3;
+        (output.stdout.len() >= expected).then(|| output.stdout[..expected].to_vec())
+    }
+
+    fn pixel(frame: &[u8], width: u32, x: u32, y: u32) -> [u8; 3] {
+        let offset = (y as usize * width as usize + x as usize) * 3;
+        [frame[offset], frame[offset + 1], frame[offset + 2]]
+    }
+
+    /// A clip whose left half is red and whose right half is green, so a
+    /// mirrored layer reads as swapped colours.
+    fn split_clip(path: &Path, size: &str, seconds: f64) -> bool {
+        let mut parts = size.split('x');
+        let half = parts
+            .next()
+            .and_then(|width| width.parse::<u32>().ok())
+            .map(|width| width / 2)
+            .unwrap_or(160);
+        let height = parts
+            .next()
+            .and_then(|height| height.parse::<u32>().ok())
+            .unwrap_or(320);
+        let status = crate::utils::hidden_command(ffmpeg::ffmpeg_executable())
+            .args(["-y", "-hide_banner", "-loglevel", "error"])
+            .args([
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("color=c=red:s={half}x{height}:d={seconds}:r=30"),
+            ])
+            .args([
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("color=c=lime:s={half}x{height}:d={seconds}:r=30"),
+            ])
+            .args(["-filter_complex", "hstack=inputs=2", "-pix_fmt", "yuv420p"])
+            .arg(path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        matches!(status, Ok(status) if status.success())
+    }
+
+    /// A clip that is red for `first` seconds, then lime until `seconds`.
+    fn timed_clip(path: &Path, size: &str, first: f64, seconds: f64) -> bool {
+        let status = crate::utils::hidden_command(ffmpeg::ffmpeg_executable())
+            .args(["-y", "-hide_banner", "-loglevel", "error"])
+            .args([
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("color=c=red:s={size}:d={first}:r=30"),
+            ])
+            .args([
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("color=c=lime:s={size}:d={}:r=30", seconds - first),
+            ])
+            .args([
+                "-filter_complex",
+                "[0:v][1:v]concat=n=2:v=1:a=0",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        matches!(status, Ok(status) if status.success())
+    }
+
+    /// A clip with a bright centre stripe between two edge stripes, so a
+    /// uniform cover crop shows the centre while a squeezed copy shows all
+    /// three.
+    fn striped_clip(path: &Path, seconds: f64) -> bool {
+        let status = crate::utils::hidden_command(ffmpeg::ffmpeg_executable())
+            .args(["-y", "-hide_banner", "-loglevel", "error"])
+            .args([
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("color=c=yellow:s=80x240:d={seconds}:r=30"),
+            ])
+            .args([
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("color=c=blue:s=160x240:d={seconds}:r=30"),
+            ])
+            .args([
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("color=c=yellow:s=80x240:d={seconds}:r=30"),
+            ])
+            .args(["-filter_complex", "hstack=inputs=3", "-pix_fmt", "yuv420p"])
+            .arg(path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        matches!(status, Ok(status) if status.success())
+    }
+
+    /// The width and height of the file's first video stream.
+    fn video_dimensions(path: &Path) -> Option<(u32, u32)> {
+        let output = crate::utils::hidden_command(ffmpeg::ffprobe_executable())
+            .args(["-v", "error", "-select_streams", "v:0"])
+            .args(["-show_entries", "stream=width,height"])
+            .args(["-of", "csv=p=0"])
+            .arg(path)
+            .output()
+            .ok()?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        let mut parts = text.trim().split(',');
+        Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
+    }
+
+    /// Export one frame of `source` with `layer` and `layouts` baked in, of
+    /// `name`.mp4.
+    fn exported_frame(
+        dir: &Path,
+        source: &Path,
+        track_path: &Path,
+        name: &str,
+        layer: LayerSettings,
+        layouts: LayoutSettings,
+    ) -> Vec<u8> {
+        exported_frame_with_zooms(dir, source, track_path, name, layer, layouts, Vec::new())
+    }
+
+    /// [`exported_frame`] with `zooms` on the composition's zoom track.
+    fn exported_frame_with_zooms(
+        dir: &Path,
+        source: &Path,
+        track_path: &Path,
+        name: &str,
+        layer: LayerSettings,
+        layouts: LayoutSettings,
+        zooms: Vec<ZoomClip>,
+    ) -> Vec<u8> {
+        exported_frames(
+            dir,
+            source,
+            track_path,
+            name,
+            layer,
+            layouts,
+            zooms,
+            0.0,
+            &[0.5],
+        )
+        .remove(0)
+    }
+
+    /// [`exported_frame`] with `zooms` on the composition's zoom track,
+    /// `camera_start` into the camera track, for every instant in `times`.
+    #[allow(clippy::too_many_arguments)]
+    fn exported_frames(
+        dir: &Path,
+        source: &Path,
+        track_path: &Path,
+        name: &str,
+        layer: LayerSettings,
+        layouts: LayoutSettings,
+        zooms: Vec<ZoomClip>,
+        camera_start: f64,
+        times: &[f64],
+    ) -> Vec<Vec<u8>> {
+        let output = dir.join(format!("{name}.mp4"));
+        let model = ExportModel {
+            source: source.to_path_buf(),
+            source_size: (320, 240),
+            trim_start: 0.0,
+            trim_end: 1.5,
+            cuts: Vec::new(),
+            segment_starts: Vec::new(),
+            segment_speeds: Vec::new(),
+            freeze_tail: 0.0,
+            zooms,
+            zoom_camera: crate::video_editor::zoom::ZoomCameraSettings::default(),
+            cursor: CursorSettings::default(),
+            sidecar: PointerSidecar::load_next_to_video(source),
+            webcam: Some(webcam::WebcamExport {
+                path: track_path.to_path_buf(),
+                settings: layer,
+                layouts,
+                split_gap: 0.0,
+                pane_radius: 0.0,
+                track_seconds: 2.0,
+                start: camera_start,
+                video_seconds: 2.0,
+                last_frame: 1.95,
+                source_size: (320, 320),
+                silence: Vec::new(),
+            }),
+            stage: None,
+            canvas: None,
+            crf: 30,
+            audio: Vec::new(),
+            effects: Default::default(),
+            cursor_hidden: false,
+        };
+        let handle = start_export(model, output.clone());
+        loop {
+            match handle.receiver.recv_timeout(Duration::from_secs(120)) {
+                Ok(ExportUpdate::Progress { .. }) => {}
+                Ok(ExportUpdate::Finished(path, _)) => {
+                    assert_eq!(path, output);
+                    break;
+                }
+                Ok(ExportUpdate::Failed(message)) => panic!("export failed: {message}"),
+                Ok(ExportUpdate::Cancelled) => panic!("export cancelled itself"),
+                Err(error) => panic!("export did not report back: {error}"),
+            }
+        }
+        let frames = times
+            .iter()
+            .map(|t| frame_rgb(&output, *t, (320, 240)).expect("the export should decode"))
+            .collect();
+        let _ = fs::remove_file(&output);
+        frames
+    }
+
+    #[test]
+    fn the_webcam_layer_composites_where_the_panel_puts_it() {
+        let dir = std::env::temp_dir().join(format!(
+            "apexshot-webcam-export-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        if fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let source = dir.join("screen.mp4");
+        if !solid_clip(&source, "0x1e1e1e", "320x240", 2.0) {
+            crate::test_support::skip_without_media(
+                "skipping the webcam export test: ffmpeg is unavailable",
+            );
+            return;
+        }
+        let Some(track_path) = webcam_track_file(&source) else {
+            eprintln!("skipping the webcam export test: no sidecar directory");
+            return;
+        };
+        if let Some(parent) = track_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if !split_clip(&track_path, "320x320", 2.0) {
+            return;
+        }
+
+        let track = WebcamTrack {
+            file: track_path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            width: 320,
+            height: 320,
+            duration: 2.0,
+            start: 0.0,
+            x: 0.6,
+            y: 0.6,
+            w: 0.35,
+            h: 0.35,
+            shape: 1,
+            flip: false,
+        };
+        let mut sidecar = PointerSidecar::new(
+            0,
+            crate::recording::editor::sidecar::CaptureRegion::from_capture(None, None, None, None),
+        );
+        sidecar.webcam = Some(track);
+        let sidecar_path = PointerSidecar::sidecar_path(&source);
+        if sidecar.write(&sidecar_path).is_err() {
+            return;
+        }
+
+        // The bubble covers 0.6..0.95 of the frame, so half of it starts 8px in
+        // and the other half ends 16px from the right edge.
+        let bubble = LayerSettings {
+            x: 0.6,
+            y: 0.6,
+            w: 0.35,
+            h: 0.35,
+            radius: 0.08,
+            ..Default::default()
+        };
+        let frame = exported_frame(
+            &dir,
+            &source,
+            &track_path,
+            "bubble",
+            bubble,
+            LayoutSettings::default(),
+        );
+        let left = pixel(&frame, 320, 200, 180);
+        let right = pixel(&frame, 320, 280, 180);
+        assert!(
+            left[0] > 150 && left[1] < 90,
+            "the camera's left half should sit inside the bubble: {left:?}"
+        );
+        assert!(
+            right[1] > 150 && right[0] < 90,
+            "the camera's right half should sit inside the bubble: {right:?}"
+        );
+        let outside = pixel(&frame, 320, 20, 20);
+        assert!(
+            outside[0] < 70 && outside[2] < 70,
+            "the footage should be untouched outside the bubble: {outside:?}"
+        );
+
+        // Mirroring swaps the two halves without moving the bubble.
+        let mirrored = LayerSettings {
+            mirror: true,
+            ..bubble
+        };
+        let frame = exported_frame(
+            &dir,
+            &source,
+            &track_path,
+            "mirror",
+            mirrored,
+            LayoutSettings::default(),
+        );
+        let left = pixel(&frame, 320, 200, 180);
+        let right = pixel(&frame, 320, 280, 180);
+        assert!(
+            left[1] > 150 && left[0] < 90,
+            "a mirrored camera shows its right half on the left: {left:?}"
+        );
+        assert!(
+            right[0] > 150 && right[1] < 90,
+            "a mirrored camera shows its left half on the right: {right:?}"
+        );
+
+        // A fullscreen camera covers the frame instead of sitting in it, so the
+        // corner the footage owns in every other layer is the camera here.
+        let fullscreen = LayerSettings {
+            fullscreen: true,
+            ..bubble
+        };
+        let frame = exported_frame(
+            &dir,
+            &source,
+            &track_path,
+            "fullscreen",
+            fullscreen,
+            LayoutSettings::default(),
+        );
+        let corner = pixel(&frame, 320, 10, 10);
+        assert!(
+            corner[0] > 150,
+            "a fullscreen camera should reach the corner of the frame: {corner:?}"
+        );
+
+        let _ = fs::remove_file(&sidecar_path);
+        let _ = fs::remove_file(&track_path);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_camera_casts_the_studied_shadow_down_right() {
+        let dir = std::env::temp_dir().join(format!(
+            "apexshot-webcam-shadow-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        if fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let source = dir.join("screen.mp4");
+        if !solid_clip(&source, "0xd0d0d0", "320x240", 2.0) {
+            crate::test_support::skip_without_media(
+                "skipping the camera shadow export test: ffmpeg is unavailable",
+            );
+            return;
+        }
+        let Some(track_path) = webcam_track_file(&source) else {
+            eprintln!("skipping the webcam export test: no sidecar directory");
+            return;
+        };
+        if let Some(parent) = track_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if !split_clip(&track_path, "320x320", 2.0) {
+            return;
+        }
+
+        let track = WebcamTrack {
+            file: track_path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            width: 320,
+            height: 320,
+            duration: 2.0,
+            start: 0.0,
+            x: 0.6,
+            y: 0.6,
+            w: 0.35,
+            h: 0.35,
+            shape: 1,
+            flip: false,
+        };
+        let mut sidecar = PointerSidecar::new(
+            0,
+            crate::recording::editor::sidecar::CaptureRegion::from_capture(None, None, None, None),
+        );
+        sidecar.webcam = Some(track);
+        let sidecar_path = PointerSidecar::sidecar_path(&source);
+        if sidecar.write(&sidecar_path).is_err() {
+            return;
+        }
+
+        // A round 96px bubble centred near (146, 110) once the studied inset
+        // places it. The studied light sits far up-left, so the shadow lies
+        // against the bubble's lower-right edge and is gone 150 stage units
+        // (33px at 240 tall) out; nothing up-left.
+        let bubble = LayerSettings {
+            x: 0.3,
+            y: 0.25,
+            w: 0.3,
+            h: 0.4,
+            radius: 1.0,
+            ..Default::default()
+        };
+        let frame = exported_frame(
+            &dir,
+            &source,
+            &track_path,
+            "shadow",
+            bubble,
+            LayoutSettings::default(),
+        );
+        // Each probe averages a 5x5 patch, so the encoder's noise around the
+        // bubble's edge cannot pass for a shadow.
+        let patch = |cx: u32, cy: u32| -> [u8; 3] {
+            let mut sum = [0u32; 3];
+            for y in cy - 2..=cy + 2 {
+                for x in cx - 2..=cx + 2 {
+                    let value = pixel(&frame, 320, x, y);
+                    for channel in 0..3 {
+                        sum[channel] += u32::from(value[channel]);
+                    }
+                }
+            }
+            sum.map(|total| (total / 25) as u8)
+        };
+        let background = patch(10, 10);
+        let lit = patch(104, 68);
+        let shaded = patch(186, 150);
+        let beyond = patch(222, 186);
+        // The encoder tints the corner the bright camera sits towards, so the
+        // falloff is judged against that same corner rather than the far one.
+        let corner = patch(300, 220);
+        for channel in 0..3 {
+            assert!(
+                i32::from(shaded[channel]) < i32::from(background[channel]) - 8,
+                "the shadow should darken the background down-right of the bubble: {shaded:?} vs {background:?}"
+            );
+            assert!(
+                (i32::from(lit[channel]) - i32::from(background[channel])).abs() <= 4,
+                "nothing should darken up-left of the bubble: {lit:?} vs {background:?}"
+            );
+            assert!(
+                (i32::from(beyond[channel]) - i32::from(corner[channel])).abs() <= 4,
+                "the shadow should be gone past its falloff: {beyond:?} vs {corner:?}"
+            );
+        }
+
+        let _ = fs::remove_file(&sidecar_path);
+        let _ = fs::remove_file(&track_path);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_camera_exports_at_the_studied_size_and_shrinks_in_a_zoom() {
+        let dir = std::env::temp_dir().join(format!(
+            "apexshot-webcam-size-export-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        if fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let source = dir.join("screen.mp4");
+        if !solid_clip(&source, "0x1e1e1e", "320x240", 2.0) {
+            crate::test_support::skip_without_media(
+                "skipping the webcam export test: ffmpeg is unavailable",
+            );
+            return;
+        }
+        let Some(track_path) = webcam_track_file(&source) else {
+            eprintln!("skipping the webcam export test: no sidecar directory");
+            return;
+        };
+        if let Some(parent) = track_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if !split_clip(&track_path, "320x320", 2.0) {
+            return;
+        }
+
+        let track = WebcamTrack {
+            file: track_path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            width: 320,
+            height: 320,
+            duration: 2.0,
+            start: 0.0,
+            x: 0.6,
+            y: 0.6,
+            w: 0.35,
+            h: 0.35,
+            shape: 1,
+            flip: false,
+        };
+        let mut sidecar = PointerSidecar::new(
+            0,
+            crate::recording::editor::sidecar::CaptureRegion::from_capture(None, None, None, None),
+        );
+        sidecar.webcam = Some(track);
+        let sidecar_path = PointerSidecar::sidecar_path(&source);
+        if sidecar.write(&sidecar_path).is_err() {
+            return;
+        }
+
+        // Studied sizing: a square camera at size 0.5 in a 320x240 frame is
+        // 120 px, half the shortest side. Centred: x 100..220, y 60..180.
+        let mut layer = LayerSettings {
+            radius: 0.0,
+            ..LayerSettings::default()
+        };
+        let frame_aspect = 320.0 / 240.0;
+        layer.set_overlay_aspect(1.0, frame_aspect);
+        layer.set_overlay_size(0.5, frame_aspect);
+        layer.set_overlay_alignment(0.5, 0.5);
+        let layouts = LayoutSettings {
+            default_layout: CameraLayout::CameraOverlay,
+            ..LayoutSettings::default()
+        };
+        let rest = exported_frame(&dir, &source, &track_path, "size", layer, layouts.clone());
+        let red = pixel(&rest, 320, 108, 120);
+        let green = pixel(&rest, 320, 212, 120);
+        assert!(
+            red[0] > 150 && red[1] < 90,
+            "the camera's left edge is at 100px: {red:?}"
+        );
+        assert!(
+            green[1] > 150 && green[0] < 90,
+            "the camera's right edge is at 220px: {green:?}"
+        );
+        for (x, y) in [(94, 120), (226, 120), (160, 54), (160, 186)] {
+            let outside = pixel(&rest, 320, x, y);
+            assert!(
+                outside[0] < 70 && outside[1] < 70,
+                "outside the 120px square at ({x},{y}): {outside:?}"
+            );
+        }
+
+        // Inside a zoom the camera is 0.8 of that, 96 px: x 112..208, y 72..168.
+        let zoom = ZoomClip {
+            start: 0.0,
+            end: 1.5,
+            scale: 2.0,
+            center: (0.0, 0.0),
+            hidden: false,
+            mode: crate::video_editor::timeline::ZoomMode::Auto,
+            instant: false,
+            anchor: None,
+        };
+        let zoomed = exported_frame_with_zooms(
+            &dir,
+            &source,
+            &track_path,
+            "zoomed",
+            layer,
+            layouts,
+            vec![zoom],
+        );
+        let red = pixel(&zoomed, 320, 118, 120);
+        let green = pixel(&zoomed, 320, 202, 120);
+        assert!(
+            red[0] > 150 && red[1] < 90,
+            "the zoomed camera's left edge is at 112px: {red:?}"
+        );
+        assert!(
+            green[1] > 150 && green[0] < 90,
+            "the zoomed camera's right edge is at 208px: {green:?}"
+        );
+        for (x, y) in [(106, 120), (214, 120), (160, 66), (160, 174)] {
+            let outside = pixel(&zoomed, 320, x, y);
+            assert!(
+                outside[0] < 70 && outside[1] < 70,
+                "outside the 96px square at ({x},{y}): {outside:?}"
+            );
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_change_to_screen_only_cuts_the_camera_in_the_export() {
+        let dir = std::env::temp_dir().join(format!(
+            "apexshot-webcam-screen-cut-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        if fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let source = dir.join("screen.mp4");
+        if !solid_clip(&source, "0x1e1e1e", "320x240", 2.0) {
+            crate::test_support::skip_without_media(
+                "skipping the webcam export test: ffmpeg is unavailable",
+            );
+            return;
+        }
+        let Some(track_path) = webcam_track_file(&source) else {
+            eprintln!("skipping the webcam export test: no sidecar directory");
+            return;
+        };
+        if let Some(parent) = track_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if !split_clip(&track_path, "320x320", 2.0) {
+            return;
+        }
+
+        let track = WebcamTrack {
+            file: track_path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            width: 320,
+            height: 320,
+            duration: 2.0,
+            start: 0.0,
+            x: 0.6,
+            y: 0.6,
+            w: 0.35,
+            h: 0.35,
+            shape: 1,
+            flip: false,
+        };
+        let mut sidecar = PointerSidecar::new(
+            0,
+            crate::recording::editor::sidecar::CaptureRegion::from_capture(None, None, None, None),
+        );
+        sidecar.webcam = Some(track);
+        let sidecar_path = PointerSidecar::sidecar_path(&source);
+        if sidecar.write(&sidecar_path).is_err() {
+            return;
+        }
+
+        let mut layer = LayerSettings {
+            radius: 0.0,
+            ..LayerSettings::default()
+        };
+        layer.set_overlay_aspect(1.0, 320.0 / 240.0);
+        layer.set_overlay_size(0.5, 320.0 / 240.0);
+        layer.set_overlay_alignment(0.5, 0.5);
+        // The camera switches to Screen only at 0.45 s; the frame at 0.5 s is
+        // 50 ms later, which the old 0.45 s fade would still show at ~95%.
+        let layouts = LayoutSettings {
+            default_layout: CameraLayout::CameraOverlay,
+            cues: vec![LayoutCue {
+                at: 0.45,
+                layout: CameraLayout::ScreenOnly,
+                position: None,
+                cutout_x: None,
+            }],
+            ..LayoutSettings::default()
+        };
+        let frame = exported_frame(&dir, &source, &track_path, "screen-cut", layer, layouts);
+        for (x, y) in [(120, 120), (200, 120)] {
+            let screen = pixel(&frame, 320, x, y);
+            assert!(
+                screen[0] < 70 && screen[1] < 70,
+                "no camera after the cut at ({x},{y}): {screen:?}"
+            );
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_zoomed_split_exports_the_full_screen_and_a_floating_camera() {
+        let dir = std::env::temp_dir().join(format!(
+            "apexshot-webcam-split-zoom-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        if fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let source = dir.join("screen.mp4");
+        if !solid_clip(&source, "0x1e1e1e", "320x240", 2.0) {
+            crate::test_support::skip_without_media(
+                "skipping the webcam export test: ffmpeg is unavailable",
+            );
+            return;
+        }
+        let Some(track_path) = webcam_track_file(&source) else {
+            eprintln!("skipping the webcam export test: no sidecar directory");
+            return;
+        };
+        if let Some(parent) = track_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if !split_clip(&track_path, "320x320", 2.0) {
+            return;
+        }
+
+        let track = WebcamTrack {
+            file: track_path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            width: 320,
+            height: 320,
+            duration: 2.0,
+            start: 0.0,
+            x: 0.6,
+            y: 0.6,
+            w: 0.35,
+            h: 0.35,
+            shape: 1,
+            flip: false,
+        };
+        let mut sidecar = PointerSidecar::new(
+            0,
+            crate::recording::editor::sidecar::CaptureRegion::from_capture(None, None, None, None),
+        );
+        sidecar.webcam = Some(track);
+        let sidecar_path = PointerSidecar::sidecar_path(&source);
+        if sidecar.write(&sidecar_path).is_err() {
+            return;
+        }
+
+        let layer = LayerSettings {
+            radius: 0.0,
+            ..LayerSettings::default()
+        };
+        let layouts = LayoutSettings {
+            default_layout: CameraLayout::SplitScreen,
+            split_auto: false,
+            ..LayoutSettings::default()
+        };
+        // At rest the camera fills the right-hand pane.
+        let rest = exported_frame(
+            &dir,
+            &source,
+            &track_path,
+            "split-rest",
+            layer,
+            layouts.clone(),
+        );
+        let pane = pixel(&rest, 320, 170, 50);
+        assert!(
+            pane[0] > 150 || pane[1] > 150,
+            "at rest the camera fills its pane: {pane:?}"
+        );
+        // Zoomed: the screen covers the frame and the camera floats bottom-right
+        // at x 225..305, y 105..225.
+        let zoom = ZoomClip {
+            start: 0.0,
+            end: 1.5,
+            scale: 2.0,
+            center: (0.0, 0.0),
+            hidden: false,
+            mode: crate::video_editor::timeline::ZoomMode::Auto,
+            instant: false,
+            anchor: None,
+        };
+        let zoomed = exported_frame_with_zooms(
+            &dir,
+            &source,
+            &track_path,
+            "split-zoomed",
+            layer,
+            layouts,
+            vec![zoom],
+        );
+        for (x, y) in [(170, 50), (100, 165), (215, 165), (265, 95), (265, 233)] {
+            let screen = pixel(&zoomed, 320, x, y);
+            assert!(
+                screen[0] < 70 && screen[1] < 70,
+                "the screen shows at ({x},{y}): {screen:?}"
+            );
+        }
+        let red = pixel(&zoomed, 320, 235, 165);
+        let green = pixel(&zoomed, 320, 295, 165);
+        assert!(
+            red[0] > 150 && red[1] < 90,
+            "camera left half at 235: {red:?}"
+        );
+        assert!(
+            green[1] > 150 && green[0] < 90,
+            "camera right half at 295: {green:?}"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_automatic_split_gives_the_screen_most_of_the_frame() {
+        let dir = std::env::temp_dir().join(format!(
+            "apexshot-webcam-auto-split-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        if fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let source = dir.join("screen.mp4");
+        if !solid_clip(&source, "0x1e1e1e", "320x240", 2.0) {
+            crate::test_support::skip_without_media(
+                "skipping the webcam export test: ffmpeg is unavailable",
+            );
+            return;
+        }
+        let Some(track_path) = webcam_track_file(&source) else {
+            eprintln!("skipping the webcam export test: no sidecar directory");
+            return;
+        };
+        if let Some(parent) = track_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if !split_clip(&track_path, "320x320", 2.0) {
+            return;
+        }
+
+        let track = WebcamTrack {
+            file: track_path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            width: 320,
+            height: 320,
+            duration: 2.0,
+            start: 0.0,
+            x: 0.6,
+            y: 0.6,
+            w: 0.35,
+            h: 0.35,
+            shape: 1,
+            flip: false,
+        };
+        let mut sidecar = PointerSidecar::new(
+            0,
+            crate::recording::editor::sidecar::CaptureRegion::from_capture(None, None, None, None),
+        );
+        sidecar.webcam = Some(track);
+        let sidecar_path = PointerSidecar::sidecar_path(&source);
+        if sidecar.write(&sidecar_path).is_err() {
+            return;
+        }
+
+        let layer = LayerSettings {
+            radius: 0.0,
+            ..LayerSettings::default()
+        };
+        let layouts = LayoutSettings {
+            default_layout: CameraLayout::SplitScreen,
+            ..LayoutSettings::default()
+        };
+        // 320x240 is 4:3: the camera gets a column half as wide as the frame
+        // is tall (120 px), so the screen keeps x 0..200.
+        let frame = exported_frame(&dir, &source, &track_path, "auto-split", layer, layouts);
+        let screen = pixel(&frame, 320, 190, 120);
+        assert!(
+            screen[0] < 70 && screen[1] < 70,
+            "the screen reaches x 200: {screen:?}"
+        );
+        let camera = pixel(&frame, 320, 212, 120);
+        assert!(
+            camera[0] > 150 || camera[1] > 150,
+            "the camera column starts at x 200: {camera:?}"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_late_camera_holds_its_first_frame_then_plays_in_step() {
+        let dir = std::env::temp_dir().join(format!(
+            "apexshot-webcam-late-start-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        if fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let source = dir.join("screen.mp4");
+        if !solid_clip(&source, "0x1e1e1e", "320x240", 2.0) {
+            crate::test_support::skip_without_media(
+                "skipping the webcam export test: ffmpeg is unavailable",
+            );
+            return;
+        }
+        let Some(track_path) = webcam_track_file(&source) else {
+            eprintln!("skipping the webcam export test: no sidecar directory");
+            return;
+        };
+        if let Some(parent) = track_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if !timed_clip(&track_path, "320x320", 0.5, 2.0) {
+            return;
+        }
+
+        let track = WebcamTrack {
+            file: track_path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            width: 320,
+            height: 320,
+            duration: 2.0,
+            start: 0.5,
+            x: 0.6,
+            y: 0.6,
+            w: 0.35,
+            h: 0.35,
+            shape: 1,
+            flip: false,
+        };
+        let mut sidecar = PointerSidecar::new(
+            0,
+            crate::recording::editor::sidecar::CaptureRegion::from_capture(None, None, None, None),
+        );
+        sidecar.webcam = Some(track);
+        let sidecar_path = PointerSidecar::sidecar_path(&source);
+        if sidecar.write(&sidecar_path).is_err() {
+            return;
+        }
+
+        let mut layer = LayerSettings {
+            radius: 0.0,
+            ..LayerSettings::default()
+        };
+        layer.set_overlay_aspect(1.0, 320.0 / 240.0);
+        layer.set_overlay_size(0.5, 320.0 / 240.0);
+        layer.set_overlay_alignment(0.5, 0.5);
+        let layouts = LayoutSettings {
+            default_layout: CameraLayout::CameraOverlay,
+            ..LayoutSettings::default()
+        };
+        // The track's first frame sits 0.5 s into the video: before that the
+        // first (red) frame holds; at 0.75 s the track is 0.25 s in (still
+        // red); at 1.25 s it is 0.75 s in (lime). A whole-track stretch would
+        // already show lime at 0.75 s.
+        let frames = exported_frames(
+            &dir,
+            &source,
+            &track_path,
+            "late",
+            layer,
+            layouts,
+            Vec::new(),
+            0.5,
+            &[0.25, 0.75, 1.25],
+        );
+        let at = |index: usize| pixel(&frames[index], 320, 160, 120);
+        assert!(
+            at(0)[0] > 150 && at(0)[1] < 90,
+            "held first frame at 0.25 s: {:?}",
+            at(0)
+        );
+        assert!(
+            at(1)[0] > 150 && at(1)[1] < 90,
+            "track 0.25 s at 0.75 s: {:?}",
+            at(1)
+        );
+        assert!(
+            at(2)[1] > 150 && at(2)[0] < 90,
+            "track 0.75 s at 1.25 s: {:?}",
+            at(2)
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn layout_cues_run_on_the_composition_clock() {
+        // The cues include a cutout, which is a Studio export.
+        let _entitlement = crate::studio_entitlement::test_studio_entitlement();
+        let dir = std::env::temp_dir().join(format!(
+            "apexshot-webcam-cues-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        if fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let source = dir.join("screen.mp4");
+        if !solid_clip(&source, "0x1e1e1e", "320x240", 5.0) {
+            crate::test_support::skip_without_media(
+                "skipping the layout cue test: ffmpeg is unavailable",
+            );
+            return;
+        }
+        let Some(track_path) = webcam_track_file(&source) else {
+            eprintln!("skipping the layout cue test: no sidecar directory");
+            return;
+        };
+        if let Some(parent) = track_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if !split_clip(&track_path, "320x320", 4.0) {
+            return;
+        }
+        let track = WebcamTrack {
+            file: track_path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            width: 320,
+            height: 320,
+            duration: 4.0,
+            start: 0.0,
+            x: 0.6,
+            y: 0.6,
+            w: 0.35,
+            h: 0.35,
+            shape: 1,
+            flip: false,
+        };
+        let mut sidecar = PointerSidecar::new(
+            0,
+            crate::recording::editor::sidecar::CaptureRegion::from_capture(None, None, None, None),
+        );
+        sidecar.webcam = Some(track);
+        let sidecar_path = PointerSidecar::sidecar_path(&source);
+        if sidecar.write(&sidecar_path).is_err() {
+            return;
+        }
+
+        let layouts = LayoutSettings {
+            default_layout: CameraLayout::ScreenOnly,
+            cues: vec![
+                LayoutCue {
+                    at: 0.2,
+                    layout: CameraLayout::CameraOverlay,
+                    position: None,
+                    cutout_x: None,
+                },
+                LayoutCue {
+                    at: 0.7,
+                    layout: CameraLayout::ScreenOnly,
+                    position: None,
+                    cutout_x: None,
+                },
+                LayoutCue {
+                    at: 1.2,
+                    layout: CameraLayout::SplitScreen,
+                    position: None,
+                    cutout_x: None,
+                },
+                LayoutCue {
+                    at: 1.7,
+                    layout: CameraLayout::FullscreenCamera,
+                    position: None,
+                    cutout_x: None,
+                },
+                LayoutCue {
+                    at: 2.2,
+                    layout: CameraLayout::CameraCutout,
+                    position: None,
+                    cutout_x: None,
+                },
+            ],
+            transition_seconds: 0.12,
+            split_auto: false,
+            ..LayoutSettings::default()
+        };
+        let bubble = LayerSettings {
+            x: 0.6,
+            y: 0.6,
+            w: 0.35,
+            h: 0.35,
+            radius: 0.08,
+            ..Default::default()
+        };
+        let output = dir.join("cues.mp4");
+        let model = ExportModel {
+            source: source.clone(),
+            source_size: (320, 240),
+            trim_start: 2.0,
+            trim_end: 4.5,
+            cuts: Vec::new(),
+            segment_starts: Vec::new(),
+            segment_speeds: Vec::new(),
+            freeze_tail: 0.0,
+            zooms: Vec::new(),
+            zoom_camera: crate::video_editor::zoom::ZoomCameraSettings::default(),
+            cursor: CursorSettings::default(),
+            sidecar: PointerSidecar::load_next_to_video(&source),
+            webcam: Some(webcam::WebcamExport {
+                path: track_path.clone(),
+                settings: bubble,
+                layouts,
+                split_gap: 0.0,
+                pane_radius: 0.0,
+                track_seconds: 4.0,
+                start: 0.0,
+                video_seconds: 4.0,
+                last_frame: 3.95,
+                source_size: (320, 320),
+                silence: Vec::new(),
+            }),
+            stage: None,
+            canvas: None,
+            crf: 30,
+            audio: Vec::new(),
+            effects: Default::default(),
+            cursor_hidden: false,
+        };
+        let handle = start_export(model, output.clone());
+        loop {
+            match handle.receiver.recv_timeout(Duration::from_secs(120)) {
+                Ok(ExportUpdate::Progress { .. }) => {}
+                Ok(ExportUpdate::Finished(path, _)) => {
+                    assert_eq!(path, output);
+                    break;
+                }
+                Ok(ExportUpdate::Failed(message)) => panic!("export failed: {message}"),
+                Ok(ExportUpdate::Cancelled) => panic!("export cancelled itself"),
+                Err(error) => panic!("export did not report back: {error}"),
+            }
+        }
+
+        let base = frame_rgb(&output, 0.1, (320, 240)).expect("the export decodes");
+        assert!(
+            pixel(&base, 320, 10, 10)[0] < 70,
+            "the base layout is screen only: {:?}",
+            pixel(&base, 320, 10, 10)
+        );
+
+        let overlay = frame_rgb(&output, 0.4, (320, 240)).expect("the export decodes");
+        let inside = pixel(&overlay, 320, 270, 200);
+        assert!(
+            inside[1] > 150 && inside[0] < 90,
+            "the first cue restores the camera bubble: {inside:?}"
+        );
+
+        let screen = frame_rgb(&output, 0.9, (320, 240)).expect("the export decodes");
+        let washed = pixel(&screen, 320, 270, 200);
+        assert!(
+            washed[0] < 70 && washed[1] < 70 && washed[2] < 70,
+            "the screen-only cue removes the camera pixels: {washed:?}"
+        );
+
+        let split = frame_rgb(&output, 1.4, (320, 240)).expect("the export decodes");
+        let screen_side = pixel(&split, 320, 80, 120);
+        assert!(
+            screen_side.iter().all(|channel| *channel < 45),
+            "the split's screen side holds the footage: {screen_side:?}"
+        );
+        let left = pixel(&split, 320, 176, 120);
+        let right = pixel(&split, 320, 272, 120);
+        assert!(
+            left[0] > 150 && left[1] < 90,
+            "the camera's red half starts the split's camera: {left:?}"
+        );
+        assert!(
+            right[1] > 150 && right[0] < 90,
+            "the camera's green half ends the split's camera: {right:?}"
+        );
+
+        let fullscreen = frame_rgb(&output, 1.9, (320, 240)).expect("the export decodes");
+        assert!(
+            pixel(&fullscreen, 320, 40, 120)[0] > 150,
+            "the last cue fills the frame with the camera: {:?}",
+            pixel(&fullscreen, 320, 40, 120)
+        );
+        assert!(
+            pixel(&fullscreen, 320, 280, 120)[1] > 150,
+            "the camera keeps its own aspect across the frame"
+        );
+
+        let cutout = frame_rgb(&output, 2.4, (320, 240)).expect("the export decodes");
+        let transparent = pixel(&cutout, 320, 160, 200);
+        assert!(
+            transparent.iter().all(|channel| *channel < 45),
+            "the cutout's matte leaves the screen where no person is: {transparent:?}"
+        );
+
+        let _ = fs::remove_file(&sidecar_path);
+        let _ = fs::remove_file(&track_path);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_split_screen_covers_its_pane_without_letterbox() {
+        let dir = std::env::temp_dir().join(format!(
+            "apexshot-webcam-cover-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        if fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let source = dir.join("screen.mp4");
+        if !striped_clip(&source, 2.0) {
+            crate::test_support::skip_without_media(
+                "skipping the split cover test: ffmpeg is unavailable",
+            );
+            return;
+        }
+        let Some(track_path) = webcam_track_file(&source) else {
+            eprintln!("skipping the split cover test: no sidecar directory");
+            return;
+        };
+        if let Some(parent) = track_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if !split_clip(&track_path, "320x320", 2.0) {
+            return;
+        }
+
+        let track = WebcamTrack {
+            file: track_path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            width: 320,
+            height: 320,
+            duration: 2.0,
+            start: 0.0,
+            x: 0.6,
+            y: 0.6,
+            w: 0.35,
+            h: 0.35,
+            shape: 1,
+            flip: false,
+        };
+        let mut sidecar = PointerSidecar::new(
+            0,
+            crate::recording::editor::sidecar::CaptureRegion::from_capture(None, None, None, None),
+        );
+        sidecar.webcam = Some(track);
+        let sidecar_path = PointerSidecar::sidecar_path(&source);
+        if sidecar.write(&sidecar_path).is_err() {
+            return;
+        }
+
+        let output = dir.join("split.mp4");
+        let model = ExportModel {
+            source: source.clone(),
+            source_size: (320, 240),
+            trim_start: 0.0,
+            trim_end: 1.5,
+            cuts: Vec::new(),
+            segment_starts: Vec::new(),
+            segment_speeds: Vec::new(),
+            freeze_tail: 0.0,
+            zooms: Vec::new(),
+            zoom_camera: crate::video_editor::zoom::ZoomCameraSettings::default(),
+            cursor: CursorSettings::default(),
+            sidecar: PointerSidecar::load_next_to_video(&source),
+            webcam: Some(webcam::WebcamExport {
+                path: track_path.clone(),
+                settings: LayerSettings::default(),
+                layouts: LayoutSettings {
+                    default_layout: CameraLayout::SplitScreen,
+                    ..LayoutSettings::default()
+                },
+                split_gap: 0.0,
+                pane_radius: 0.0,
+                track_seconds: 2.0,
+                start: 0.0,
+                video_seconds: 2.0,
+                last_frame: 1.95,
+                source_size: (320, 320),
+                silence: Vec::new(),
+            }),
+            stage: None,
+            canvas: None,
+            crf: 30,
+            audio: Vec::new(),
+            effects: Default::default(),
+            cursor_hidden: false,
+        };
+        let handle = start_export(model, output.clone());
+        loop {
+            match handle.receiver.recv_timeout(Duration::from_secs(120)) {
+                Ok(ExportUpdate::Progress { .. }) => {}
+                Ok(ExportUpdate::Finished(path, _)) => {
+                    assert_eq!(path, output);
+                    break;
+                }
+                Ok(ExportUpdate::Failed(message)) => panic!("export failed: {message}"),
+                Ok(ExportUpdate::Cancelled) => panic!("export cancelled itself"),
+                Err(error) => panic!("export did not report back: {error}"),
+            }
+        }
+
+        assert_eq!(video_dimensions(&output), Some((320, 240)));
+        let frame = frame_rgb(&output, 0.5, (320, 240)).expect("the export decodes");
+        assert_eq!(frame.len(), 320 * 240 * 3);
+
+        for y in [10, 120, 230] {
+            let edge = pixel(&frame, 320, 20, y);
+            assert!(
+                edge[0] > 150 && edge[1] > 150 && edge[2] < 90,
+                "the screen pane rests on the screen's own left edge at y={y}: {edge:?}"
+            );
+            for x in [145, 190] {
+                let px = pixel(&frame, 320, x, y);
+                assert!(
+                    px[2] > 150 && px[0] < 90 && px[1] < 90,
+                    "the screen pane shows its centre stripe at ({x},{y}): {px:?}"
+                );
+            }
+        }
+
+        for y in [10, 120, 230] {
+            let camera = pixel(&frame, 320, 200, y);
+            assert!(
+                camera[0] > 150 && camera[1] < 90,
+                "the camera fills the split's pane at y={y}: {camera:?}"
+            );
+        }
+        let far = pixel(&frame, 320, 280, 120);
+        assert!(
+            far[1] > 150 && far[0] < 90,
+            "the camera reaches the right edge of its pane: {far:?}"
+        );
+
+        let _ = fs::remove_file(&sidecar_path);
+        let _ = fs::remove_file(&track_path);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_split_slides_its_screen_clear_of_the_cursor() {
+        use crate::recording::editor::sidecar::{CursorKind, PointerSample};
+
+        let dir = std::env::temp_dir().join(format!(
+            "apexshot-split-slide-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        if fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let source = dir.join("screen.mp4");
+        if !halves_clip(&source, (640, 360), 3.0) {
+            crate::test_support::skip_without_media(
+                "skipping the split slide test: ffmpeg is unavailable",
+            );
+            return;
+        }
+        let Some(track_path) = webcam_track_file(&source) else {
+            eprintln!("skipping the split slide test: no sidecar directory");
+            return;
+        };
+        if let Some(parent) = track_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if !solid_clip(&track_path, "0x00ff00", "320x320", 3.0) {
+            return;
+        }
+        let track = WebcamTrack {
+            file: track_path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            width: 320,
+            height: 320,
+            duration: 3.0,
+            start: 0.0,
+            x: 0.7,
+            y: 0.1,
+            w: 0.2,
+            h: 0.3,
+            shape: 1,
+            flip: false,
+        };
+        let sidecar_path = PointerSidecar::sidecar_path(&source);
+        let write_pointer = |pointer: &[(f64, f64, f64)]| -> bool {
+            let mut sidecar = PointerSidecar::new(
+                0,
+                crate::recording::editor::sidecar::CaptureRegion::from_capture(
+                    None, None, None, None,
+                ),
+            );
+            sidecar.webcam = Some(track.clone());
+            sidecar.pointer = pointer
+                .iter()
+                .map(|&(t, x, y)| PointerSample {
+                    t,
+                    x,
+                    y,
+                    kind: CursorKind::Default,
+                    cursor_id: None,
+                })
+                .collect();
+            sidecar.write(&sidecar_path).is_ok()
+        };
+        let export = |name: &str, pointer: &[(f64, f64, f64)]| -> Option<PathBuf> {
+            if !write_pointer(pointer) {
+                return None;
+            }
+            let output = dir.join(name);
+            let model = ExportModel {
+                source: source.clone(),
+                source_size: (640, 360),
+                trim_start: 0.0,
+                trim_end: 2.8,
+                cuts: Vec::new(),
+                segment_starts: Vec::new(),
+                segment_speeds: Vec::new(),
+                freeze_tail: 0.0,
+                zooms: Vec::new(),
+                zoom_camera: crate::video_editor::zoom::ZoomCameraSettings {
+                    motion_blur: 0.0,
+                    ..Default::default()
+                },
+                cursor: CursorSettings::default(),
+                sidecar: PointerSidecar::load_next_to_video(&source),
+                webcam: Some(webcam::WebcamExport {
+                    path: track_path.clone(),
+                    settings: LayerSettings::default(),
+                    layouts: LayoutSettings {
+                        default_layout: CameraLayout::SplitScreen,
+                        cues: Vec::new(),
+                        split_auto: false,
+                        split_ratio: 0.5,
+                        split_flip: false,
+                        ..LayoutSettings::default()
+                    },
+                    split_gap: 0.0,
+                    pane_radius: 0.0,
+                    track_seconds: 3.0,
+                    start: 0.0,
+                    video_seconds: 3.0,
+                    last_frame: 2.95,
+                    source_size: (320, 320),
+                    silence: Vec::new(),
+                }),
+                stage: None,
+                canvas: None,
+                crf: 30,
+                audio: Vec::new(),
+                effects: Default::default(),
+                cursor_hidden: false,
+            };
+            let handle = start_export(model, output.clone());
+            loop {
+                match handle.receiver.recv_timeout(Duration::from_secs(120)) {
+                    Ok(ExportUpdate::Progress { .. }) => {}
+                    Ok(ExportUpdate::Finished(path, _)) => {
+                        assert_eq!(path, output);
+                        break;
+                    }
+                    Ok(ExportUpdate::Failed(message)) => panic!("export failed: {message}"),
+                    Ok(ExportUpdate::Cancelled) => panic!("export cancelled itself"),
+                    Err(error) => panic!("export did not report back: {error}"),
+                }
+            }
+            Some(output)
+        };
+        let Some(far) = export("far.mp4", &[(0.0, 64.0, 180.0), (2.8, 64.0, 180.0)]) else {
+            return;
+        };
+        let Some(near) = export(
+            "near.mp4",
+            &[
+                (0.0, 64.0, 180.0),
+                (1.0, 64.0, 180.0),
+                (1.01, 600.0, 180.0),
+                (2.8, 600.0, 180.0),
+            ],
+        ) else {
+            return;
+        };
+
+        let luma = |path: &Path, t: f64| -> u8 {
+            let frame = frame_rgb(path, t, (640, 360)).expect("the export decodes");
+            let [red, green, blue] = pixel(&frame, 640, 80, 40);
+            ((u16::from(red) + u16::from(green) + u16::from(blue)) / 3) as u8
+        };
+        let far05 = luma(&far, 0.5);
+        let far25 = luma(&far, 2.5);
+        let near05 = luma(&near, 0.5);
+        let near25 = luma(&near, 2.5);
+        eprintln!("split slide: far05={far05} far25={far25} near05={near05} near25={near25}");
+        assert!(
+            far05 < 60 && far25 < 60,
+            "at rest the split shows the screen's own edge: far05={far05} far25={far25}"
+        );
+        assert!(
+            near05 < 60,
+            "at rest the split shows the screen's own edge: near05={near05}"
+        );
+        assert!(
+            near25 > 190,
+            "the split slides its screen clear of the cursor: near25={near25}"
+        );
+
+        let _ = fs::remove_file(&sidecar_path);
+        let _ = fs::remove_file(&track_path);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_export_paints_a_captured_png_at_its_recording_hotspot() {
+        use crate::recording::editor::sidecar::{
+            CaptureRegion, CursorAsset, CursorKind, PointerSample, PointerSidecar,
+        };
+        use gtk4::cairo::{Format, ImageSurface};
+
+        let video = std::env::temp_dir().join(format!(
+            "apexshot-export-cursor-{}-{:?}.mp4",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let sidecar_path = PointerSidecar::sidecar_path(&video);
+        let folder_name = format!(
+            "{}.cursors",
+            sidecar_path
+                .file_name()
+                .expect("the sidecar has a file name")
+                .to_string_lossy()
+        );
+        let folder = sidecar_path.parent().unwrap().join(&folder_name);
+        std::fs::create_dir_all(&folder).unwrap();
+        let mut image = image::RgbaImage::new(32, 32);
+        for pixel in image.pixels_mut() {
+            *pixel = image::Rgba([255, 0, 0, 255]);
+        }
+        image.save(folder.join("hand.png")).unwrap();
+
+        let mut sidecar =
+            PointerSidecar::new(0, CaptureRegion::from_capture(None, None, None, None));
+        sidecar.cursor_images = Some(folder_name);
+        sidecar.cursors.push(CursorAsset {
+            id: "hand-id".to_string(),
+            file: "hand.png".to_string(),
+            width: 32,
+            height: 32,
+            hotspot_x: 1,
+            hotspot_y: 1,
+            kind: CursorKind::Hand,
+        });
+        sidecar.pointer.push(PointerSample {
+            t: 0.0,
+            x: 50.0,
+            y: 40.0,
+            kind: CursorKind::Hand,
+            cursor_id: Some("hand-id".to_string()),
+        });
+
+        let size = (100u32, 100u32);
+        let mut pixels = vec![0u8; size.0 as usize * size.1 as usize * 4];
+        for pixel in pixels.as_chunks_mut::<4>().0 {
+            pixel.copy_from_slice(&[0, 0, 0, 255]);
+        }
+        let mut layer = ImageSurface::create(Format::ARgb32, size.0 as i32, size.1 as i32).unwrap();
+        let settings = CursorSettings {
+            smooth: 0.0,
+            theme: CursorTheme::Macos,
+            ..CursorSettings::default()
+        };
+        super::draw_cursor(
+            &mut pixels,
+            size,
+            (0.0, 0.0, 100.0, 100.0),
+            &sidecar,
+            &video,
+            settings,
+            0.0,
+            size,
+            f64::from(size.0),
+            1.0,
+            &mut layer,
+        );
+
+        let mut bounds: Option<(usize, usize, usize, usize)> = None;
+        for y in 0..size.1 as usize {
+            for x in 0..size.0 as usize {
+                let p = &pixels[(y * size.0 as usize + x) * 4..][..4];
+                if p[0] > 180 && p[1] < 60 && p[2] < 60 {
+                    bounds = Some(match bounds {
+                        Some((min_x, min_y, max_x, max_y)) => {
+                            (min_x.min(x), min_y.min(y), max_x.max(x), max_y.max(y))
+                        }
+                        None => (x, y, x, y),
+                    });
+                }
+            }
+        }
+        assert_eq!(bounds, Some((49, 39, 95, 85)));
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn the_export_finds_the_cursor_png_beside_a_clean_screen_file() {
+        use crate::recording::editor::sidecar::{
+            CaptureRegion, CursorAsset, CursorKind, PointerSample, PointerSidecar,
+        };
+        use gtk4::cairo::{Format, ImageSurface};
+
+        let video = std::env::temp_dir().join(format!(
+            "apexshot-export-clean-cursor-{}-{:?}.mp4",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let clean = video.with_file_name("clean-screen.mp4");
+        let sidecar_path = PointerSidecar::sidecar_path(&video);
+        let folder_name = format!(
+            "{}.cursors",
+            sidecar_path
+                .file_name()
+                .expect("the sidecar has a file name")
+                .to_string_lossy()
+        );
+        let folder = sidecar_path.parent().unwrap().join(&folder_name);
+        std::fs::create_dir_all(&folder).unwrap();
+        let mut image = image::RgbaImage::new(32, 32);
+        for pixel in image.pixels_mut() {
+            *pixel = image::Rgba([255, 0, 0, 255]);
+        }
+        image.save(folder.join("hand.png")).unwrap();
+
+        let mut sidecar =
+            PointerSidecar::new(0, CaptureRegion::from_capture(None, None, None, None));
+        sidecar.cursor_images = Some(folder_name);
+        sidecar.cursors.push(CursorAsset {
+            id: "hand-id".to_string(),
+            file: "hand.png".to_string(),
+            width: 32,
+            height: 32,
+            hotspot_x: 1,
+            hotspot_y: 1,
+            kind: CursorKind::Hand,
+        });
+        sidecar.pointer.push(PointerSample {
+            t: 0.0,
+            x: 50.0,
+            y: 40.0,
+            kind: CursorKind::Hand,
+            cursor_id: Some("hand-id".to_string()),
+        });
+        sidecar.write(&sidecar_path).unwrap();
+        let loaded = PointerSidecar::load(&sidecar_path).unwrap();
+
+        let size = (100u32, 100u32);
+        let mut pixels = vec![0u8; size.0 as usize * size.1 as usize * 4];
+        for pixel in pixels.as_chunks_mut::<4>().0 {
+            pixel.copy_from_slice(&[0, 0, 0, 255]);
+        }
+        let mut layer = ImageSurface::create(Format::ARgb32, size.0 as i32, size.1 as i32).unwrap();
+        let settings = CursorSettings {
+            smooth: 0.0,
+            theme: CursorTheme::Macos,
+            ..CursorSettings::default()
+        };
+        super::draw_cursor(
+            &mut pixels,
+            size,
+            (0.0, 0.0, 100.0, 100.0),
+            &loaded,
+            &clean,
+            settings,
+            0.0,
+            size,
+            f64::from(size.0),
+            1.0,
+            &mut layer,
+        );
+
+        let mut bounds: Option<(usize, usize, usize, usize)> = None;
+        for y in 0..size.1 as usize {
+            for x in 0..size.0 as usize {
+                let p = &pixels[(y * size.0 as usize + x) * 4..][..4];
+                if p[0] > 180 && p[1] < 60 && p[2] < 60 {
+                    bounds = Some(match bounds {
+                        Some((min_x, min_y, max_x, max_y)) => {
+                            (min_x.min(x), min_y.min(y), max_x.max(x), max_y.max(y))
+                        }
+                        None => (x, y, x, y),
+                    });
+                }
+            }
+        }
+        assert_eq!(bounds, Some((49, 39, 95, 85)));
+        let _ = std::fs::remove_file(&sidecar_path);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// The track lands beside the pointer sidecar, exactly as the recorder
+    /// writes it.
+    fn webcam_track_file(source: &Path) -> Option<PathBuf> {
+        let sidecar = PointerSidecar::sidecar_path(source);
+        let stem = sidecar.file_name()?.to_string_lossy().into_owned();
+        sidecar
+            .parent()
+            .map(|dir| dir.join(format!("{stem}-camera.mp4")))
+    }
+
+    #[test]
+    fn a_moving_camera_blurs_and_a_still_one_stays_sharp() {
+        let dir = std::env::temp_dir().join(format!(
+            "apexshot-webcam-blur-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        if fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let source = dir.join("screen.mp4");
+        if !solid_clip(&source, "0x1e1e1e", "320x240", 5.0) {
+            crate::test_support::skip_without_media(
+                "skipping the camera blur test: ffmpeg is unavailable",
+            );
+            return;
+        }
+        let Some(track_path) = webcam_track_file(&source) else {
+            eprintln!("skipping the camera blur test: no sidecar directory");
+            return;
+        };
+        if let Some(parent) = track_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if !solid_clip(&track_path, "0x00ff00", "320x320", 4.0) {
+            return;
+        }
+        let track = WebcamTrack {
+            file: track_path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            width: 320,
+            height: 320,
+            duration: 4.0,
+            start: 0.0,
+            x: 0.0,
+            y: 0.6,
+            w: 0.3,
+            h: 0.3,
+            shape: 1,
+            flip: false,
+        };
+        let mut sidecar = PointerSidecar::new(
+            0,
+            crate::recording::editor::sidecar::CaptureRegion::from_capture(None, None, None, None),
+        );
+        sidecar.webcam = Some(track);
+        let sidecar_path = PointerSidecar::sidecar_path(&source);
+        if sidecar.write(&sidecar_path).is_err() {
+            return;
+        }
+
+        let layouts = LayoutSettings {
+            default_layout: CameraLayout::CameraOverlay,
+            cues: vec![LayoutCue {
+                at: 0.5,
+                layout: CameraLayout::CameraOverlay,
+                position: Some([1.0, 1.0]),
+                cutout_x: None,
+            }],
+            transition_seconds: 0.45,
+            ..LayoutSettings::default()
+        };
+        let bubble = LayerSettings {
+            x: 0.0,
+            y: 0.6,
+            w: 0.3,
+            h: 0.3,
+            radius: 0.0,
+            ..Default::default()
+        };
+        let export = |name: &str, motion_blur: f64| -> PathBuf {
+            let output = dir.join(name);
+            let model = ExportModel {
+                source: source.clone(),
+                source_size: (320, 240),
+                trim_start: 0.0,
+                trim_end: 1.5,
+                cuts: Vec::new(),
+                segment_starts: Vec::new(),
+                segment_speeds: Vec::new(),
+                freeze_tail: 0.0,
+                zooms: Vec::new(),
+                zoom_camera: crate::video_editor::zoom::ZoomCameraSettings {
+                    motion_blur,
+                    ..Default::default()
+                },
+                cursor: CursorSettings::default(),
+                sidecar: PointerSidecar::load_next_to_video(&source),
+                webcam: Some(webcam::WebcamExport {
+                    path: track_path.clone(),
+                    settings: bubble,
+                    layouts: layouts.clone(),
+                    split_gap: 0.0,
+                    pane_radius: 0.0,
+                    track_seconds: 4.0,
+                    start: 0.0,
+                    video_seconds: 4.0,
+                    last_frame: 3.95,
+                    source_size: (320, 320),
+                    silence: Vec::new(),
+                }),
+                stage: None,
+                canvas: None,
+                crf: 30,
+                audio: Vec::new(),
+                effects: Default::default(),
+                cursor_hidden: false,
+            };
+            let handle = start_export(model, output.clone());
+            loop {
+                match handle.receiver.recv_timeout(Duration::from_secs(120)) {
+                    Ok(ExportUpdate::Progress { .. }) => {}
+                    Ok(ExportUpdate::Finished(path, _)) => {
+                        assert_eq!(path, output);
+                        break;
+                    }
+                    Ok(ExportUpdate::Failed(message)) => panic!("export failed: {message}"),
+                    Ok(ExportUpdate::Cancelled) => panic!("export cancelled itself"),
+                    Err(error) => panic!("export did not report back: {error}"),
+                }
+            }
+            output
+        };
+        let sharp = export("sharp.mp4", 0.0);
+        let blurred = export("blurred.mp4", 1.0);
+
+        let sharp_still = frame_rgb(&sharp, 0.25, (320, 240)).expect("the sharp export decodes");
+        let blurred_still = frame_rgb(&blurred, 0.25, (320, 240)).expect("the export decodes");
+        let mut row = 0u32;
+        let mut best = 0u8;
+        for y in 0..240 {
+            let green = pixel(&sharp_still, 320, 20, y)[1];
+            if green >= best {
+                best = green;
+                row = y;
+            }
+        }
+        assert!(best > 150, "the bubble starts on the left");
+        for (index, (sharp_byte, blurred_byte)) in
+            sharp_still.iter().zip(&blurred_still).enumerate()
+        {
+            let difference = sharp_byte.abs_diff(*blurred_byte);
+            assert!(
+                difference <= 6,
+                "a still camera is not blurred: byte {index} differs by {difference}"
+            );
+        }
+
+        let edges = |frame: &[u8]| {
+            (0..320)
+                .filter(|x| {
+                    let green = pixel(frame, 320, *x, row)[1];
+                    (40..=200).contains(&green)
+                })
+                .count()
+        };
+        let mut last = (0.0, 0usize, 0usize);
+        let mut smeared = false;
+        for t in [0.62, 0.70] {
+            let sharp_frame = frame_rgb(&sharp, t, (320, 240)).expect("the sharp export decodes");
+            let blurred_frame = frame_rgb(&blurred, t, (320, 240)).expect("the export decodes");
+            let sharp_edges = edges(&sharp_frame);
+            let blurred_edges = edges(&blurred_frame);
+            eprintln!("camera blur edge: t={t} sharp={sharp_edges} blurred={blurred_edges}");
+            smeared |= blurred_edges >= sharp_edges + 4;
+            last = (t, sharp_edges, blurred_edges);
+        }
+        assert!(
+            smeared,
+            "a moving camera does not blur: t={} sharp={} blurred={}",
+            last.0, last.1, last.2
+        );
+
+        let _ = fs::remove_file(&sidecar_path);
+        let _ = fs::remove_file(&track_path);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_fading_camera_blurs_in_the_export() {
+        let dir = std::env::temp_dir().join(format!(
+            "apexshot-webcam-fade-blur-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        if fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let source = dir.join("screen.mp4");
+        if !solid_clip(&source, "0x404040", "1280x720", 3.0) {
+            crate::test_support::skip_without_media(
+                "skipping the camera fade blur test: ffmpeg is unavailable",
+            );
+            return;
+        }
+        let Some(track_path) = webcam_track_file(&source) else {
+            eprintln!("skipping the camera fade blur test: no sidecar directory");
+            return;
+        };
+        if let Some(parent) = track_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if !halves_clip(&track_path, (640, 640), 3.0) {
+            return;
+        }
+        let track = WebcamTrack {
+            file: track_path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            width: 640,
+            height: 640,
+            duration: 3.0,
+            start: 0.0,
+            x: 0.1,
+            y: 0.1,
+            w: 0.45,
+            h: 0.8,
+            shape: 1,
+            flip: false,
+        };
+        let mut sidecar = PointerSidecar::new(
+            0,
+            crate::recording::editor::sidecar::CaptureRegion::from_capture(None, None, None, None),
+        );
+        sidecar.webcam = Some(track);
+        let sidecar_path = PointerSidecar::sidecar_path(&source);
+        if sidecar.write(&sidecar_path).is_err() {
+            return;
+        }
+
+        let layouts = LayoutSettings {
+            default_layout: CameraLayout::CameraOverlay,
+            cues: Vec::new(),
+            ..LayoutSettings::default()
+        };
+        let export = |name: &str, hide: Option<f64>| -> PathBuf {
+            let output = dir.join(name);
+            let bubble = LayerSettings {
+                x: 0.1,
+                y: 0.1,
+                w: 0.45,
+                h: 0.8,
+                radius: 0.0,
+                mirror: false,
+                hide_during_silence: hide,
+                ..Default::default()
+            };
+            let model = ExportModel {
+                source: source.clone(),
+                source_size: (1280, 720),
+                trim_start: 0.0,
+                trim_end: 2.5,
+                cuts: Vec::new(),
+                segment_starts: Vec::new(),
+                segment_speeds: Vec::new(),
+                freeze_tail: 0.0,
+                zooms: Vec::new(),
+                zoom_camera: crate::video_editor::zoom::ZoomCameraSettings {
+                    motion_blur: 0.0,
+                    ..Default::default()
+                },
+                cursor: CursorSettings::default(),
+                sidecar: PointerSidecar::load_next_to_video(&source),
+                webcam: Some(webcam::WebcamExport {
+                    path: track_path.clone(),
+                    settings: bubble,
+                    layouts: layouts.clone(),
+                    split_gap: 0.0,
+                    pane_radius: 0.0,
+                    track_seconds: 3.0,
+                    start: 0.0,
+                    video_seconds: 3.0,
+                    last_frame: 2.95,
+                    source_size: (640, 640),
+                    silence: vec![(1.0, 3.0)],
+                }),
+                stage: None,
+                canvas: None,
+                crf: 30,
+                audio: Vec::new(),
+                effects: Default::default(),
+                cursor_hidden: false,
+            };
+            let handle = start_export(model, output.clone());
+            loop {
+                match handle.receiver.recv_timeout(Duration::from_secs(120)) {
+                    Ok(ExportUpdate::Progress { .. }) => {}
+                    Ok(ExportUpdate::Finished(path, _)) => {
+                        assert_eq!(path, output);
+                        break;
+                    }
+                    Ok(ExportUpdate::Failed(message)) => panic!("export failed: {message}"),
+                    Ok(ExportUpdate::Cancelled) => panic!("export cancelled itself"),
+                    Err(error) => panic!("export did not report back: {error}"),
+                }
+            }
+            output
+        };
+        let opaque = export("opaque.mp4", None);
+        let fading = export("fading.mp4", Some(1.0));
+
+        let opaque_frame = frame_rgb(&opaque, 1.6, (1280, 720)).expect("the opaque export decodes");
+        let fading_frame = frame_rgb(&fading, 1.6, (1280, 720)).expect("the export decodes");
+        let luma = |frame: &[u8], x: u32| {
+            let [red, green, blue] = pixel(frame, 1280, x, 360);
+            (f64::from(red) + f64::from(green) + f64::from(blue)) / 3.0
+        };
+        let mut seam = 150u32;
+        let mut widest = f64::MIN;
+        for x in 150..560 {
+            let step = luma(&opaque_frame, x + 1) - luma(&opaque_frame, x);
+            if step > widest {
+                widest = step;
+                seam = x;
+            }
+        }
+        let transition = |frame: &[u8]| {
+            let lo = luma(frame, seam - 20);
+            let hi = luma(frame, seam + 20);
+            let count = (seam - 15..=seam + 15)
+                .filter(|x| {
+                    let value = luma(frame, *x);
+                    lo + 0.2 * (hi - lo) < value && value < lo + 0.8 * (hi - lo)
+                })
+                .count();
+            (count, lo, hi)
+        };
+        let (opaque_t, opaque_lo, opaque_hi) = transition(&opaque_frame);
+        let (fading_t, fading_lo, fading_hi) = transition(&fading_frame);
+        eprintln!(
+            "fade blur edge: seam={seam} opaque={opaque_t} fading={fading_t} \
+             opaque_lo_hi=({opaque_lo},{opaque_hi}) fading_lo_hi=({fading_lo},{fading_hi})"
+        );
+        assert!(
+            fading_hi - fading_lo < 0.8 * (opaque_hi - opaque_lo),
+            "the camera fades during the silence"
+        );
+        assert!(
+            fading_t >= opaque_t + 2,
+            "a fading camera's picture blurs: opaque={opaque_t} fading={fading_t}"
+        );
+
+        let _ = fs::remove_file(&sidecar_path);
+        let _ = fs::remove_file(&track_path);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[ignore = "integration: shells out to ffmpeg"]
+    fn a_plain_export_passes_the_decoded_frame_through() {
+        let dir = std::env::temp_dir().join(format!("apexshot-passthrough-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("source.mp4");
+        if !solid_clip(&source, "red", "320x240", 2.0) {
+            crate::test_support::skip_without_media("skipping: ffmpeg could not make the clip");
+            return;
+        }
+        let output = dir.join("output.mp4");
+        let model = ExportModel {
+            source,
+            source_size: (320, 240),
+            trim_start: 0.0,
+            trim_end: 1.0,
+            cuts: Vec::new(),
+            segment_starts: Vec::new(),
+            segment_speeds: Vec::new(),
+            freeze_tail: 0.0,
+            zooms: Vec::new(),
+            zoom_camera: crate::video_editor::zoom::ZoomCameraSettings::default(),
+            cursor: CursorSettings::default(),
+            sidecar: None,
+            webcam: None,
+            stage: None,
+            canvas: None,
+            crf: 18,
+            audio: Vec::new(),
+            effects: Default::default(),
+            cursor_hidden: false,
+        };
+        let settings = ExportSettings {
+            fps: Some(30),
+            hardware: false,
+            ..ExportSettings::default()
+        };
+        let (sender, _receiver) = mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+        render(&model, &output, &sender, &cancel, Encoder::X264, settings)
+            .unwrap_or_else(|error| panic!("export failed: {error:?}"));
+        let frame = frame_rgb(&output, 0.5, (320, 240)).expect("the export should decode");
+        let [red, green, blue] = pixel(&frame, 320, 160, 120);
+        assert!(
+            red > 150 && green < 80 && blue < 80,
+            "the frame lost its colour: {red}, {green}, {blue}"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[ignore = "integration: shells out to ffmpeg"]
+    fn a_canvas_export_frames_the_video_on_its_background() {
+        let dir = std::env::temp_dir().join(format!(
+            "apexshot-canvas-export-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("source.mp4");
+        let generated = crate::utils::hidden_command(ffmpeg::ffmpeg_executable())
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=red:s=320x180:r=30:d=1",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&source)
+            .status()
+            .expect("ffmpeg should be available");
+        assert!(generated.success());
+        let size = (400u32, 260u32);
+        let mut background = vec![0u8; size.0 as usize * size.1 as usize * 4];
+        for pixel in background.as_chunks_mut::<4>().0 {
+            pixel.copy_from_slice(&[0, 200, 0, 255]);
+        }
+        let output = dir.join("canvas.mp4");
+        let model = ExportModel {
+            source,
+            source_size: (320, 180),
+            trim_start: 0.0,
+            trim_end: 1.0,
+            cuts: Vec::new(),
+            segment_starts: Vec::new(),
+            segment_speeds: Vec::new(),
+            freeze_tail: 0.0,
+            zooms: Vec::new(),
+            zoom_camera: crate::video_editor::zoom::ZoomCameraSettings::default(),
+            cursor: CursorSettings::default(),
+            sidecar: None,
+            webcam: None,
+            stage: None,
+            canvas: Some(CanvasLayout {
+                size,
+                video: (320, 180),
+                radius: 24.0,
+                area: (40, 40, 320, 180),
+                background: Arc::new(background),
+            }),
+            crf: 18,
+            audio: Vec::new(),
+            effects: Default::default(),
+            cursor_hidden: false,
+        };
+        let settings = ExportSettings {
+            fps: Some(30),
+            hardware: false,
+            ..ExportSettings::default()
+        };
+        let (sender, _receiver) = mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+        render(&model, &output, &sender, &cancel, Encoder::X264, settings)
+            .unwrap_or_else(|error| panic!("export failed: {error:?}"));
+        let frame = frame_rgb(&output, 0.5, size).expect("the export should decode");
+        assert_eq!(frame.len(), size.0 as usize * size.1 as usize * 3);
+        let [red, green, _] = pixel(&frame, size.0, 4, 4);
+        assert!(
+            green > 150 && red < 80,
+            "the padding lost its fill: {red}, {green}"
+        );
+        let [red, green, _] = pixel(&frame, size.0, 200, 130);
+        assert!(
+            red > 150 && green < 80,
+            "the video centre is not the video: {red}, {green}"
+        );
+        let [red, green, _] = pixel(&frame, size.0, 41, 41);
+        assert!(
+            green > 150 && red < 80,
+            "the corner was not rounded: {red}, {green}"
+        );
+        let [red, green, _] = pixel(&frame, size.0, 200, 42);
+        assert!(
+            red > 150 && green < 80,
+            "the video's top edge is missing: {red}, {green}"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[ignore = "integration: shells out to ffmpeg"]
+    fn a_zoomed_canvas_export_grows_the_card_over_the_padding() {
+        let dir = std::env::temp_dir().join(format!(
+            "apexshot-zoomed-canvas-export-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("source.mp4");
+        let generated = crate::utils::hidden_command(ffmpeg::ffmpeg_executable())
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=red:s=320x180:r=30:d=2",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&source)
+            .status()
+            .expect("ffmpeg should be available");
+        assert!(generated.success());
+        let size = (400u32, 260u32);
+        let mut background = vec![0u8; size.0 as usize * size.1 as usize * 4];
+        for pixel in background.as_chunks_mut::<4>().0 {
+            pixel.copy_from_slice(&[0, 200, 0, 255]);
+        }
+        let output = dir.join("zoomed.mp4");
+        let mut model = ExportModel {
+            source,
+            source_size: (320, 180),
+            trim_start: 0.0,
+            trim_end: 2.0,
+            cuts: Vec::new(),
+            segment_starts: Vec::new(),
+            segment_speeds: Vec::new(),
+            freeze_tail: 0.0,
+            zooms: vec![crate::video_editor::timeline::ZoomClip {
+                start: 0.0,
+                end: 2.0,
+                scale: 2.0,
+                center: (160.0, 90.0),
+                hidden: false,
+                mode: crate::video_editor::timeline::ZoomMode::Manual,
+                instant: true,
+                anchor: None,
+            }],
+            zoom_camera: crate::video_editor::zoom::ZoomCameraSettings::default(),
+            cursor: CursorSettings::default(),
+            sidecar: None,
+            webcam: None,
+            stage: None,
+            canvas: Some(CanvasLayout {
+                size,
+                video: (320, 180),
+                radius: 24.0,
+                area: (10, 10, 380, 240),
+                background: Arc::new(background),
+            }),
+            crf: 18,
+            audio: Vec::new(),
+            effects: Default::default(),
+            cursor_hidden: false,
+        };
+        let settings = ExportSettings {
+            fps: Some(30),
+            hardware: false,
+            ..ExportSettings::default()
+        };
+        let (sender, _receiver) = mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+        render(&model, &output, &sender, &cancel, Encoder::X264, settings)
+            .unwrap_or_else(|error| panic!("export failed: {error:?}"));
+        let frame = frame_rgb(&output, 1.0, size).expect("the export should decode");
+        let [red, green, _] = pixel(&frame, size.0, 20, 130);
+        assert!(
+            red > 150 && green < 80,
+            "the card did not grow over the padding: {red}, {green}"
+        );
+        let [red, green, _] = pixel(&frame, size.0, 200, 130);
+        assert!(
+            red > 150 && green < 80,
+            "the video centre is not the video: {red}, {green}"
+        );
+
+        model.zooms = Vec::new();
+        let plain = dir.join("plain.mp4");
+        render(&model, &plain, &sender, &cancel, Encoder::X264, settings)
+            .unwrap_or_else(|error| panic!("export failed: {error:?}"));
+        let frame = frame_rgb(&plain, 1.0, size).expect("the export should decode");
+        let [red, green, _] = pixel(&frame, size.0, 20, 130);
+        assert!(
+            green > 150 && red < 80,
+            "the padding lost its fill: {red}, {green}"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_split_default_widens_the_export_stage() {
+        let dir = std::env::temp_dir().join(format!(
+            "apexshot-webcam-stage-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        if fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let source = dir.join("screen.mp4");
+        if !solid_clip(&source, "0xc83232", "320x200", 5.0) {
+            crate::test_support::skip_without_media(
+                "skipping the widened stage test: ffmpeg is unavailable",
+            );
+            return;
+        }
+        let Some(track_path) = webcam_track_file(&source) else {
+            eprintln!("skipping the widened stage test: no sidecar directory");
+            return;
+        };
+        if let Some(parent) = track_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if !solid_clip(&track_path, "0x00ff00", "320x320", 4.0) {
+            return;
+        }
+        let track = WebcamTrack {
+            file: track_path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            width: 320,
+            height: 320,
+            duration: 4.0,
+            start: 0.0,
+            x: 0.6,
+            y: 0.6,
+            w: 0.3,
+            h: 0.3,
+            shape: 1,
+            flip: false,
+        };
+        let mut sidecar = PointerSidecar::new(
+            0,
+            crate::recording::editor::sidecar::CaptureRegion::from_capture(None, None, None, None),
+        );
+        sidecar.webcam = Some(track);
+        let sidecar_path = PointerSidecar::sidecar_path(&source);
+        if sidecar.write(&sidecar_path).is_err() {
+            return;
+        }
+
+        let layouts = LayoutSettings {
+            default_layout: CameraLayout::SplitScreen,
+            split_auto: true,
+            split_flip: false,
+            cues: vec![LayoutCue {
+                at: 0.8,
+                layout: CameraLayout::CameraOverlay,
+                position: None,
+                cutout_x: None,
+            }],
+            transition_seconds: 0.12,
+            ..LayoutSettings::default()
+        };
+        let bubble = LayerSettings {
+            x: 0.6,
+            y: 0.6,
+            w: 0.3,
+            h: 0.3,
+            radius: 0.0,
+            ..Default::default()
+        };
+        let export = |name: &str, canvas: Option<CanvasLayout>| -> PathBuf {
+            let output = dir.join(name);
+            let model = ExportModel {
+                source: source.clone(),
+                source_size: (320, 200),
+                trim_start: 0.0,
+                trim_end: 1.5,
+                cuts: Vec::new(),
+                segment_starts: Vec::new(),
+                segment_speeds: Vec::new(),
+                freeze_tail: 0.0,
+                zooms: Vec::new(),
+                zoom_camera: crate::video_editor::zoom::ZoomCameraSettings {
+                    motion_blur: 0.0,
+                    ..Default::default()
+                },
+                cursor: CursorSettings::default(),
+                sidecar: PointerSidecar::load_next_to_video(&source),
+                webcam: Some(webcam::WebcamExport {
+                    path: track_path.clone(),
+                    settings: bubble,
+                    layouts: layouts.clone(),
+                    split_gap: 0.0,
+                    pane_radius: 0.0,
+                    track_seconds: 4.0,
+                    start: 0.0,
+                    video_seconds: 4.0,
+                    last_frame: 3.95,
+                    source_size: (320, 320),
+                    silence: Vec::new(),
+                }),
+                stage: Some((432, 200)),
+                canvas,
+                crf: 30,
+                audio: Vec::new(),
+                effects: Default::default(),
+                cursor_hidden: false,
+            };
+            let handle = start_export(model, output.clone());
+            loop {
+                match handle.receiver.recv_timeout(Duration::from_secs(120)) {
+                    Ok(ExportUpdate::Progress { .. }) => {}
+                    Ok(ExportUpdate::Finished(path, _)) => {
+                        assert_eq!(path, output);
+                        break;
+                    }
+                    Ok(ExportUpdate::Failed(message)) => panic!("export failed: {message}"),
+                    Ok(ExportUpdate::Cancelled) => panic!("export cancelled itself"),
+                    Err(error) => panic!("export did not report back: {error}"),
+                }
+            }
+            output
+        };
+        let plain = export("wide.mp4", None);
+        assert_eq!(video_dimensions(&plain), Some((432, 200)));
+        let split = frame_rgb(&plain, 0.4, (432, 200)).expect("the export decodes");
+        let [red, green, blue] = pixel(&split, 432, 100, 100);
+        assert!(
+            red > 150 && green < 90,
+            "the split screen is not red: {red}, {green}, {blue}"
+        );
+        let [red, green, blue] = pixel(&split, 432, 300, 100);
+        assert!(
+            red > 150 && green < 90,
+            "the split screen stops early: {red}, {green}, {blue}"
+        );
+        let [red, green, blue] = pixel(&split, 432, 400, 100);
+        assert!(
+            green > 150 && red < 90,
+            "the split camera is not beside the screen: {red}, {green}, {blue}"
+        );
+        let overlay = frame_rgb(&plain, 1.3, (432, 200)).expect("the export decodes");
+        let [red, green, blue] = pixel(&overlay, 432, 20, 100);
+        assert!(
+            red < 40 && green < 40 && blue < 40,
+            "the gap beside the screen is not black: {red}, {green}, {blue}"
+        );
+        let [red, green, blue] = pixel(&overlay, 432, 100, 100);
+        assert!(
+            red > 150 && green < 90,
+            "the screen is not red: {red}, {green}, {blue}"
+        );
+
+        let mut blue = vec![0u8; 432 * 200 * 4];
+        for pixel in blue.as_chunks_mut::<4>().0 {
+            pixel.copy_from_slice(&[0, 0, 255, 255]);
+        }
+        let framed = export(
+            "framed.mp4",
+            Some(CanvasLayout {
+                size: (432, 200),
+                video: (432, 200),
+                area: (0, 0, 432, 200),
+                radius: 0.0,
+                background: std::sync::Arc::new(blue),
+            }),
+        );
+        let overlay = frame_rgb(&framed, 1.3, (432, 200)).expect("the export decodes");
+        let [red, green, blue] = pixel(&overlay, 432, 20, 100);
+        assert!(
+            blue > 150 && red < 90 && green < 90,
+            "the gap beside the screen lost its fill: {red}, {green}, {blue}"
+        );
+        let [red, green, blue] = pixel(&overlay, 432, 100, 100);
+        assert!(
+            red > 150 && green < 90,
+            "the screen is not red: {red}, {green}, {blue}"
+        );
+
+        let _ = fs::remove_file(&sidecar_path);
+        let _ = fs::remove_file(&track_path);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_padded_split_shows_the_background_between_its_panes() {
+        let dir = std::env::temp_dir().join(format!(
+            "apexshot-webcam-padded-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        if fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let wide_source = dir.join("wide.mp4");
+        if !solid_clip(&wide_source, "0xc83232", "320x200", 5.0) {
+            crate::test_support::skip_without_media(
+                "skipping the padded split test: ffmpeg is unavailable",
+            );
+            return;
+        }
+        let plain_source = dir.join("plain.mp4");
+        if !solid_clip(&plain_source, "0xc83232", "320x180", 5.0) {
+            crate::test_support::skip_without_media(
+                "skipping the padded split test: ffmpeg is unavailable",
+            );
+            return;
+        }
+        let Some(wide_track) = webcam_track_file(&wide_source) else {
+            eprintln!("skipping the padded split test: no sidecar directory");
+            return;
+        };
+        let Some(plain_track) = webcam_track_file(&plain_source) else {
+            eprintln!("skipping the padded split test: no sidecar directory");
+            return;
+        };
+        if let Some(parent) = wide_track.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if let Some(parent) = plain_track.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if !solid_clip(&wide_track, "0x00ff00", "320x320", 4.0) {
+            return;
+        }
+        if !solid_clip(&plain_track, "0x00ff00", "320x320", 4.0) {
+            return;
+        }
+        let track = |file: &Path| WebcamTrack {
+            file: file
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            width: 320,
+            height: 320,
+            duration: 4.0,
+            start: 0.0,
+            x: 0.6,
+            y: 0.6,
+            w: 0.3,
+            h: 0.3,
+            shape: 1,
+            flip: false,
+        };
+        let mut sidecar = PointerSidecar::new(
+            0,
+            crate::recording::editor::sidecar::CaptureRegion::from_capture(None, None, None, None),
+        );
+        sidecar.webcam = Some(track(&wide_track));
+        let wide_sidecar = PointerSidecar::sidecar_path(&wide_source);
+        if sidecar.write(&wide_sidecar).is_err() {
+            return;
+        }
+        sidecar.webcam = Some(track(&plain_track));
+        let plain_sidecar = PointerSidecar::sidecar_path(&plain_source);
+        if sidecar.write(&plain_sidecar).is_err() {
+            return;
+        }
+
+        let layouts = LayoutSettings {
+            default_layout: CameraLayout::SplitScreen,
+            split_auto: true,
+            split_flip: false,
+            split_padded: true,
+            cues: vec![],
+            ..LayoutSettings::default()
+        };
+        let bubble = LayerSettings {
+            x: 0.6,
+            y: 0.6,
+            w: 0.3,
+            h: 0.3,
+            radius: 0.0,
+            ..Default::default()
+        };
+        let export = |name: &str,
+                      source: &Path,
+                      track: &Path,
+                      source_size: (u32, u32),
+                      stage: Option<(u32, u32)>,
+                      canvas: Option<CanvasLayout>|
+         -> PathBuf {
+            let output = dir.join(name);
+            let model = ExportModel {
+                source: source.to_path_buf(),
+                source_size,
+                trim_start: 0.0,
+                trim_end: 1.5,
+                cuts: Vec::new(),
+                segment_starts: Vec::new(),
+                segment_speeds: Vec::new(),
+                freeze_tail: 0.0,
+                zooms: Vec::new(),
+                zoom_camera: crate::video_editor::zoom::ZoomCameraSettings {
+                    motion_blur: 0.0,
+                    ..Default::default()
+                },
+                cursor: CursorSettings::default(),
+                sidecar: PointerSidecar::load_next_to_video(source),
+                webcam: Some(webcam::WebcamExport {
+                    path: track.to_path_buf(),
+                    settings: bubble,
+                    layouts: layouts.clone(),
+                    split_gap: 0.1,
+                    pane_radius: 0.0,
+                    track_seconds: 4.0,
+                    start: 0.0,
+                    video_seconds: 4.0,
+                    last_frame: 3.95,
+                    source_size: (320, 320),
+                    silence: Vec::new(),
+                }),
+                stage,
+                canvas,
+                crf: 30,
+                audio: Vec::new(),
+                effects: Default::default(),
+                cursor_hidden: false,
+            };
+            let handle = start_export(model, output.clone());
+            loop {
+                match handle.receiver.recv_timeout(Duration::from_secs(120)) {
+                    Ok(ExportUpdate::Progress { .. }) => {}
+                    Ok(ExportUpdate::Finished(path, _)) => {
+                        assert_eq!(path, output);
+                        break;
+                    }
+                    Ok(ExportUpdate::Failed(message)) => panic!("export failed: {message}"),
+                    Ok(ExportUpdate::Cancelled) => panic!("export cancelled itself"),
+                    Err(error) => panic!("export did not report back: {error}"),
+                }
+            }
+            output
+        };
+        let mut blue = vec![0u8; 452 * 200 * 4];
+        for pixel in blue.as_chunks_mut::<4>().0 {
+            pixel.copy_from_slice(&[0, 0, 255, 255]);
+        }
+        let widened = export(
+            "widened.mp4",
+            &wide_source,
+            &wide_track,
+            (320, 200),
+            Some((452, 200)),
+            Some(CanvasLayout {
+                size: (452, 200),
+                video: (452, 200),
+                area: (0, 0, 452, 200),
+                radius: 0.0,
+                background: std::sync::Arc::new(blue),
+            }),
+        );
+        let frame = frame_rgb(&widened, 0.5, (452, 200)).expect("the export decodes");
+        let [red, green, blue] = pixel(&frame, 452, 100, 100);
+        assert!(
+            red > 150 && green < 90,
+            "the screen pane is not red: {red}, {green}, {blue}"
+        );
+        let [red, green, blue] = pixel(&frame, 452, 330, 100);
+        assert!(
+            blue > 150 && red < 90 && green < 90,
+            "the gap is not the background: {red}, {green}, {blue}"
+        );
+        let [red, green, blue] = pixel(&frame, 452, 400, 100);
+        assert!(
+            green > 150 && red < 90,
+            "the camera pane is not green: {red}, {green}, {blue}"
+        );
+
+        let mut blue = vec![0u8; 320 * 180 * 4];
+        for pixel in blue.as_chunks_mut::<4>().0 {
+            pixel.copy_from_slice(&[0, 0, 255, 255]);
+        }
+        let plain = export(
+            "plain.mp4",
+            &plain_source,
+            &plain_track,
+            (320, 180),
+            None,
+            Some(CanvasLayout {
+                size: (320, 180),
+                video: (320, 180),
+                area: (0, 0, 320, 180),
+                radius: 0.0,
+                background: std::sync::Arc::new(blue),
+            }),
+        );
+        let frame = frame_rgb(&plain, 0.5, (320, 180)).expect("the export decodes");
+        let [red, green, blue] = pixel(&frame, 320, 50, 3);
+        assert!(
+            blue > 150 && red < 90 && green < 90,
+            "the letterbox above the screen is not the background: {red}, {green}, {blue}"
+        );
+        let [red, green, blue] = pixel(&frame, 320, 50, 90);
+        assert!(
+            red > 150 && green < 90,
+            "the screen pane is not red: {red}, {green}, {blue}"
+        );
+        let [red, green, blue] = pixel(&frame, 320, 221, 90);
+        assert!(
+            blue > 150 && red < 90 && green < 90,
+            "the gap is not the background: {red}, {green}, {blue}"
+        );
+        let [red, green, blue] = pixel(&frame, 320, 280, 90);
+        assert!(
+            green > 150 && red < 90,
+            "the camera pane is not green: {red}, {green}, {blue}"
+        );
+
+        let _ = fs::remove_file(&wide_sidecar);
+        let _ = fs::remove_file(&plain_sidecar);
+        let _ = fs::remove_file(&wide_track);
+        let _ = fs::remove_file(&plain_track);
+        let _ = fs::remove_dir_all(&dir);
+    }
+}

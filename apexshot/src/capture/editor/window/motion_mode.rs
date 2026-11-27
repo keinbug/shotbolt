@@ -1,0 +1,513 @@
+//! Static ↔ Motion chrome, still preview, and default cinematic move.
+//!
+//! Motion is a mode of the image editor window, not a second app. Annotate
+//! tools stay on Static. Motion plays a composited snapshot; the PNG sidecar
+//! is not flattened until export.
+
+mod anchor_pad;
+pub(in crate::capture::editor::window) mod appearance;
+mod build;
+mod controls;
+mod pad_handle;
+mod parts;
+pub(in crate::capture::editor::window) mod position_pad;
+mod preview;
+mod session;
+mod text_pad;
+mod transition;
+mod typography;
+mod upscale_preview;
+mod watermark;
+mod watermark_pad;
+mod widgets;
+
+pub(super) use appearance::build_motion_appearance_panel;
+pub(super) use appearance::build_static_appearance_panel;
+pub(super) use build::build_motion_mode;
+pub(in crate::capture::editor::window) use build::motion_settings_section;
+pub(super) use controls::wire_motion_controls;
+pub(super) use parts::MotionModeParts;
+pub(in crate::capture::editor::window) use position_pad::MotionPositionPad;
+use preview::draw_motion_preview;
+pub(super) use session::{MotionHoverTrack, MotionRuntime, MotionSession};
+pub(super) use transition::{
+    apply_editor_mode, install_confirm_overlay, is_long_image, long_image_motion_tooltip,
+    request_enter_motion, request_leave_motion, show_motion_tool_page, MotionModeChrome,
+};
+pub(super) use watermark::build_motion_watermark_panel;
+pub(in crate::capture::editor::window) use widgets::{
+    angle_slider_row, perspective_slider_row, position_slider_row,
+};
+pub(super) const MOTION_PAGE: &str = "motion";
+pub(super) const STATIC_PAGE: &str = "static";
+/// Inspector stack pages owned by the Motion tool notch, in notch order.
+pub(super) const TEXT_PAGE: &str = "motion-text";
+pub(super) const APPEARANCE_PAGE: &str = "motion-appearance";
+pub(super) const WATERMARK_PAGE: &str = "motion-watermark";
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn text_panel_orders_content_placement_typography_and_animation() {
+        let build = include_str!("motion_mode/build.rs");
+        let content = build
+            .find("text_editor_box.append(&text_content_section)")
+            .unwrap();
+        let placement = build
+            .find("text_editor_box.append(&text_placement_section)")
+            .unwrap();
+        let typography = build
+            .find("text_editor_box.append(&typography_section)")
+            .unwrap();
+        let animation = build
+            .find("text_editor_box.append(&text_animation_section)")
+            .unwrap();
+        assert!(content < placement && placement < typography && typography < animation);
+    }
+
+    #[test]
+    fn text_scope_and_timing_controls_only_show_when_the_animation_uses_them() {
+        let build = include_str!("motion_mode/build.rs");
+        let sync = include_str!("motion_mode/controls/sync.rs");
+        let controls = include_str!("motion_mode/controls/text.rs");
+        assert!(build.contains("text_scope_box.append(&text_scope_label)"));
+        assert!(build.contains("text_scope_box.append(&text_scope_row)"));
+        assert!(build.contains("text_scope_box.set_visible(false)"));
+        assert!(build.contains("text_transition_slider.widget().set_visible(false)"));
+        assert!(sync
+            .contains("let is_typewriter = segment.animation == MotionTextAnimation::Typewriter"));
+        assert!(sync.contains("text_scope_box.set_visible(is_typewriter)"));
+        assert!(sync.contains("text_typewriter_box.set_visible(is_typewriter)"));
+        let timing = sync
+            .split("text_transition_slider.widget().set_visible(matches!(")
+            .nth(1)
+            .unwrap();
+        let timing = timing.split("));").next().unwrap();
+        for animation in [
+            "Fade",
+            "SlideFromLeft",
+            "SlideFromRight",
+            "SlideTop",
+            "SlideBottom",
+        ] {
+            assert!(timing.contains(&format!("MotionTextAnimation::{animation}")));
+        }
+        assert!(!timing.contains("MotionTextAnimation::None"));
+        assert!(!timing.contains("MotionTextAnimation::Typewriter"));
+        let animation_change = controls.split("for (animation, button)").nth(1).unwrap();
+        let animation_change = animation_change
+            .split("for (scope, button)")
+            .next()
+            .unwrap();
+        assert!(
+            animation_change.find("redraw();").unwrap()
+                < animation_change
+                    .find("request_text_transition_preview(start,")
+                    .unwrap()
+        );
+    }
+
+    use super::*;
+    use crate::capture::editor::state::EditorState;
+    use crate::capture::editor::types::{AnnotationAction, Point};
+    use crate::recording::editor::model::{MotionBackgroundFillType, MotionState};
+    use image::RgbaImage;
+
+    fn blank_state() -> EditorState {
+        let image = RgbaImage::from_pixel(8, 8, image::Rgba([0, 0, 0, 255]));
+        EditorState::new(image)
+    }
+
+    #[test]
+    fn snapshot_is_required_when_annotations_exist() {
+        let mut state = blank_state();
+        assert!(!transition::annotations_need_snapshot(&state));
+        state.actions.push(AnnotationAction::Line {
+            start: Point { x: 0.0, y: 0.0 },
+            end: Point { x: 4.0, y: 4.0 },
+            color: crate::capture::editor::types::DrawColor::new(1.0, 1.0, 1.0, 1.0),
+            stroke_size: 2.0,
+            shadow: false,
+        });
+        assert!(transition::annotations_need_snapshot(&state));
+        state.actions.clear();
+        assert!(!transition::annotations_need_snapshot(&state));
+    }
+
+    #[test]
+    fn motion_page_names_match_chrome_stacks() {
+        assert_eq!(MOTION_PAGE, "motion");
+        assert_eq!(STATIC_PAGE, "static");
+    }
+
+    /// The confirm dialog centres itself in the editor: the card expands into
+    /// the scrim so its Center alignment can place it. A card that does not
+    /// expand is handed the wrapped labels' one-line width and left at the
+    /// top, which parked the dialog in the corner.
+    #[test]
+    fn motion_confirm_card_expands_so_it_centres_in_the_editor() {
+        let transition = include_str!("motion_mode/transition.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(
+            transition.contains("card.set_halign(Align::Center)")
+                && transition.contains("card.set_valign(Align::Center)")
+                && transition.contains("card.set_hexpand(true)")
+                && transition.contains("card.set_vexpand(true)"),
+            "the confirm card should expand into the scrim so it centres in the editor"
+        );
+    }
+
+    /// Cancel sits alone on the left of the confirm dialog and the primary
+    /// Continue stays at the far right, instead of the two buttons huddling
+    /// together on the right.
+    #[test]
+    fn motion_confirm_buttons_keep_cancel_on_the_left() {
+        let transition = include_str!("motion_mode/transition.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(
+            transition.contains("buttons.set_halign(Align::Fill)")
+                && transition.contains("buttons_spacer.set_hexpand(true)")
+                && transition.contains("buttons.append(&cancel)")
+                && transition.contains("buttons.append(&buttons_spacer)")
+                && transition.contains("buttons.append(&cont)"),
+            "Cancel should sit on the left with Continue at the far right"
+        );
+    }
+
+    #[test]
+    fn default_duration_matches_still_length() {
+        assert!((MotionState::default().duration - 6.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn entering_motion_starts_with_an_empty_track() {
+        let state = blank_state();
+        let session = MotionSession::new(true, 0.0);
+        session.capture_snapshot(&state);
+        // Motion shows the hint and waits for a click or drag; nothing plays
+        // until the user adds a clip.
+        assert!(!session.has_segments());
+        let identity = session.runtime.borrow().motion.sample(1.5);
+        assert!((identity.scale - 1.0).abs() < 1e-6);
+        // Empty track stays perfectly flat so the still matches Static:
+        // no perspective warp, no rotation, no shadow lift.
+        assert!(identity.perspective.abs() < 1e-9);
+        assert!(identity.rotation_x.abs() < 1e-9);
+        assert!(identity.rotation_y.abs() < 1e-9);
+        assert!(identity.rotation_z.abs() < 1e-9);
+    }
+
+    #[test]
+    fn background_tool_opens_at_zero_for_fresh_images() {
+        let session = MotionSession::new(true, 0.0);
+        let padding = {
+            let runtime = session.runtime.borrow();
+            runtime.motion.appearance.background_padding
+        };
+        assert!(
+            padding.abs() < f64::EPSILON,
+            "a fresh image should open with 0px padding"
+        );
+    }
+
+    #[test]
+    fn background_tool_restores_the_images_own_padding() {
+        let session = MotionSession::new(true, 48.0);
+        let padding = {
+            let runtime = session.runtime.borrow();
+            runtime.motion.appearance.background_padding
+        };
+        assert!(
+            (padding - 48.0).abs() < f64::EPSILON,
+            "reopening an edited image should restore its saved padding"
+        );
+    }
+
+    #[test]
+    fn entering_motion_starts_with_no_background_so_it_matches_static() {
+        let session = MotionSession::new(true, 0.0);
+        let runtime = session.runtime.borrow();
+        // Single shared background: a fresh image with no Static fill must
+        // not gain a wallpaper in Motion. Users pick a fill explicitly.
+        assert_eq!(
+            runtime.motion.appearance.background_fill_type,
+            MotionBackgroundFillType::None
+        );
+    }
+
+    #[test]
+    fn motion_snapshot_is_background_free_so_no_second_layer_stacks() {
+        use crate::capture::editor::types::{BackgroundStyle, DrawColor};
+        let mut state = blank_state();
+        state.background_style = BackgroundStyle::PlainColor(DrawColor::new(0.9, 0.1, 0.1, 1.0));
+        state.background_padding = 48.0;
+        let card = state.to_motion_card_image().expect("card renders");
+        // Background-free: same pixels as the screenshot, not padded canvas.
+        assert_eq!(card.dimensions(), state.working_image.dimensions());
+        let snapshot_state = state.to_final_image().expect("final renders");
+        assert!(
+            snapshot_state.dimensions() != card.dimensions() || snapshot_state != card,
+            "final image must contain the background the motion card excludes"
+        );
+    }
+
+    #[test]
+    fn entering_motion_preserves_the_static_background_instead_of_doubling() {
+        use crate::capture::editor::types::{BackgroundStyle, DrawColor};
+        let mut state = blank_state();
+        state.background_style = BackgroundStyle::PlainColor(DrawColor::new(0.1, 0.2, 0.9, 1.0));
+        state.background_padding = 32.0;
+        let session = MotionSession::new(true, 0.0);
+        // Startup seeds the shared runtime once (see setup_editor_window_full);
+        // entry itself must preserve it, not reseed through lossy converters.
+        {
+            let mut runtime = session.runtime.borrow_mut();
+            runtime.motion.appearance.background_fill_type = MotionBackgroundFillType::Color;
+            runtime.motion.appearance.background_color = [0.1, 0.2, 0.9, 1.0];
+            runtime.motion.appearance.background_padding = 32.0;
+        }
+        session.capture_snapshot(&state);
+        let runtime = session.runtime.borrow();
+        // Single shared background: the seeded fill survives entry.
+        assert_eq!(
+            runtime.motion.appearance.background_fill_type,
+            MotionBackgroundFillType::Color
+        );
+        assert!((runtime.motion.appearance.background_padding - 32.0).abs() < f64::EPSILON);
+        // Card itself carries no background padding.
+        let snapshot = runtime.snapshot.as_ref().expect("snapshot");
+        assert_eq!(snapshot.dimensions(), state.working_image.dimensions());
+    }
+
+    #[test]
+    fn entering_motion_keeps_motion_frame_edits_instead_of_reseeding() {
+        use crate::recording::editor::model::MotionFramePreset;
+        let state = blank_state();
+        let session = MotionSession::new(true, 0.0);
+        // User picks a Frame in Motion (e.g. 16:9); re-entering must keep it
+        // instead of overwriting it from Static through lossy crop mapping
+        // (Custom/social presets never round-trip).
+        {
+            let mut runtime = session.runtime.borrow_mut();
+            runtime.motion.frame.preset = MotionFramePreset::SixteenNine;
+            runtime.motion.appearance.background_fill_type = MotionBackgroundFillType::Color;
+        }
+        session.capture_snapshot(&state);
+        // Simulate a second entry without leaving: frame must survive.
+        session.capture_snapshot(&state);
+        let runtime = session.runtime.borrow();
+        assert_eq!(runtime.motion.frame.preset, MotionFramePreset::SixteenNine);
+        assert_eq!(
+            runtime.motion.appearance.background_fill_type,
+            MotionBackgroundFillType::Color
+        );
+    }
+
+    #[test]
+    fn entering_motion_with_no_static_background_adds_no_fill() {
+        let state = blank_state();
+        let session = MotionSession::new(true, 0.0);
+        session.capture_snapshot(&state);
+        let runtime = session.runtime.borrow();
+        // Fresh images stay on None so Motion looks like Static instead of
+        // gaining a wallpaper Static never had.
+        assert_eq!(
+            runtime.motion.appearance.background_fill_type,
+            MotionBackgroundFillType::None
+        );
+    }
+
+    #[test]
+    fn appearance_background_uses_source_tabs_instead_of_one_stacked_card() {
+        let source = include_str!("motion_mode/appearance.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(
+            source.contains("motion_source_tab(\"Wallpapers\")")
+                && source.contains("motion_source_tab(\"Custom\")")
+                && source.contains("motion_source_tab(\"Image\")")
+                && source.contains("source_tabs.add_css_class(\"recording-editor-bg-tabs\")")
+                && source.contains("source_stack.add_named(&wallpaper_page, Some(\"wallpapers\"))")
+                && !source.contains("selection_stack"),
+            "Background should pick its fill from the video editor's tab tray, not one stacked card"
+        );
+    }
+
+    #[test]
+    fn static_transform_extension_is_not_added_to_motion_appearance() {
+        let source = include_str!("motion_mode/appearance.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        let background = source
+            .find("root.append(&background_section)")
+            .expect("Background section append");
+        let transform = source
+            .find("\"Transform\",\n            &static_transform,")
+            .expect("static transform section append");
+        let shadow = source.find("let shadow_section").expect("Shadow section");
+        assert!(
+            source.contains("build_appearance_panel(window, session, preview, on_interact, None)")
+                && source.contains("Some(static_transform)")
+                && background < transform
+                && transform < shadow,
+            "only the static Appearance builder should attach the transform extension",
+        );
+    }
+
+    /// The Custom tab is a summary row with an Edit pill, and the Color/Gradient
+    /// editors live in the video editor's own Custom Wallpaper popover behind
+    /// it — the video editor's Background pattern, so this panel never opens a
+    /// wall of inline editors and the two editors share one card.
+    #[test]
+    fn custom_fill_is_a_summary_row_with_an_edit_popover() {
+        let source = include_str!("motion_mode/appearance.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(
+            source.contains("recording-editor-bg-custom-row")
+                && source.contains("recording-editor-bg-custom-edit")
+                && source.contains("build_custom_fill_popover(")
+                && source.contains("&custom_edit,")
+                && source.contains("FillOps {"),
+            "Custom must be a summary row whose Edit pill opens the shared color/gradient popover",
+        );
+    }
+
+    /// Motion's gradient is the video editor's `VideoGradient` behind the shared
+    /// fill ops, so both editors edit one gradient spec instead of two parallel
+    /// two-color controls.
+    #[test]
+    fn gradient_background_shares_the_video_editors_gradient_spec() {
+        let source = include_str!("motion_mode/appearance.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(
+            source.contains("get_gradient:")
+                && source.contains("set_gradient:")
+                && source.contains("motion.appearance.gradient"),
+            "Motion gradients must read and write the shared VideoGradient spec"
+        );
+    }
+
+    #[test]
+    fn motion_scale_uses_a_multiplier_slider_instead_of_presets() {
+        let source = include_str!("motion_mode/build.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(
+            source.contains("FillSlider::new_with_value_text(&t(\"Scale\")")
+                && source.contains("format!(\"{value:.1}x\")")
+                && !source.contains("MOTION_SCALE_PRESETS"),
+            "Motion Scale should be a multiplier slider rather than a preset grid"
+        );
+    }
+
+    #[test]
+    fn position_pad_and_sliders_share_a_position_section() {
+        let build = include_str!("motion_mode/build.rs");
+        let sync = include_str!("motion_mode/controls/sync.rs");
+        let controls = include_str!("motion_mode/controls/transform.rs");
+        let widgets = include_str!("motion_mode/widgets.rs");
+
+        assert!(
+            build.contains("let position_section")
+                && build.contains("motion_settings_section(\"Position\")")
+                && build.contains("position_section.append(&position_pad.widget())")
+                && build.contains("position_slider_row(&t(\"X\"), 0.0)")
+                && build.contains("position_slider_row(&t(\"Y\"), 0.0)")
+                && widgets.contains("value * 1000.0")
+                && sync.contains("position_pad.set_position(segment.to.pos_x, segment.to.pos_y)")
+                && controls.contains("position_pad.connect_value_changed"),
+            "Position should keep the direct pad and 3D-unit X/Y sliders visibly grouped and synchronized"
+        );
+    }
+
+    /// Text placement is a 2D pad, not two percentage sliders: the pad is the
+    /// control the preview drag and the timeline selection both drive.
+    #[test]
+    fn text_placement_is_a_pad_rather_than_x_y_sliders() {
+        let build = include_str!("motion_mode/build.rs");
+        let controls = include_str!("motion_mode/controls/text.rs");
+        let sync = include_str!("motion_mode/controls/sync.rs");
+
+        assert!(
+            build.contains("let text_pos_pad = MotionTextPad::new()")
+                && build.contains("text_placement_section.append(&text_pos_pad.widget())")
+                && build.contains("motion_text_pos_readout")
+                && controls.contains("text_pos_pad.connect_value_changed")
+                && controls.contains("text_pos_pad.set_text_pos(pos_x, pos_y)")
+                && sync.contains("text_pos_pad.set_text_pos(segment.pos_x, segment.pos_y)")
+                && !build.contains("span_slider_row(\n        &t(\"X\")")
+                && !sync.contains("text_pos_x_slider"),
+            "Text placement should be one 2D pad with a readout, not X/Y sliders"
+        );
+    }
+
+    /// Text is its own Motion tool page. It used to be a section inside Move
+    /// that appeared only while a text clip was selected, which is what made
+    /// it hard to find.
+    #[test]
+    fn text_has_its_own_tool_page_beside_the_other_motion_tools() {
+        let host = include_str!("motion_host.rs");
+        let inspectors = include_str!("inspectors/mod.rs");
+        let build = include_str!("motion_mode/build.rs");
+        let transition = include_str!("motion_mode/transition.rs");
+
+        assert!(
+            inspectors.contains("let text_tab_btn = notch_btn(\"Text\",")
+                && inspectors.contains("motion_tabs.append(&text_tab_btn);")
+                && inspectors.contains("Some(\"motion-text\")")
+                && host.contains("(text_tab_btn.clone(), \"motion-text\")")
+                && build.contains("text_inspector: text_box.clone()")
+                && transition.contains("TEXT_PAGE")
+                && transition
+                    .contains("pub(in crate::capture::editor::window) fn show_motion_tool_page"),
+            "Text should be a notch page like Motion/Appearance/Watermark, not a Move sub-section"
+        );
+        // Reached the same way every other Motion tool is, so the highlighted
+        // notch and the visible panel cannot drift apart.
+        assert!(
+            host.contains("motion_mode::show_motion_tool_page(&chrome, page);")
+                || host.contains("show_motion_tool_page"),
+            "notch clicks should route through the shared page/active-state helper"
+        );
+    }
+
+    /// A text clip is its own tool page's content: selecting one reveals Text,
+    /// and the page never hides — with nothing selected it offers the add
+    /// action, which is why deselecting does not bounce the user elsewhere.
+    #[test]
+    fn selecting_a_text_clip_reveals_the_text_page_once() {
+        let sync = include_str!("motion_mode/controls/sync.rs");
+        assert!(
+            sync.contains("last_had_text.replace(has_text)")
+                && sync.contains("show_motion_tool_page(&chrome, super::super::TEXT_PAGE)")
+                && sync.contains("text_empty_box.set_visible(!has_text)")
+                && sync.contains("text_editor_box.set_visible(has_text)"),
+            "a text selection should reveal the Text page on the transition only, and the page \
+             should show an empty state instead of hiding"
+        );
+    }
+
+    /// Selecting a motion segment reveals the Motion page the same way a text
+    /// clip reveals Text, so clicking a clip in the timeline lands on its own
+    /// controls instead of staying on whichever page was open.
+    #[test]
+    fn selecting_a_motion_clip_reveals_the_motion_page_once() {
+        let sync = include_str!("motion_mode/controls/sync.rs");
+        assert!(
+            sync.contains("last_had_clip.replace(has_clip)")
+                && sync.contains("show_motion_tool_page(&chrome, super::super::MOTION_PAGE)"),
+            "a motion selection should reveal the Motion page on the transition only"
+        );
+    }
+}

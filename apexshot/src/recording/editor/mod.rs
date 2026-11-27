@@ -1,0 +1,53 @@
+pub mod auto_zoom;
+pub mod click_effect;
+pub mod cursor_export;
+pub mod cursor_path;
+pub mod cursor_planner;
+pub mod cursor_shake;
+pub mod cursor_sprite;
+pub mod cursor_track;
+pub(crate) mod export_cache;
+pub(crate) mod export_settings;
+pub mod ffmpeg;
+pub mod gst_warp;
+pub(crate) mod hardware_encode;
+pub mod imported_pointer;
+pub mod model;
+pub mod presets;
+pub mod project;
+pub mod recording_id;
+pub(crate) mod ripple_preview;
+pub mod sidecar;
+pub mod sound;
+pub mod sound_peaks;
+pub mod ui_support;
+pub(crate) mod window;
+pub mod zoom_path;
+
+use std::path::PathBuf;
+
+pub use model::{AudioMode, DimensionPreset, VideoEditState, VideoMetadata};
+
+pub fn open_empty_recording_editor() -> anyhow::Result<()> {
+    window::open_empty()
+}
+
+pub fn open_recording_editor(path: PathBuf) -> anyhow::Result<()> {
+    if !path.exists() {
+        anyhow::bail!("recording does not exist: {}", path.display());
+    }
+    if path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| !ext.eq_ignore_ascii_case("mp4"))
+        .unwrap_or(true)
+    {
+        anyhow::bail!("recording editor only supports MP4 files in this version");
+    }
+
+    // Open the editor window immediately and load the recording
+    // asynchronously (ffprobe + thumbnails run in a background thread with
+    // a loading spinner). This avoids a long frozen gap before the window
+    // appears for large recordings.
+    window::open_with_path(path)
+}

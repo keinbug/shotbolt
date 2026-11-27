@@ -1,0 +1,689 @@
+            /* FILENAME TAG PILLS */
+            .filename-tag-pill {
+                background-color: #fce4d6;
+                color: #ff670d;
+                border: none;
+                border-radius: 4px;
+                padding: 2px 8px;
+                font-family: monospace;
+                font-weight: bold;
+                box-shadow: none;
+            }
+            .filename-tag-pill:hover {
+                background-color: #f8d0b5;
+            }
+
+            .format-palette-box {
+                background-color: alpha(@window_fg_color, 0.05); /* Adaptive gray */
+                border: 1px solid alpha(@window_fg_color, 0.1);
+                border-radius: 8px;
+                padding: 20px;
+            }
+
+            .format-entry {
+                background: @view_bg_color;
+                color: @view_fg_color;
+                border: 1px solid alpha(@window_fg_color, 0.2);
+                border-radius: 6px;
+                padding: 10px;
+                font-size: 14px;
+            }
+
+            .modal-container {
+                background-color: @window_bg_color;
+                border-radius: 12px;
+            }
+
+            /* ABOUT TAB STYLES */
+            .about-app-name {
+                font-size: 24px;
+                font-weight: 800;
+                margin-bottom: 4px;
+            }
+            .about-version-label {
+                font-size: 13px;
+                opacity: 0.6;
+                margin-bottom: 24px;
+            }
+            .about-link-button {
+                background: transparent;
+                border: none;
+                color: #ff670d;
+                font-size: 13px;
+                padding: 4px 8px;
+                border-radius: 4px;
+                transition: all 0.15s ease;
+            }
+            .about-link-button:hover {
+                background: alpha(#ff670d, 0.08);
+                color: #ff670d;
+                text-decoration: underline;
+            }
+            .editor-root.editor-theme-light .about-link-button {
+                color: #cf530b;
+            }
+            .editor-root.editor-theme-light .about-link-button:hover {
+                color: #cf530b;
+            }
+
+            .about-support-title {
+                font-size: 13px;
+                font-weight: 600;
+                letter-spacing: 0.2px;
+                opacity: 0.72;
+            }
+
+            .about-support-copy {
+                font-size: 12px;
+                line-height: 1.45;
+                opacity: 0.58;
+            }
+
+            .editor-root.editor-theme-light .about-support-title {
+                color: alpha(#1d2129, 0.78);
+                opacity: 1;
+            }
+
+            .editor-root.editor-theme-light .about-support-copy {
+                color: alpha(#1d2129, 0.58);
+                opacity: 1;
+            }
+
+            /* Onboarding: a narrow centred form with rounded corners and no outline. */
+            .editor-root.onboarding-root {
+                background: #191919;
+                background-color: #191919;
+                color: #f3f0ec;
+                border: none;
+                border-radius: 12px;
+                box-shadow: none;
+                font-family: 'Inter', 'Noto Sans', system-ui, sans-serif;
+                font-size: 14px;
+            }
+
+            window.editor-window.onboarding-window {
+                border: none;
+                border-radius: 12px;
+            }
+
+            .onboarding-pane {
+                background: transparent;
+            }
+
+            .editor-root.onboarding-root scrolledwindow,
+            .editor-root.onboarding-root scrolledwindow > viewport {
+                background: transparent;
+            }
+
+            .editor-root.onboarding-root scrolledwindow undershoot.top,
+            .editor-root.onboarding-root scrolledwindow undershoot.bottom {
+                background: transparent;
+                box-shadow: none;
+            }
+
+            .editor-root.onboarding-root .onboarding-toolbar.settings-window-controls {
+                background: transparent;
+                border-bottom: none;
+            }
+
+            .editor-root.onboarding-root .onboarding-headline {
+                font-size: 28px;
+                font-weight: 600;
+                letter-spacing: -0.6px;
+                line-height: 1.15;
+            }
+
+            .editor-root.onboarding-root .onboarding-copy {
+                font-size: 15px;
+                font-weight: 400;
+                line-height: 1.35;
+                color: #a3a09c;
+                opacity: 1;
+            }
+
+            .editor-root.onboarding-root .onboarding-actions button.settings-primary-btn {
+                min-width: 0;
+                min-height: 42px;
+                padding: 0 18px;
+                border: none;
+                border-radius: 7px;
+                background-image: none;
+                background-color: #ff670d;
+                color: #ffffff;
+                font-size: 14px;
+                font-weight: 600;
+                box-shadow: none;
+            }
+
+            .editor-root.onboarding-root .onboarding-actions button.settings-primary-btn:hover {
+                background-image: none;
+                background-color: #ff792b;
+            }
+
+            .editor-root.onboarding-root .onboarding-actions button.settings-primary-btn:active {
+                background-color: #e65c0a;
+            }
+
+            .editor-root.onboarding-root .onboarding-actions button.settings-primary-btn:disabled {
+                background-color: #67391f;
+                color: #b9a493;
+            }
+
+            /* The ring itself is drawn in code; these rules only colour the
+               number and the ring (.onboarding-progress-ring's color). */
+            .editor-root.onboarding-root .onboarding-progress-node {
+                border: none;
+                border-radius: 999px;
+                color: rgba(243, 240, 236, 0.30);
+                font-size: 11px;
+                font-weight: 500;
+            }
+
+            .editor-root.onboarding-root .onboarding-progress-node-done {
+                color: rgba(243, 240, 236, 0.65);
+            }
+
+            .editor-root.onboarding-root .onboarding-progress-node-active {
+                color: #f3f0ec;
+                font-weight: 600;
+            }
+
+            .editor-root.onboarding-root .onboarding-progress-ring {
+                color: rgba(243, 240, 236, 0.14);
+            }
+
+            .editor-root.onboarding-root .onboarding-progress-node-done .onboarding-progress-ring {
+                color: rgba(243, 240, 236, 0.24);
+            }
+
+            .editor-root.onboarding-root .onboarding-progress-node-active .onboarding-progress-ring {
+                color: rgba(243, 240, 236, 0.65);
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-progress-ring {
+                color: rgba(37, 35, 31, 0.15);
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-progress-node-done .onboarding-progress-ring {
+                color: rgba(37, 35, 31, 0.28);
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-progress-node-active .onboarding-progress-ring {
+                color: rgba(37, 35, 31, 0.65);
+            }
+
+            .editor-root.onboarding-root .onboarding-progress-connector {
+                background-color: rgba(243, 240, 236, 0.12);
+            }
+
+            .editor-root.onboarding-root .onboarding-progress-connector-done {
+                background-color: rgba(243, 240, 236, 0.24);
+            }
+
+            .editor-root.onboarding-root .onboarding-text-button {
+                background: transparent;
+                background-image: none;
+                border: none;
+                box-shadow: none;
+                color: #b9b4ad;
+                font-size: 13px;
+                font-weight: 500;
+                padding: 5px 10px;
+            }
+
+            .editor-root.onboarding-root .onboarding-text-button:hover {
+                background: rgba(243, 240, 236, 0.06);
+                color: #f3f0ec;
+            }
+
+            .editor-root.onboarding-root .onboarding-text-button:active {
+                background: rgba(243, 240, 236, 0.10);
+                color: #f3f0ec;
+            }
+
+            .editor-root.onboarding-root .onboarding-action-note {
+                color: #83807b;
+                font-size: 12px;
+            }
+
+            /* Setup is a form, not another Settings page: no nested tables or cards. */
+            .editor-root.onboarding-root .onboarding-card-list,
+            .editor-root.onboarding-root .onboarding-hotkey-table {
+                background: transparent;
+                background-image: none;
+                border: none;
+                border-radius: 0;
+                box-shadow: none;
+            }
+
+            .editor-root.onboarding-root .onboarding-feature-row,
+            .editor-root.onboarding-root .onboarding-hotkey-table .settings-table-row {
+                background: transparent;
+                border: none;
+                padding: 9px 0;
+            }
+
+            .editor-root.onboarding-root .onboarding-icon-badge {
+                color: #b9b4ad;
+                background: transparent;
+                border-radius: 0;
+                min-width: 28px;
+                min-height: 28px;
+            }
+
+            .editor-root.onboarding-root .onboarding-hotkey-table label {
+                font-size: 14px;
+                font-weight: 500;
+            }
+
+            .editor-root.onboarding-root .onboarding-feature-title {
+                font-size: 15px;
+                font-weight: 500;
+            }
+
+            .editor-root.onboarding-root .settings-sub-option {
+                font-size: 13px;
+                font-weight: 400;
+                line-height: 1.3;
+                color: #a3a09c;
+                opacity: 1;
+            }
+
+            .editor-root.onboarding-root .cloud-user-name {
+                font-size: 15px;
+                font-weight: 500;
+            }
+
+            .editor-root.onboarding-root .onboarding-status-pill {
+                background-color: rgba(255, 124, 47, 0.14);
+                color: #ff8a4c;
+                border-radius: 999px;
+                padding: 3px 12px;
+                font-size: 12px;
+                font-weight: 600;
+            }
+
+            .editor-root.onboarding-root .onboarding-hotkey-table .shortcut-capture-plus {
+                color: rgba(243, 240, 236, 0.42);
+                font-size: 12px;
+                font-weight: 500;
+                margin-top: 0;
+            }
+
+            .editor-root.onboarding-root .onboarding-hotkey-table .shortcut-capture-keycap {
+                background: #2b2b2b;
+                background-image: none;
+                color: #f3f0ec;
+                border: none;
+                border-radius: 5px;
+                box-shadow: none;
+                padding: 4px 7px;
+                font-size: 12px;
+                font-weight: 500;
+            }
+
+            .editor-root.onboarding-root .onboarding-connect-code-frame {
+                background-color: #222222;
+                border: none;
+                border-radius: 8px;
+                box-shadow: none;
+                padding: 8px 8px 8px 16px;
+            }
+
+            .editor-root.onboarding-root .onboarding-connect-code {
+                font-family: monospace;
+                font-size: 24px;
+                font-weight: 600;
+                letter-spacing: 2px;
+                color: #f3f0ec;
+            }
+
+            .editor-root.onboarding-root .onboarding-connect-link-frame {
+                background-color: #222222;
+                border: none;
+                border-radius: 8px;
+                box-shadow: none;
+                padding: 8px 12px;
+            }
+
+            .editor-root.onboarding-root .onboarding-connect-link {
+                font-size: 13px;
+                color: #b9b4ad;
+            }
+
+            .editor-root.onboarding-root .onboarding-status-error {
+                font-size: 13px;
+                color: #e8786d;
+            }
+
+            .editor-root.onboarding-root .onboarding-danger-button {
+                background: rgba(227, 74, 74, 0.18);
+                border: none;
+                border-radius: 6px;
+                box-shadow: none;
+                padding: 6px 14px;
+                font-size: 13px;
+                color: #ffb3ad;
+            }
+
+            .editor-root.onboarding-root .onboarding-danger-button:hover {
+                background: rgba(227, 74, 74, 0.28);
+                color: #ffc9c4;
+            }
+
+            /* Light: warm paper instead of the settings window's blue-grey. */
+            .editor-root.editor-theme-light.onboarding-root {
+                background: #f4f2ee;
+                background-color: #f4f2ee;
+                color: #25231f;
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-copy,
+            .editor-root.editor-theme-light.onboarding-root .settings-sub-option {
+                color: #6c6861;
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-action-note {
+                color: #83807b;
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-actions button.settings-primary-btn:disabled {
+                background-color: rgba(255, 103, 13, 0.32);
+                color: #8a4a1f;
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-text-button {
+                color: #45413b;
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-text-button:hover {
+                background: rgba(37, 35, 31, 0.06);
+                color: #25231f;
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-text-button:active {
+                background: rgba(37, 35, 31, 0.10);
+                color: #25231f;
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-progress-node {
+                color: rgba(37, 35, 31, 0.35);
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-progress-node-done {
+                color: rgba(37, 35, 31, 0.65);
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-progress-node-active {
+                color: #25231f;
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-progress-connector {
+                background-color: rgba(37, 35, 31, 0.15);
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-progress-connector-done {
+                background-color: rgba(37, 35, 31, 0.28);
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-icon-badge {
+                color: #6c6861;
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-status-pill {
+                background-color: rgba(255, 103, 13, 0.12);
+                color: #cf530b;
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-hotkey-table .shortcut-capture-plus {
+                color: rgba(37, 35, 31, 0.40);
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-hotkey-table .shortcut-capture-keycap,
+            .editor-root.editor-theme-light.onboarding-root .onboarding-connect-code-frame,
+            .editor-root.editor-theme-light.onboarding-root .onboarding-connect-link-frame {
+                background: #e8e5df;
+                background-color: #e8e5df;
+                color: #25231f;
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-connect-code,
+            .editor-root.editor-theme-light.onboarding-root .onboarding-connect-link {
+                color: #25231f;
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-status-error {
+                color: #b3261e;
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-danger-button {
+                background: rgba(227, 74, 74, 0.12);
+                color: #8a2822;
+            }
+
+            .editor-root.editor-theme-light.onboarding-root .onboarding-danger-button:hover {
+                background: rgba(227, 74, 74, 0.20);
+                color: #8a2822;
+            }
+
+            /* ── Inline cloud connect view ── */
+
+            .cloud-connect-title {
+                font-size: 20px;
+                font-weight: 600;
+            }
+
+            .cloud-connect-hint {
+                color: alpha(white, 0.6);
+                font-size: 13px;
+            }
+
+            .cloud-connect-cell {
+                background-color: alpha(white, 0.04);
+                border: 1px solid alpha(white, 0.10);
+                border-radius: 8px;
+                min-width: 40px;
+                min-height: 48px;
+                font-size: 20px;
+                font-weight: 600;
+                font-feature-settings: "tnum";
+                transition: border-color 120ms ease;
+            }
+
+            .cloud-connect-code:hover .cloud-connect-cell {
+                border-color: alpha(white, 0.22);
+            }
+
+            .cloud-connect-dash {
+                color: alpha(white, 0.30);
+                font-size: 18px;
+                margin: 0 2px;
+            }
+
+            .editor-root button.cloud-connect-link {
+                background: transparent;
+                border: none;
+                box-shadow: none;
+                padding: 2px 4px;
+                margin-left: -4px;
+                border-radius: 4px;
+                color: alpha(white, 0.60);
+            }
+
+            .editor-root button.cloud-connect-link:hover {
+                background: transparent;
+                color: white;
+            }
+
+            .editor-root button.cloud-connect-link:hover label {
+                text-decoration-line: underline;
+            }
+
+            .editor-root button.cloud-connect-action {
+                background-image: none;
+                background-color: #ff670d;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                min-height: 34px;
+                padding: 0 16px;
+                font-weight: 600;
+                box-shadow: none;
+            }
+
+            .editor-root button.cloud-connect-action:hover {
+                background-color: #f25f08;
+            }
+
+            .editor-root button.cloud-connect-action:disabled {
+                background-color: alpha(#ff670d, 0.35);
+                color: alpha(white, 0.55);
+            }
+
+            .editor-root button.cloud-connect-secondary {
+                background-image: none;
+                background-color: alpha(white, 0.06);
+                color: alpha(white, 0.88);
+                border: 1px solid alpha(white, 0.08);
+                border-radius: 8px;
+                min-height: 34px;
+                padding: 0 14px;
+                font-weight: 500;
+                box-shadow: none;
+            }
+
+            .editor-root button.cloud-connect-secondary:hover {
+                background-color: alpha(white, 0.10);
+            }
+
+            .editor-root button.cloud-connect-secondary:disabled {
+                background-color: alpha(white, 0.03);
+                color: alpha(white, 0.35);
+            }
+
+            .editor-root button.cloud-connect-action:focus-visible,
+            .editor-root button.cloud-connect-secondary:focus-visible,
+            .editor-root button.cloud-connect-link:focus-visible,
+            .editor-root button.cloud-connect-back:focus-visible {
+                outline: 2px solid alpha(#ff7c2f, 0.8);
+                outline-offset: 2px;
+            }
+
+            .editor-root button.cloud-connect-back {
+                background: transparent;
+                border: none;
+                box-shadow: none;
+                color: alpha(white, 0.62);
+                padding: 5px 12px 5px 8px;
+                border-radius: 999px;
+            }
+
+            .editor-root button.cloud-connect-back:hover {
+                background: alpha(white, 0.06);
+                color: white;
+            }
+
+            .cloud-connect-meta {
+                color: alpha(white, 0.55);
+                font-size: 13px;
+            }
+
+            .cloud-connect-meta.onboarding-status-error {
+                color: #e8786d;
+            }
+
+            .cloud-connect-meta-dot {
+                color: alpha(white, 0.25);
+            }
+
+            .cloud-connect-expiry {
+                font-feature-settings: "tnum";
+            }
+
+            .cloud-connect-expiry.cloud-connect-expiry-urgent {
+                color: #e9a23b;
+            }
+
+            .editor-root.editor-theme-light .cloud-connect-hint {
+                color: alpha(#1d2129, 0.62);
+            }
+
+            .editor-root.editor-theme-light .cloud-connect-cell {
+                background-color: alpha(#111827, 0.03);
+                border-color: alpha(#111827, 0.14);
+            }
+
+            .editor-root.editor-theme-light .cloud-connect-code:hover .cloud-connect-cell {
+                border-color: alpha(#111827, 0.30);
+            }
+
+            .editor-root.editor-theme-light .cloud-connect-dash {
+                color: alpha(#1d2129, 0.35);
+            }
+
+            .editor-root.editor-theme-light button.cloud-connect-link {
+                color: alpha(#1d2129, 0.65);
+            }
+
+            .editor-root.editor-theme-light button.cloud-connect-link:hover {
+                color: #1d2129;
+            }
+
+            .editor-root.editor-theme-light button.cloud-connect-secondary {
+                background-color: alpha(#111827, 0.05);
+                border-color: alpha(#111827, 0.12);
+                color: #1d2129;
+            }
+
+            .editor-root.editor-theme-light button.cloud-connect-secondary:hover {
+                background-color: alpha(#111827, 0.09);
+            }
+
+            .editor-root.editor-theme-light button.cloud-connect-secondary:disabled {
+                background-color: alpha(#111827, 0.03);
+                color: alpha(#1d2129, 0.35);
+            }
+
+            .editor-root.editor-theme-light button.cloud-connect-back {
+                color: alpha(#1d2129, 0.7);
+            }
+
+            .editor-root.editor-theme-light button.cloud-connect-back:hover {
+                background: alpha(#111827, 0.06);
+                color: #1d2129;
+            }
+
+            .editor-root.editor-theme-light .cloud-connect-meta {
+                color: alpha(#1d2129, 0.6);
+            }
+
+            .editor-root.editor-theme-light .cloud-connect-meta.onboarding-status-error {
+                color: #b3261e;
+            }
+
+            .editor-root.editor-theme-light .cloud-connect-meta-dot {
+                color: alpha(#1d2129, 0.3);
+            }
+
+            .editor-root.editor-theme-light .cloud-connect-expiry.cloud-connect-expiry-urgent {
+                color: #b45309;
+            }
+
+            .cloud-avatar {
+                background: linear-gradient(145deg, #965032, #532d28);
+                border: 1px solid rgba(255,166,112,0.26);
+                color: #fff3eb;
+                border-radius: 50%;
+                font-size: 16px;
+                font-weight: 700;
+            }
+
+            .cloud-user-name {
+                font-weight: bold;
+                font-size: 16px;
+            }
+
+            .cloud-user-email {
+                font-size: 13px;
+                opacity: 0.6;
+            }

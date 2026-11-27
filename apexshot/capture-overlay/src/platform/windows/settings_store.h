@@ -1,0 +1,259 @@
+#pragma once
+
+#include "platform/recording_settings.h"
+
+#include <QDateTime>
+#include <QImage>
+#include <QMap>
+#include <QString>
+
+class QMimeData;
+
+/// Settings shared between the Rust settings window and the C++ shell.
+///
+/// The Rust window owns `%APPDATA%/apexshot/config.yml` (the Linux config) and
+/// mirrors the fields the Windows shell applies into
+/// `%APPDATA%/apexshot/settings.json`. Reading JSON here keeps the shell free of
+/// a YAML dependency while leaving the Rust config the source of truth.
+namespace Platform {
+
+struct ShellSettings {
+    struct General {
+        bool startAtLogin = false;
+        bool showTrayIcon = true;
+        QString theme = QStringLiteral("system");
+        QString language = QStringLiteral("system");
+        bool playSounds = true;
+        QString shutterSound = QStringLiteral("Camera");
+    } general;
+
+    QMap<QString, QString> shortcuts = {
+        {QStringLiteral("quick_capture"), QStringLiteral("Ctrl+Alt+Shift+M")},
+        {QStringLiteral("capture_area"), QStringLiteral("Ctrl+Alt+Shift+A")},
+        {QStringLiteral("capture_crosshair"), QStringLiteral("Ctrl+Alt+X")},
+        {QStringLiteral("capture_previous_area"), QString()},
+        {QStringLiteral("capture_fullscreen"), QStringLiteral("Ctrl+Alt+Shift+F")},
+        {QStringLiteral("show_last_preview"), QStringLiteral("Ctrl+Alt+P")},
+        {QStringLiteral("save_last_capture"), QString()},
+        {QStringLiteral("record_screen"), QString()},
+        {QStringLiteral("recording_stop_save"), QStringLiteral("Ctrl+Alt+Shift+S")},
+        {QStringLiteral("recording_pause"), QStringLiteral("Ctrl+Alt+Shift+P")},
+        {QStringLiteral("recording_restart"), QStringLiteral("Ctrl+Alt+Shift+R")},
+        {QStringLiteral("recording_marker"), QStringLiteral("Ctrl+Alt+Shift+K")},
+    };
+
+    struct Screenshots {
+        /// Empty means the user's Pictures folder.
+        QString exportLocation;
+        QString format = QStringLiteral("PNG");
+        QString clipboardMode = QStringLiteral("File & Image (default)");
+        int timerInterval = 0;
+        bool showCursor = true;
+        bool afterShowResult = true;
+        bool afterCopyToClipboard = false;
+        bool afterSave = true;
+        /// Open the annotated capture in the image editor once it is saved.
+        bool afterOpenEditor = false;
+        bool highDpiSuffix = false;
+    } screenshots;
+
+    /// The webcam layer, mirroring the Rust config's `rec_webcam_*` fields.
+    struct Webcam {
+        bool enabled = false;
+        /// dshow friendly name. Empty asks the recorder for the first camera.
+        QString device;
+        /// 0 small, 1 medium, 2 large, 3 huge.
+        int sizeIndex = 1;
+        /// 0 circle, 1 square, 2 rectangle, 3 vertical.
+        int shapeIndex = 0;
+        bool flip = false;
+        /// Bubble position across the capture: x left to right, y bottom to top.
+        double relX = 1.0;
+        double relY = 0.0;
+    };
+
+    struct Recording {
+        bool showCountdown = true;
+        bool showControls = true;
+        bool highDpi = true;
+        QString exportLocation;
+        QString filenamePattern;
+        RecordingSettings values;
+        bool includeMicrophone = false;
+        bool includeSpeaker = false;
+        bool afterShowResult = true;
+        bool afterCopyToClipboard = false;
+        bool afterSave = true;
+        bool afterOpenEditor = false;
+        /// Record key presses beside the video for the editor's shortcut
+        /// captions. Off unless the user turns it on.
+        bool captureKeystrokes = false;
+        Webcam webcam;
+    } recording;
+
+    struct QuickAccess {
+        QString position = QStringLiteral("Left");
+        double overlayScale = 1.0;
+        bool autoCloseEnabled = false;
+        int autoCloseSeconds = 30;
+        /// "Close" destroys the card when it times out; "Hide" keeps it for the tray.
+        QString autoCloseAction = QStringLiteral("Close");
+        bool closeAfterDragging = true;
+        bool closeAfterUploading = false;
+    } quickAccess;
+
+    /// The Rust window owns the Cloud tokens; the shell only needs to know
+    /// whether auto-upload can run and whether a destination is ready.
+    struct Cloud {
+        bool autoUploadAfterCapture = false;
+        bool configured = false;
+        /// The Settings toggle for the occasional Cloud suggestion. A mirror
+        /// written before the toggle existed leaves it on.
+        bool nudgeEnabled = true;
+    } cloud;
+
+    /// A licence covering this build, so the result card can drop its
+    /// occasional editor hint. Mirrored from the Rust entitlement store.
+    struct Studio {
+        bool unlocked = false;
+    } studio;
+
+    struct Ocr {
+        /// Tesseract-style code from the Rust config (`eng`, `spa`, ...).
+        QString language = QStringLiteral("eng");
+        bool keepLineBreaks = true;
+    } ocr;
+
+    bool telemetryEnabled = false;
+};
+
+/// The device choices the window-recording surface remembers between runs.
+///
+/// They live beside the settings mirror rather than inside it: the Rust
+/// settings window rewrites settings.json wholesale, and these are shell-owned
+/// selections the Rust side neither edits nor reads.
+struct RecordingDeviceChoices {
+    bool present = false;
+    bool microphoneEnabled = false;
+    QString microphoneDevice;
+    /// "off", "all", or "app".
+    QString systemAudioMode = QStringLiteral("off");
+    QString systemAudioApplication;
+    bool cameraEnabled = false;
+    QString cameraDevice;
+};
+
+/// `%APPDATA%/apexshot/settings.json`.
+QString shellSettingsPath();
+
+/// Where the person left the camera bubble, and the look they gave it, so the
+/// next preview opens the way they left it instead of at the defaults.
+struct WebcamPlacement {
+    bool present = false;
+    double relX = 1.0;
+    double relY = 0.0;
+    /// The bubble's width as a fraction of the display's height, which is what
+    /// keeps a resized bubble the same size on any screen.
+    double sizeFraction = 0.0;
+    /// 0 circle, 1 square, 2 rectangle, 3 vertical.
+    int shape = 0;
+    bool flip = false;
+};
+
+/// `%APPDATA%/apexshot/webcam-placement.json`.
+QString webcamPlacementPath();
+WebcamPlacement loadWebcamPlacement();
+/// Write the whole state: `sizeFraction` of 0 leaves the size to the preset.
+void saveWebcamPlacement(const WebcamPlacement& placement);
+
+/// `%APPDATA%/apexshot/recording-devices.json`.
+QString recordingDeviceChoicesPath();
+RecordingDeviceChoices loadRecordingDeviceChoices();
+void saveRecordingDeviceChoices(const RecordingDeviceChoices& choices);
+
+/// Lifetime counts for the quiet nudges.
+///
+/// They live beside the settings mirror rather than inside it: the Rust
+/// settings window rewrites settings.json wholesale, and these are shell-owned
+/// counters the Rust side neither edits nor reads. A missing or unreadable file
+/// behaves like a fresh install instead of blocking the capture path.
+struct StudioNudges {
+    quint64 screenshotCards = 0;
+    /// Successful Copy clicks, manual or automatic, shared by the Cloud nudge.
+    quint64 copies = 0;
+    quint64 cloudNudgeShows = 0;
+    quint64 cloudNudgeDismissals = 0;
+    /// Local day (`yyyymmdd`) of the last Cloud nudge; 0 means never shown.
+    int cloudNudgeLastDay = 0;
+};
+
+/// The counters that decide the Cloud nudge, read once after a Copy.
+struct CloudNudgeState {
+    quint64 copies = 0;
+    quint64 shows = 0;
+    quint64 dismissals = 0;
+    int lastDay = 0;
+};
+
+/// `%APPDATA%/apexshot/studio-nudges.json`.
+QString studioNudgesPath();
+StudioNudges loadStudioNudges();
+/// Persist one more real screenshot result card and return the new lifetime
+/// count. A storage failure returns 0 so the caller behaves as on the first
+/// capture.
+quint64 bumpScreenshotCardCount();
+/// Persist one more successful Copy and return the new lifetime count. A
+/// storage failure returns 0 so no nudge is shown from a counter that could
+/// not be recorded.
+quint64 bumpCopyCount();
+/// Whether a lifetime count is one of the quiet editor-hint slots.
+bool shouldShowEditorHint(quint64 screenshotCardCount);
+
+/// Whether a Copy should reveal the Cloud nudge. Pure so the eligibility
+/// table is tested directly; `todayKey` is the local day as `yyyymmdd` and
+/// `force` is the manual-QA override from `cloudNudgeForced()`.
+///
+/// The settings mirror carries only whether a destination is ready, not which
+/// one it is, so `cloudConfigured` is the whole configuration test here.
+bool cloudNudgeDue(const CloudNudgeState& state,
+                   bool cloudConfigured,
+                   bool nudgeEnabled,
+                   int todayKey,
+                   quint64 screenshots,
+                   bool force);
+/// `APEXSHOT_FORCE_CLOUD_NUDGE=1`, manual QA only.
+bool cloudNudgeForced();
+/// Record a reveal on `todayKey`, and one dismissal.
+void markCloudNudgeShown(int todayKey);
+void markCloudNudgeDismissed();
+
+/// Read the JSON mirror, applying defaults for missing or invalid values.
+ShellSettings loadShellSettings();
+
+/// Resolve the screenshot folder (empty config means Pictures).
+QString shellScreenshotOutputDir(const ShellSettings& settings);
+
+/// Resolve the recording folder (empty config means Videos/ApexShotRec).
+QString shellRecordingOutputDir(const ShellSettings& settings);
+
+/// Expand `{Date}` and `{Time}` in the filename pattern and join the folder.
+QString shellRecordingOutputPath(const ShellSettings& settings, const QDateTime& now);
+
+/// A temporary recording is still available to the result card and editor.
+QString shellTemporaryRecordingOutputPath();
+
+/// Build the requested clipboard formats; the caller owns the returned data.
+QMimeData* captureClipboardData(const QImage& image, const QString& filePath, const QString& mode);
+
+/// Clipboard behaviour matching the Linux setting values.
+void copyCaptureToClipboard(const QImage& image, const QString& filePath, const QString& mode);
+
+/// Encode `image` into `directory`, creating it and avoiding an existing name.
+bool saveScreenshotImage(const QImage& image,
+                         const ShellSettings& settings,
+                         const QString& directory,
+                         qreal devicePixelRatio,
+                         QString& outPath,
+                         QString& outError);
+
+}  // namespace Platform

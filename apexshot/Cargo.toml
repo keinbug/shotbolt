@@ -1,0 +1,220 @@
+[package]
+name = "apexshot"
+version = "0.3.2"
+edition = "2021"
+description = "Open-source Linux screenshot, annotation, and screen recording tool with OCR, QR detection, and fast capture workflows"
+license = "GPL-3.0-or-later"
+authors = ["codegoddy <codegoddy@gmail.com>"]
+repository = "https://github.com/apex-shot/apexshot"
+
+[[bin]]
+name = "apexshot"
+path = "src/main.rs"
+
+[[bin]]
+name = "test_rust_crosshair"
+path = "src/bin/test_rust_crosshair.rs"
+
+[dependencies]
+# display server
+x11rb = { version = "0.13.2", features = ["all-extensions"] }
+zbus = "5.11.0"  # for dbus/portal communication
+tokio = { version = "1.47.1", features = ["full"] }
+ashpd = { version = "0.13", default-features = false, features = ["tokio", "screencast", "remote_desktop", "background", "screenshot"] }
+url = "2.5"
+
+# GUI overlay for area selection (X11)
+gtk4 = { version = "0.10", features = ["v4_10"] }
+# Text shaping for Motion titles: Pango lays out the paragraphs (Unicode,
+# wrapping, alignment, spacing) and pangocairo draws the same layout the
+# hit-test measures. Same major as gtk4's own pango.
+pango = "0.21"
+pangocairo = "0.21"
+unicode-segmentation = "1"
+gdk4x11 = { package = "gdk4-x11", version = "0.10" }
+gtk4-layer-shell = "0.7.1"
+
+# error handling
+thiserror = "2.0.16"
+anyhow = "1.0.99"
+async-channel = "2.5.0"
+
+# utils
+dirs = "6.0.0"   # xdg dirs support
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.145"
+serde_yml = "0.0.12"
+base64 = "0.22.1"
+ed25519-dalek = "2.2.0"
+tracing = "0.1.41"
+futures-util = "0.3.31"
+async-trait = "0.1.89"
+image = { version = "0.24.9", features = ["png", "jpeg", "gif", "webp"] }
+# Direct use of image's own JPEG backend so previews decode at a DCT-scaled
+# size; `image` does not expose `Decoder::scale`. Already in the lock tree.
+jpeg-decoder = "0.3"
+rayon = "1.10"
+chrono = { version = "0.4", features = ["serde"] }
+sha2 = "0.10"
+
+# OCR
+tesseract = { version = "0.15", optional = true }
+ocrs = "0.12"
+rten = "0.24"
+rten-tensor = "0.24"
+rten-imageproc = "0.24"
+ureq = { version = "2.10", features = ["json"] }
+arboard = { version = "3.6", features = ["wayland-data-control"] }
+dotenvy = "0.15"
+
+# QR code detection
+rqrr = "0.9"
+gstreamer = "0.24.4"
+gstreamer-app = "0.24.4"
+gstreamer-video = "0.24.4"
+pipewire = "0.9"
+libspa-sys = "0.9"
+relm4-icons = "0.10.1"
+wayland-client = "0.31.12"
+wayland-protocols = { version = "0.32.10", features = ["client", "unstable"] }
+wayland-protocols-wlr = "0.3.10"
+libc = "0.2.182"
+wayland-protocols-plasma = { version = "0.3.12", features = ["client"] }
+ksni = "0.2"
+gettext-rs = { version = "0.7", features = ["gettext-system"] }
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"  # better test output
+test-case = "3.3.1"         # parameterized tests
+mockall = "0.13.1"          # mocking framework
+qrcode = "0.14.1"           # QR fixture generation for decoder tests
+
+[features]
+default = ["tesseract-ocr"]
+# Tesseract is bundled in Flatpak and linked from the system in native packages.
+tesseract-ocr = ["dep:tesseract"]
+# Sandboxed build with portal capture and bundled desktop tools.
+# Build with: cargo build --features flatpak
+flatpak = []
+nix = []
+
+[profile.release]
+strip = true
+panic = "abort"
+
+[build-dependencies]
+relm4-icons-build = "0.10.1"
+
+[package.metadata.deb]
+maintainer = "codegoddy <codegoddy@gmail.com>"
+copyright = "2026, codegoddy"
+license-file = ["LICENSE", "4"]
+# Runtime dependency policy.
+#
+# Hard `depends` entries are required for the *core* feature set to work
+# on any modern Linux system (Wayland or X11, PipeWire or PulseAudio).
+# Anything that is only needed for one specific stack is expressed as an
+# apt alternative (`pkg-a | pkg-b`) so that whichever the user already
+# runs satisfies the dependency. Stack-specific extras with no
+# alternative go into `recommends` instead, so dpkg never refuses to
+# install on a perfectly valid setup.
+#
+#   $auto                                      → package-owned shared libs of the
+#                                                Rust binary; GTK4 is explicit
+#                                                because the private layer-shell
+#                                                copy cannot be resolved by
+#                                                dpkg-shlibdeps.
+#   wl-clipboard | xclip                       → clipboard copy: wl-clipboard on Wayland,
+#                                                xclip on X11. Either satisfies.
+#   pipewire-pulse | pulseaudio-utils          → provides `pactl` for audio source listing.
+#                                                pipewire-pulse ships it on PipeWire systems;
+#                                                pulseaudio-utils on legacy PulseAudio systems.
+#   xdg-utils                                  → `xdg-open` (open file/URL)
+#   libnotify-bin                              → desktop notifications via notify-send
+#   ffmpeg                                     → video encoding & post-processing
+#   wget, curl, unzip                          → in-app GNOME extension installer
+#   gstreamer1.0-{plugins-base,plugins-good,plugins-bad,libav,pipewire}
+#                                              → ScreenCast / PipeWire capture + encoding
+#   fonts-inter                                 → ApexShot UI font (Cairo overlays, editor,
+#                                                settings, Qt capture overlay). fontconfig
+#                                                falls back to the system sans if removed.
+#   tesseract-ocr, tesseract-ocr-eng           → OCR (text extraction) – English by default
+#   libqt5widgets5/dbus5/network5/x11extras5,
+#   libxtst6                                   → run-time libs for the bundled
+#                                                `apexshot-capture` C++ overlay
+#                                                (cargo-deb's $auto cannot
+#                                                introspect asset binaries, so
+#                                                these MUST be listed manually)
+#   gtk4-layer-shell                           → bundled privately for Noble,
+#                                                where no runtime package exists;
+#                                                ApexShot's RUNPATH keeps it
+#                                                separate from distro-owned files.
+#   libgtk-4-1                                → GTK4 runtime for the Rust
+#                                                binary; listed explicitly
+#                                                because dpkg-shlibdeps stops
+#                                                at the privately bundled SONAME.
+depends = "$auto, libgtk-4-1, wl-clipboard | xclip, pipewire-pulse | pulseaudio-utils, xdg-utils, libnotify-bin, ffmpeg, wget, curl, unzip, gstreamer1.0-plugins-base, gstreamer1.0-plugins-good, gstreamer1.0-plugins-bad, gstreamer1.0-libav, gstreamer1.0-pipewire, fonts-inter, tesseract-ocr, tesseract-ocr-eng, libqt5widgets5, libqt5dbus5, libqt5network5, libqt5x11extras5, libxtst6"
+# Recommended (not required) — optional capture paths, GNOME polish, and
+# stack-specific helpers that we don't want to *force* onto users who
+# don't need them:
+#   xdg-desktop-portal-gnome | -gtk            → ScreenCast / Screenshot portal backend
+#   grim                                       → fast wlroots screencopy fallback
+#   pipewire                                   → PipeWire daemon (already on most modern installs)
+#   gstreamer1.0-pulseaudio                    → only needed when recording via the legacy
+#                                                PulseAudio sink; PipeWire users don't need it
+#                                                and forcing it can pull in conflicting pulse stacks.
+recommends = "xdg-desktop-portal-gnome | xdg-desktop-portal-gtk, grim, pipewire, gstreamer1.0-pulseaudio"
+section = "graphics"
+priority = "optional"
+assets = [
+    ["target/release/apexshot", "usr/bin/", "755"],
+    ["target/deb-staging/libgtk4-layer-shell.so.0", "usr/lib/apexshot/", "644"],
+    ["packaging/debian/gtk4-layer-shell.MIT-LICENSE", "usr/share/doc/apexshot/gtk4-layer-shell.LICENSE", "644"],
+    ["assets/upscaling/LICENSE", "usr/share/doc/apexshot/upscaling.LICENSE", "644"],
+    ["assets/upscaling/README.md", "usr/share/doc/apexshot/upscaling.md", "644"],
+    ["packaging/deb/apexshot-capture", "usr/bin/", "755"],
+    ["packaging/deb/apexshot-native-host", "usr/bin/", "755"],
+    ["packaging/io.github.codegoddy.apexshot.desktop", "usr/share/applications/io.github.codegoddy.apexshot.desktop", "644"],
+    ["packaging/io.github.codegoddy.apexshot.metainfo.xml", "usr/share/metainfo/io.github.codegoddy.apexshot.metainfo.xml", "644"],
+    ["packaging/apexshot-daemon.desktop", "etc/xdg/autostart/apexshot.desktop", "644"],
+    ["packaging/apexshot.svg", "usr/share/icons/hicolor/scalable/apps/apexshot.svg", "644"],
+    ["packaging/apexshot.svg", "usr/share/icons/hicolor/scalable/apps/io.github.codegoddy.apexshot.svg", "644"],
+    ["packaging/apexshot-recording.svg", "usr/share/icons/hicolor/scalable/apps/apexshot-recording.svg", "644"],
+    ["packaging/apexshot-recording.svg", "usr/share/icons/hicolor/scalable/apps/io.github.codegoddy.apexshot-recording.svg", "644"],
+    ["packaging/apexshot.svg", "usr/share/pixmaps/apexshot.svg", "644"],
+    ["target/locale/es/LC_MESSAGES/apexshot.mo", "usr/share/locale/es/LC_MESSAGES/", "644"],
+    ["target/locale/fr/LC_MESSAGES/apexshot.mo", "usr/share/locale/fr/LC_MESSAGES/", "644"],
+    ["target/locale/de/LC_MESSAGES/apexshot.mo", "usr/share/locale/de/LC_MESSAGES/", "644"],
+    ["target/locale/pt_BR/LC_MESSAGES/apexshot.mo", "usr/share/locale/pt_BR/LC_MESSAGES/", "644"],
+    ["target/locale/zh_CN/LC_MESSAGES/apexshot.mo", "usr/share/locale/zh_CN/LC_MESSAGES/", "644"],
+    ["target/locale/ja/LC_MESSAGES/apexshot.mo", "usr/share/locale/ja/LC_MESSAGES/", "644"],
+    ["target/locale/ru/LC_MESSAGES/apexshot.mo", "usr/share/locale/ru/LC_MESSAGES/", "644"],
+    ["target/locale/ar/LC_MESSAGES/apexshot.mo", "usr/share/locale/ar/LC_MESSAGES/", "644"],
+    ["src/capture/editor/background-images/gradient-01.jpg", "usr/share/apexshot/background-images/", "644"],
+    ["src/capture/editor/background-images/gradient-02.jpg", "usr/share/apexshot/background-images/", "644"],
+    ["src/capture/editor/background-images/gradient-03.jpg", "usr/share/apexshot/background-images/", "644"],
+    ["src/capture/editor/background-images/gradient-04.jpg", "usr/share/apexshot/background-images/", "644"],
+    ["src/capture/editor/background-images/gradient-05.jpg", "usr/share/apexshot/background-images/", "644"],
+    ["src/capture/editor/background-images/gradient-06.jpg", "usr/share/apexshot/background-images/", "644"],
+    ["src/capture/editor/background-images/gradient-07.jpg", "usr/share/apexshot/background-images/", "644"],
+    ["src/capture/editor/background-images/gradient-08.jpg", "usr/share/apexshot/background-images/", "644"],
+    ["src/capture/editor/background-images/gradient-09.jpg", "usr/share/apexshot/background-images/", "644"],
+    ["src/capture/editor/background-images/gradient-10.jpg", "usr/share/apexshot/background-images/", "644"],
+    ["src/capture/editor/background-images/gradient-thumb-*.jpg", "usr/share/apexshot/background-images/", "644"],
+    ["src/capture/editor/background-images/wallpaper*.jpg", "usr/share/apexshot/background-images/", "644"],
+    ["assets/sounds/camera.ogg", "usr/share/apexshot/sounds/", "644"],
+    ["assets/sounds/classic.ogg", "usr/share/apexshot/sounds/", "644"],
+    ["assets/sounds/pop.ogg", "usr/share/apexshot/sounds/", "644"],
+    ["native-host/io.github.codegoddy.apexshot.json", "etc/opt/chrome/NativeMessagingHosts/", "644"],
+    ["native-host/io.github.codegoddy.apexshot.json", "etc/chromium/NativeMessagingHosts/", "644"],
+    ["gnome-extension/metadata.json", "usr/share/gnome-shell/extensions/apexshot-gnome-integration@apexshot.github.io/", "644"],
+    ["gnome-extension/extension.js", "usr/share/gnome-shell/extensions/apexshot-gnome-integration@apexshot.github.io/", "644"],
+    ["gnome-extension/cursor-classifier.js", "usr/share/gnome-shell/extensions/apexshot-gnome-integration@apexshot.github.io/", "644"],
+    ["gnome-extension/press-tracker.js", "usr/share/gnome-shell/extensions/apexshot-gnome-integration@apexshot.github.io/", "644"],
+    ["gnome-extension/shell-overlay.js", "usr/share/gnome-shell/extensions/apexshot-gnome-integration@apexshot.github.io/", "644"],
+    ["gnome-extension/window-list.js", "usr/share/gnome-shell/extensions/apexshot-gnome-integration@apexshot.github.io/", "644"],
+    ["gnome-extension/preview-stacking.js", "usr/share/gnome-shell/extensions/apexshot-gnome-integration@apexshot.github.io/", "644"],
+    ["gnome-extension/daemon-ownership.js", "usr/share/gnome-shell/extensions/apexshot-gnome-integration@apexshot.github.io/", "644"],
+    ["gnome-extension/capture-menu-placement.js", "usr/share/gnome-shell/extensions/apexshot-gnome-integration@apexshot.github.io/", "644"],
+]
+maintainer-scripts = "packaging/debian"

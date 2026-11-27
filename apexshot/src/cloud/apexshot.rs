@@ -1,0 +1,647 @@
+use std::path::Path;
+
+use serde::Deserialize;
+
+use crate::config::{resolve_cloud_backend_url, AppConfig};
+
+#[allow(unused_imports)]
+pub(crate) use super::auth::{refresh_access_token, RefreshError};
+use super::upload::{guess_content_type, CloudLimit, CloudLimitKind, UploadError, UploadResult};
+
+#[derive(Debug, Deserialize)]
+struct CreateUploadResponse {
+    id: String,
+    #[serde(alias = "shareUrl")]
+    share_url: String,
+    #[serde(alias = "uploadUrl")]
+    upload_url: String,
+    #[serde(default)]
+    upload_protocol_version: Option<u16>,
+    #[serde(default)]
+    protected_upload: Option<bool>,
+    #[serde(default)]
+    upload_mode: Option<String>,
+    #[serde(default)]
+    upload_headers: Option<UploadHeaders>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UploadHeaders {
+    #[serde(rename = "If-Match")]
+    if_match: String,
+    #[serde(rename = "x-amz-meta-apexshot-upload-token")]
+    upload_token: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CompleteUploadResponse {
+    success: bool,
+    status: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiErrorResponse {
+    error: String,
+    #[serde(default)]
+    code: Option<String>,
+    #[serde(default)]
+    limit: Option<String>,
+    #[serde(default)]
+    used: Option<u64>,
+    #[serde(default)]
+    max: Option<u64>,
+    #[serde(default)]
+    resets_at: Option<String>,
+    #[serde(default)]
+    used_bytes: Option<u64>,
+    #[serde(default)]
+    max_bytes: Option<u64>,
+}
+
+/// The server's structured limit fields, with a text fallback for older
+/// services that only sent `{"error": "..."}`.
+fn cloud_limit_from_body(body: &ApiErrorResponse) -> CloudLimit {
+    let message = body.error.trim().to_string();
+    let limit = body
+        .limit
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_ascii_lowercase);
+    let kind = match limit.as_deref() {
+        Some("monthly_uploads") => CloudLimitKind::MonthlyUploads,
+        Some("storage") => CloudLimitKind::Storage,
+        Some(_) => CloudLimitKind::Other,
+        None => infer_limit_kind(&message),
+    };
+
+    let (used, max) = match kind {
+        CloudLimitKind::Storage => (body.used_bytes.or(body.used), body.max_bytes.or(body.max)),
+        _ => (body.used, body.max),
+    };
+
+    CloudLimit {
+        kind,
+        message,
+        used,
+        max,
+        resets_at: (kind == CloudLimitKind::MonthlyUploads)
+            .then(|| body.resets_at.clone())
+            .flatten(),
+    }
+}
+
+fn infer_limit_kind(message: &str) -> CloudLimitKind {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("per month") {
+        CloudLimitKind::MonthlyUploads
+    } else if lower.contains("storage") {
+        CloudLimitKind::Storage
+    } else {
+        CloudLimitKind::Other
+    }
+}
+
+pub(crate) fn is_configured(config: &AppConfig) -> bool {
+    // Token is the real session. Backend URL always resolves to the public
+    // default when unset, so end-user installs work without a .env file.
+    !config.cloud_api_token.is_empty() && !resolve_cloud_backend_url(config).is_empty()
+}
+
+pub(crate) fn not_configured_notification(_config: &AppConfig) -> (String, String) {
+    (
+        crate::i18n::t("Sign in to get a share link"),
+        crate::i18n::t("Connect your ApexShot account in Settings → Cloud to get share links."),
+    )
+}
+
+pub(crate) fn upload(
+    config: &AppConfig,
+    path: &Path,
+    progress: super::upload::UploadProgress<'_>,
+) -> Result<UploadResult, UploadError> {
+    if !is_configured(config) {
+        return Err(UploadError::NotConfigured(
+            "Cloud upload not configured. Connect your account in Settings → Cloud.".to_string(),
+        ));
+    }
+
+    let mut config = config.clone();
+    let result = upload_file_with_token(&config, path, progress);
+    if is_auth_error(&result) {
+        if config.cloud_refresh_token.is_empty() {
+            return Err(UploadError::AuthExpired(
+                "Your ApexShot Cloud session has expired. Run `apexshot login` again.".to_string(),
+            ));
+        }
+        let _ = refresh_access_token(&mut config);
+        return upload_file_with_token(&config, path, progress);
+    }
+    result
+}
+
+fn is_auth_error(result: &Result<UploadResult, UploadError>) -> bool {
+    matches!(result, Err(UploadError::HttpRequest(msg)) if msg.contains("401") || msg.contains("403"))
+}
+
+fn upload_file_with_token(
+    config: &AppConfig,
+    path: &Path,
+    progress: super::upload::UploadProgress<'_>,
+) -> Result<UploadResult, UploadError> {
+    let backend_url = resolve_cloud_backend_url(config);
+    let token = &config.cloud_api_token;
+
+    let file_bytes = std::fs::read(path).map_err(|e| UploadError::FileRead(e.to_string()))?;
+    let size_bytes = file_bytes.len() as i64;
+    let filename = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("upload")
+        .to_string();
+
+    let content_type = guess_content_type(&filename);
+
+    let create_body = serde_json::json!({
+        "upload_protocol_version": 2,
+        "filename": filename,
+        "size_bytes": size_bytes,
+        "content_type": content_type,
+        "visibility": "public",
+        "source": "desktop",
+    });
+
+    let create_body_str = create_body.to_string();
+    let create_resp = ureq::post(&format!("{backend_url}/v1/uploads"))
+        .set("Authorization", &format!("Bearer {token}"))
+        .set("Content-Type", "application/json")
+        .send_string(&create_body_str)
+        .map_err(map_upload_http_error)?;
+
+    let session: CreateUploadResponse = create_resp
+        .into_json()
+        .map_err(|e| UploadError::Server(format!("Invalid response: {e}")))?;
+
+    let is_local_upload = require_protected_upload_session(&session, &backend_url)?;
+
+    let mut put_request = ureq::put(&session.upload_url).set("Content-Type", &content_type);
+    if is_local_upload {
+        put_request = put_request.set("Authorization", &format!("Bearer {token}"));
+    } else if let Some(headers) = session.upload_headers.as_ref() {
+        put_request = put_request
+            .set("If-Match", &headers.if_match)
+            .set("x-amz-meta-apexshot-upload-token", &headers.upload_token);
+    }
+    let put_result = put_request
+        .set("Content-Length", &file_bytes.len().to_string())
+        .send(super::upload::ProgressReader::new(&file_bytes, progress));
+    match put_result {
+        Ok(_) => match complete_upload_session(&backend_url, token, &session.id) {
+            Ok(true) => {}
+            Ok(false) => {
+                let _ = delete_upload_session(&backend_url, token, &session.id);
+                return Err(UploadError::Server(
+                    "Cloud did not confirm that the upload completed".into(),
+                ));
+            }
+            Err(error) => return Err(UploadError::Server(error)),
+        },
+        Err(upload_error) => match complete_upload_session(&backend_url, token, &session.id) {
+            Ok(true) => {}
+            Ok(false) => {
+                let _ = delete_upload_session(&backend_url, token, &session.id);
+                return Err(map_upload_http_error(upload_error));
+            }
+            Err(_) => return Err(map_upload_http_error(upload_error)),
+        },
+    }
+
+    Ok(UploadResult {
+        share_url: normalize_share_url(&session.share_url, &backend_url)?,
+    })
+}
+
+fn map_upload_http_error(error: ureq::Error) -> UploadError {
+    match error {
+        ureq::Error::Status(code, response) => {
+            let detail = response
+                .into_string()
+                .ok()
+                .and_then(|body| serde_json::from_str::<ApiErrorResponse>(&body).ok())
+                .filter(|body| !body.error.trim().is_empty());
+
+            match detail {
+                Some(body) => {
+                    let message = body.error.trim();
+                    if body.code.as_deref() == Some("client_update_required") {
+                        return UploadError::Server(message.to_string());
+                    }
+                    let limit_code = body.code.as_deref() == Some("storage_full")
+                        || (code == 400 && body.code.as_deref() == Some("upgrade_required"));
+                    let legacy_limit_text =
+                        code == 400 && message.to_ascii_lowercase().contains("upgrade to pro");
+                    if limit_code || legacy_limit_text {
+                        UploadError::UpgradeRequired(cloud_limit_from_body(&body))
+                    } else {
+                        UploadError::HttpRequest(format!("HTTP {code}: {message}"))
+                    }
+                }
+                None => UploadError::HttpRequest(format!("HTTP {code}")),
+            }
+        }
+        ureq::Error::Transport(transport) => UploadError::HttpRequest(transport.to_string()),
+    }
+}
+
+fn require_protected_upload_session(
+    session: &CreateUploadResponse,
+    backend_url: &str,
+) -> Result<bool, UploadError> {
+    if session.upload_protocol_version != Some(2) || session.protected_upload != Some(true) {
+        return Err(UploadError::Server(
+            "This Cloud service does not confirm protected uploads. Update the service and app before retrying.".into(),
+        ));
+    }
+
+    match session.upload_mode.as_deref() {
+        Some("local") if is_backend_local_upload_url(&session.upload_url, backend_url) => {
+            Ok(true)
+        }
+        Some("r2")
+            if !is_backend_local_upload_url(&session.upload_url, backend_url)
+                && session.upload_headers.as_ref().is_some_and(|headers| {
+                    !headers.if_match.is_empty() && !headers.upload_token.is_empty()
+                }) =>
+        {
+            Ok(false)
+        }
+        _ => Err(UploadError::Server(
+            "The Cloud service returned an invalid protected upload session. Update the service and app before retrying.".into(),
+        )),
+    }
+}
+
+fn complete_upload_session(
+    backend_url: &str,
+    token: &str,
+    upload_id: &str,
+) -> Result<bool, String> {
+    let response = match ureq::post(&format!("{backend_url}/v1/uploads/{upload_id}"))
+        .set("Authorization", &format!("Bearer {token}"))
+        .set("Content-Type", "application/json")
+        .send_string("{}")
+    {
+        Ok(response) => response,
+        Err(ureq::Error::Status(409, _)) => return Ok(false),
+        Err(error) => return Err(error.to_string()),
+    };
+    let result: CompleteUploadResponse = response.into_json().map_err(|e| e.to_string())?;
+    Ok(result.success && result.status == "ready")
+}
+
+fn delete_upload_session(backend_url: &str, token: &str, upload_id: &str) -> Result<(), String> {
+    ureq::delete(&format!("{backend_url}/v1/uploads/{upload_id}"))
+        .set("Authorization", &format!("Bearer {token}"))
+        .call()
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+fn normalize_share_url(raw_share_url: &str, backend_url: &str) -> Result<String, UploadError> {
+    let raw_share_url = raw_share_url.trim();
+    if raw_share_url.is_empty() {
+        return Err(UploadError::Server(
+            "Upload response did not include a share URL".to_string(),
+        ));
+    }
+
+    if let Ok(url) = url::Url::parse(raw_share_url) {
+        return validate_web_share_url(url);
+    }
+
+    let mut origin = url::Url::parse(backend_url)
+        .map_err(|e| UploadError::Server(format!("Invalid cloud backend URL: {e}")))?;
+    origin.set_path("/");
+    origin.set_query(None);
+    origin.set_fragment(None);
+
+    let path = if raw_share_url.starts_with('/') {
+        raw_share_url.to_string()
+    } else {
+        format!("/{raw_share_url}")
+    };
+    let url = origin
+        .join(&path)
+        .map_err(|e| UploadError::Server(format!("Invalid share URL: {e}")))?;
+
+    validate_web_share_url(url)
+}
+
+fn validate_web_share_url(url: url::Url) -> Result<String, UploadError> {
+    match url.scheme() {
+        "http" | "https" => Ok(url.to_string()),
+        _ => Err(UploadError::Server(
+            "Upload response returned a non-web share URL".to_string(),
+        )),
+    }
+}
+
+fn is_backend_local_upload_url(upload_url: &str, backend_url: &str) -> bool {
+    let (Ok(upload), Ok(backend)) = (url::Url::parse(upload_url), url::Url::parse(backend_url))
+    else {
+        return false;
+    };
+
+    if upload.scheme() != backend.scheme()
+        || upload.host_str() != backend.host_str()
+        || upload.port_or_known_default() != backend.port_or_known_default()
+        || !upload.username().is_empty()
+        || upload.password().is_some()
+        || upload.query().is_some()
+        || upload.fragment().is_some()
+    {
+        return false;
+    }
+
+    let backend_path = backend.path().trim_end_matches('/');
+    let upload_prefix = format!("{backend_path}/v1/uploads/file/");
+    let Some(storage_key) = upload.path().strip_prefix(&upload_prefix) else {
+        return false;
+    };
+    let parts = storage_key.split('/').collect::<Vec<_>>();
+    parts.len() == 3
+        && parts[0] == "users"
+        && parts[1].len() == 36
+        && parts[1]
+            .chars()
+            .all(|ch| ch.is_ascii_hexdigit() || ch == '-')
+        && !parts[2].is_empty()
+        && parts[2]
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_'))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_status_error(code: u16, body: &str) -> ureq::Error {
+        ureq::is_test(true);
+        let response = ureq::Response::new(code, "Status", body).expect("test response");
+        ureq::Error::Status(code, response)
+    }
+
+    #[test]
+    fn keeps_absolute_web_share_url() {
+        let url = normalize_share_url(
+            "https://apexshot.org/s/7t1NE9mTWw9J",
+            "https://apexshot.org/api",
+        )
+        .unwrap();
+
+        assert_eq!(url, "https://apexshot.org/s/7t1NE9mTWw9J");
+    }
+
+    #[test]
+    fn expands_absolute_path_share_url_from_backend_origin() {
+        let url = normalize_share_url("/s/7t1NE9mTWw9J", "https://apexshot.org/api").unwrap();
+
+        assert_eq!(url, "https://apexshot.org/s/7t1NE9mTWw9J");
+    }
+
+    #[test]
+    fn expands_relative_path_share_url_from_backend_origin() {
+        let url = normalize_share_url("s/7t1NE9mTWw9J", "https://apexshot.org/api").unwrap();
+
+        assert_eq!(url, "https://apexshot.org/s/7t1NE9mTWw9J");
+    }
+
+    #[test]
+    fn rejects_local_file_share_url() {
+        let err = normalize_share_url(
+            "file:///home/codegoddy/Pictures/ApexShot2026-06-28_17-39-42.png",
+            "https://apexshot.org/api",
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("non-web share URL"));
+    }
+
+    #[test]
+    fn only_authenticates_same_origin_backend_upload_routes() {
+        assert!(is_backend_local_upload_url(
+            "https://api.apexshot.org/v1/uploads/file/users/123e4567-e89b-12d3-a456-426614174000/ab12-file.png",
+            "https://api.apexshot.org",
+        ));
+        assert!(!is_backend_local_upload_url(
+            "https://storage.example/users/123e4567-e89b-12d3-a456-426614174000/ab12-file.png?X-Amz-Signature=opaque",
+            "https://api.apexshot.org",
+        ));
+        assert!(!is_backend_local_upload_url(
+            "https://api.apexshot.org/v1/uploads/file/users/123e4567-e89b-12d3-a456-426614174000/ab12-file.png",
+            "https://api.apexshot.org/api",
+        ));
+        assert!(!is_backend_local_upload_url(
+            "https://api.apexshot.org/v1/uploads/file/users/123e4567-e89b-12d3-a456-426614174000/ab12-file.png?next=https://elsewhere.example",
+            "https://api.apexshot.org",
+        ));
+    }
+
+    #[test]
+    fn accepts_camel_case_create_response_fields() {
+        let response: CreateUploadResponse = serde_json::from_str(
+            r#"{
+                "id": "123e4567-e89b-12d3-a456-426614174000",
+                "shareUrl": "https://apexshot.org/s/7t1NE9mTWw9J",
+                "uploadUrl": "https://storage.example/upload",
+                "upload_protocol_version": 2,
+                "protected_upload": true,
+                "upload_mode": "r2",
+                "upload_headers": {
+                    "If-Match": "\"slot-etag\"",
+                    "x-amz-meta-apexshot-upload-token": "session-token"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(response.upload_protocol_version, Some(2));
+        assert_eq!(response.protected_upload, Some(true));
+        assert_eq!(response.upload_mode.as_deref(), Some("r2"));
+        assert_eq!(
+            response.upload_headers.as_ref().unwrap().if_match,
+            "\"slot-etag\""
+        );
+        assert_eq!(response.share_url, "https://apexshot.org/s/7t1NE9mTWw9J");
+        assert_eq!(response.upload_url, "https://storage.example/upload");
+    }
+
+    #[test]
+    fn refuses_unprotected_responses_from_older_cloud_services() {
+        let old_response: CreateUploadResponse = serde_json::from_str(
+            r#"{
+                "id": "123e4567-e89b-12d3-a456-426614174000",
+                "share_url": "https://apexshot.org/s/7t1NE9mTWw9J",
+                "upload_url": "https://storage.example/upload"
+            }"#,
+        )
+        .unwrap();
+
+        let error = require_protected_upload_session(&old_response, "https://api.apexshot.org")
+            .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("does not confirm protected uploads"));
+    }
+
+    #[test]
+    fn requires_conditional_headers_for_r2_and_local_backend_url_for_fallback() {
+        let r2_without_headers = CreateUploadResponse {
+            id: "id".into(),
+            share_url: "https://apexshot.org/s/id".into(),
+            upload_url: "https://storage.example/upload".into(),
+            upload_protocol_version: Some(2),
+            protected_upload: Some(true),
+            upload_mode: Some("r2".into()),
+            upload_headers: None,
+        };
+        assert!(
+            require_protected_upload_session(&r2_without_headers, "https://api.apexshot.org")
+                .is_err()
+        );
+
+        let local = CreateUploadResponse {
+            id: "id".into(),
+            share_url: "https://apexshot.org/s/id".into(),
+            upload_url: "https://api.apexshot.org/v1/uploads/file/users/123e4567-e89b-12d3-a456-426614174000/42-file.png".into(),
+            upload_protocol_version: Some(2),
+            protected_upload: Some(true),
+            upload_mode: Some("local".into()),
+            upload_headers: None,
+        };
+        assert!(require_protected_upload_session(&local, "https://api.apexshot.org").unwrap());
+    }
+
+    #[test]
+    fn client_update_error_is_not_mapped_to_a_pro_plan_upgrade() {
+        let error = map_upload_http_error(make_status_error(
+            426,
+            r#"{"code":"client_update_required","error":"Update ApexShot to upload securely."}"#,
+        ));
+
+        assert!(
+            matches!(error, UploadError::Server(message) if message.contains("Update ApexShot"))
+        );
+    }
+
+    #[test]
+    fn maps_a_legacy_monthly_quota_body_to_a_monthly_limit() {
+        let error = map_upload_http_error(make_status_error(
+            400,
+            r#"{"error":"Free plan uploads are limited to 20 files per month. Upgrade to Pro to remove the monthly cap."}"#,
+        ));
+
+        let UploadError::UpgradeRequired(limit) = error else {
+            panic!("expected a limit error");
+        };
+        assert_eq!(limit.kind, CloudLimitKind::MonthlyUploads);
+        assert_eq!(limit.used, None);
+        assert_eq!(limit.max, None);
+        assert!(limit.message.contains("20 files per month"));
+    }
+
+    #[test]
+    fn keeps_auth_status_visible_for_token_refresh() {
+        let result = Err(map_upload_http_error(make_status_error(
+            401,
+            r#"{"error":"Token expired"}"#,
+        )));
+
+        assert!(is_auth_error(&result));
+    }
+
+    #[test]
+    fn identifies_structured_upgrade_response() {
+        let error = map_upload_http_error(make_status_error(
+            400,
+            r#"{"error":"Monthly upload limit reached","code":"upgrade_required","limit":"monthly_uploads","used":20,"max":20,"resets_at":"2026-12-01T00:00:00Z"}"#,
+        ));
+
+        let UploadError::UpgradeRequired(limit) = error else {
+            panic!("expected a limit error");
+        };
+        assert_eq!(limit.kind, CloudLimitKind::MonthlyUploads);
+        assert_eq!(limit.used, Some(20));
+        assert_eq!(limit.max, Some(20));
+        assert_eq!(limit.resets_at.as_deref(), Some("2026-12-01T00:00:00Z"));
+    }
+
+    #[test]
+    fn identifies_a_structured_storage_error() {
+        let error = map_upload_http_error(make_status_error(
+            400,
+            r#"{"error":"Free storage is full","code":"upgrade_required","limit":"storage","used_bytes":2147483648,"max_bytes":2147483648}"#,
+        ));
+
+        let UploadError::UpgradeRequired(limit) = error else {
+            panic!("expected a limit error");
+        };
+        assert_eq!(limit.kind, CloudLimitKind::Storage);
+        assert_eq!(limit.used, Some(2_147_483_648));
+        assert_eq!(limit.max, Some(2_147_483_648));
+        assert_eq!(limit.resets_at, None);
+    }
+
+    #[test]
+    fn treats_storage_full_as_a_storage_limit() {
+        let error = map_upload_http_error(make_status_error(
+            400,
+            r#"{"error":"Storage full","code":"storage_full","limit":"storage","used_bytes":2147483648,"max_bytes":2147483648}"#,
+        ));
+
+        let UploadError::UpgradeRequired(limit) = error else {
+            panic!("expected a limit error");
+        };
+        assert_eq!(limit.kind, CloudLimitKind::Storage);
+        assert_eq!(limit.used, Some(2_147_483_648));
+    }
+
+    #[test]
+    fn identifies_legacy_free_storage_upgrade_response() {
+        let error = map_upload_http_error(make_status_error(
+            400,
+            r#"{"error":"Free plan storage is limited to 2 GB total. Delete files or upgrade to Pro to upload more."}"#,
+        ));
+
+        let UploadError::UpgradeRequired(limit) = error else {
+            panic!("expected a limit error");
+        };
+        assert_eq!(limit.kind, CloudLimitKind::Storage);
+        assert_eq!(limit.used, None);
+        assert_eq!(limit.max, None);
+    }
+
+    #[test]
+    fn does_not_offer_upgrade_for_paid_quota_or_provider_errors() {
+        for (status, body) in [
+            (
+                400,
+                r#"{"error":"Pro plan storage is limited to 100 GB total. Delete files before uploading more."}"#,
+            ),
+            (
+                500,
+                r#"{"error":"Upgrade to Pro","code":"upgrade_required"}"#,
+            ),
+        ] {
+            let error = map_upload_http_error(make_status_error(status, body));
+            assert!(matches!(error, UploadError::HttpRequest(_)));
+        }
+    }
+
+    #[test]
+    fn falls_back_to_status_for_invalid_error_response() {
+        let error = map_upload_http_error(make_status_error(500, "upstream HTML response"));
+
+        assert_eq!(error.to_string(), "Upload request failed: HTTP 500");
+    }
+}

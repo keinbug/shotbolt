@@ -1,0 +1,608 @@
+// Coverage for the JSON settings mirror shared with the Rust settings window.
+
+#include "platform/windows/settings_store.h"
+
+#include <QColorSpace>
+#include <QCoreApplication>
+#include <QDate>
+#include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QImage>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QMimeData>
+#include <QTemporaryDir>
+#include <QTime>
+#include <QUrl>
+
+#include <cstdio>
+#include <memory>
+
+namespace {
+
+int failures = 0;
+
+void check(bool ok, const char* expression, int line)
+{
+    if (ok)
+        return;
+    std::printf("FAIL line %d: %s\n", line, expression);
+    ++failures;
+}
+
+#define CHECK(expression) check((expression), #expression, __LINE__)
+
+QString settingsFile(const QTemporaryDir& dir)
+{
+    return QDir(dir.path()).filePath(QStringLiteral("apexshot/settings.json"));
+}
+
+void writeSettings(const QTemporaryDir& dir, const QByteArray& json)
+{
+    QDir().mkpath(QFileInfo(settingsFile(dir)).absolutePath());
+    QFile file(settingsFile(dir));
+    CHECK(file.open(QIODevice::WriteOnly));
+    file.write(json);
+}
+
+void removeSettings(const QTemporaryDir& dir)
+{
+    QFile::remove(settingsFile(dir));
+}
+
+void checkDefaults(const QTemporaryDir& dir)
+{
+    Q_UNUSED(dir);
+    const Platform::ShellSettings settings = Platform::loadShellSettings();
+    CHECK(settings.screenshots.format == QStringLiteral("PNG"));
+    CHECK(settings.general.playSounds);
+    CHECK(settings.general.shutterSound == QStringLiteral("Camera"));
+    CHECK(!settings.general.startAtLogin);
+    CHECK(settings.general.showTrayIcon);
+    CHECK(settings.general.theme == QStringLiteral("system"));
+    CHECK(settings.general.language == QStringLiteral("system"));
+    CHECK(settings.shortcuts.value(QStringLiteral("quick_capture")) == QStringLiteral("Ctrl+Alt+Shift+M"));
+    CHECK(settings.shortcuts.value(QStringLiteral("record_screen")).isEmpty());
+    CHECK(settings.screenshots.showCursor);
+    CHECK(settings.screenshots.afterShowResult);
+    CHECK(!settings.screenshots.afterCopyToClipboard);
+    CHECK(settings.screenshots.afterSave);
+    CHECK(!settings.screenshots.afterOpenEditor);
+    CHECK(settings.recording.showCountdown);
+    CHECK(settings.recording.showControls);
+    CHECK(settings.recording.highDpi);
+    CHECK(settings.recording.values.fpsIndex == 1);
+    CHECK(settings.recording.values.maxResolutionIndex == 0);
+    CHECK(settings.recording.values.qualityIndex == 1);
+    CHECK(settings.recording.values.codecIndex == 0);
+    CHECK(!settings.recording.values.monoAudio);
+    CHECK(!settings.recording.captureKeystrokes);
+    CHECK(!settings.recording.includeMicrophone);
+    CHECK(!settings.recording.afterCopyToClipboard);
+    CHECK(settings.recording.afterSave);
+    CHECK(!settings.recording.afterOpenEditor);
+    CHECK(!settings.recording.webcam.enabled);
+    CHECK(settings.recording.webcam.device.isEmpty());
+    CHECK(settings.recording.webcam.sizeIndex == 1);
+    CHECK(settings.recording.webcam.shapeIndex == 0);
+    CHECK(!settings.recording.webcam.flip);
+    CHECK(qFuzzyCompare(settings.recording.webcam.relX, 1.0));
+    CHECK(qFuzzyCompare(settings.recording.webcam.relY, 0.0));
+    CHECK(settings.quickAccess.position == QStringLiteral("Left"));
+    CHECK(qFuzzyCompare(settings.quickAccess.overlayScale, 1.0));
+    CHECK(!settings.quickAccess.autoCloseEnabled);
+    CHECK(settings.quickAccess.autoCloseSeconds == 30);
+    CHECK(settings.quickAccess.autoCloseAction == QStringLiteral("Close"));
+    CHECK(settings.quickAccess.closeAfterDragging);
+    CHECK(!settings.quickAccess.closeAfterUploading);
+    CHECK(!settings.cloud.autoUploadAfterCapture);
+    CHECK(!settings.cloud.configured);
+    CHECK(settings.cloud.nudgeEnabled);
+    CHECK(!settings.studio.unlocked);
+    CHECK(settings.ocr.language == QStringLiteral("eng"));
+    CHECK(settings.ocr.keepLineBreaks);
+}
+
+void checkParsing(const QTemporaryDir& dir)
+{
+    writeSettings(dir,
+                  R"({
+  "general": { "start_at_login": true, "show_tray_icon": false,
+               "theme": "dark", "language": "fr",
+               "play_sounds": false, "shutter_sound": "Classic" },
+  "shortcuts": { "quick_capture": "Ctrl+Alt+M", "capture_area": "",
+                 "record_screen": "Ctrl+Alt+R" },
+  "screenshots": {
+    "export_location": " C:/Users/me/Pictures/Shots ",
+    "format": "WebP",
+    "clipboard_mode": "Image Only",
+    "timer_interval": 5,
+    "show_cursor": false,
+    "after_show_result": false,
+    "after_copy_to_clipboard": true,
+    "after_save": false,
+    "after_open_editor": true,
+    "high_dpi_suffix": true
+  },
+  "recording": {
+    "show_countdown": false,
+    "show_controls": false,
+    "high_dpi": false,
+    "export_location": "C:/Videos/Clips",
+    "filename_pattern": "Take {Date} {Time}",
+    "fps_index": 3,
+    "max_resolution_index": 2,
+    "quality_index": 0,
+    "codec_index": 1,
+    "mono_audio": true,
+    "capture_keystrokes": true,
+    "include_microphone": true,
+    "include_speaker": true,
+    "show_cursor": false,
+    "after_show_result": false,
+    "after_copy_to_clipboard": true,
+    "after_save": false,
+    "after_open_editor": true,
+    "webcam": {
+      "enabled": true,
+      "device": " Integrated Camera ",
+      "size_index": 3,
+      "shape_index": 2,
+      "flip": true,
+      "rel_x": 0.25,
+      "rel_y": 0.8
+    }
+  },
+  "quick_access": {
+    "position": "Right",
+    "overlay_scale": 1.2,
+    "auto_close_enabled": true,
+    "auto_close_seconds": 45,
+    "auto_close_action": "Hide",
+    "close_after_dragging": false,
+    "close_after_uploading": true
+  },
+  "cloud": {
+    "auto_upload_after_capture": true,
+    "configured": true,
+    "nudge_enabled": false
+  },
+  "studio": {
+    "unlocked": true
+  },
+  "ocr": {
+    "language": "deu",
+    "keep_line_breaks": false
+  }
+})");
+
+    const Platform::ShellSettings settings = Platform::loadShellSettings();
+    CHECK(settings.screenshots.exportLocation == QStringLiteral("C:/Users/me/Pictures/Shots"));
+    CHECK(settings.screenshots.format == QStringLiteral("WebP"));
+    CHECK(!settings.general.playSounds);
+    CHECK(settings.general.shutterSound == QStringLiteral("Classic"));
+    CHECK(settings.general.startAtLogin);
+    CHECK(!settings.general.showTrayIcon);
+    CHECK(settings.general.theme == QStringLiteral("dark"));
+    CHECK(settings.general.language == QStringLiteral("fr"));
+    CHECK(settings.shortcuts.value(QStringLiteral("quick_capture")) == QStringLiteral("Ctrl+Alt+M"));
+    CHECK(settings.shortcuts.value(QStringLiteral("capture_area")).isEmpty());
+    CHECK(settings.shortcuts.value(QStringLiteral("record_screen")) == QStringLiteral("Ctrl+Alt+R"));
+    CHECK(settings.shortcuts.value(QStringLiteral("capture_fullscreen")) == QStringLiteral("Ctrl+Alt+Shift+F"));
+    CHECK(settings.screenshots.clipboardMode == QStringLiteral("Image Only"));
+    CHECK(settings.screenshots.timerInterval == 5);
+    CHECK(!settings.screenshots.showCursor);
+    CHECK(!settings.screenshots.afterShowResult);
+    CHECK(settings.screenshots.afterCopyToClipboard);
+    CHECK(!settings.screenshots.afterSave);
+    CHECK(settings.screenshots.afterOpenEditor);
+    CHECK(settings.screenshots.highDpiSuffix);
+    CHECK(!settings.recording.showCountdown);
+    CHECK(!settings.recording.showControls);
+    CHECK(!settings.recording.highDpi);
+    CHECK(settings.recording.values.fpsIndex == 3);
+    CHECK(settings.recording.values.maxResolutionIndex == 2);
+    CHECK(settings.recording.values.qualityIndex == 0);
+    CHECK(settings.recording.values.codecIndex == 1);
+    CHECK(settings.recording.values.monoAudio);
+    CHECK(settings.recording.captureKeystrokes);
+    CHECK(settings.recording.includeMicrophone);
+    CHECK(settings.recording.includeSpeaker);
+    CHECK(!settings.recording.afterShowResult);
+    CHECK(settings.recording.afterCopyToClipboard);
+    CHECK(!settings.recording.afterSave);
+    CHECK(settings.recording.afterOpenEditor);
+    CHECK(settings.recording.webcam.enabled);
+    CHECK(settings.recording.webcam.device == QStringLiteral("Integrated Camera"));
+    CHECK(settings.recording.webcam.sizeIndex == 3);
+    CHECK(settings.recording.webcam.shapeIndex == 2);
+    CHECK(settings.recording.webcam.flip);
+    CHECK(qFuzzyCompare(settings.recording.webcam.relX, 0.25));
+    CHECK(qFuzzyCompare(settings.recording.webcam.relY, 0.8));
+    CHECK(settings.quickAccess.position == QStringLiteral("Right"));
+    CHECK(qFuzzyCompare(settings.quickAccess.overlayScale, 1.2));
+    CHECK(settings.quickAccess.autoCloseEnabled);
+    CHECK(settings.quickAccess.autoCloseSeconds == 45);
+    CHECK(settings.quickAccess.autoCloseAction == QStringLiteral("Hide"));
+    CHECK(!settings.quickAccess.closeAfterDragging);
+    CHECK(settings.quickAccess.closeAfterUploading);
+    CHECK(settings.cloud.autoUploadAfterCapture);
+    CHECK(settings.cloud.configured);
+    CHECK(!settings.cloud.nudgeEnabled);
+    CHECK(settings.studio.unlocked);
+    CHECK(settings.ocr.language == QStringLiteral("deu"));
+    CHECK(!settings.ocr.keepLineBreaks);
+}
+
+void checkSanitizing(const QTemporaryDir& dir)
+{
+    writeSettings(dir,
+                  R"({
+  "screenshots": { "format": "GIF", "timer_interval": 7 },
+  "recording": { "fps_index": 99, "max_resolution_index": 99, "quality_index": 99,
+                 "codec_index": 99,
+                 "filename_pattern": "   ",
+                 "webcam": { "size_index": 9, "shape_index": -4,
+                             "rel_x": 4.5, "rel_y": -1.0 } },
+  "quick_access": { "position": "Middle", "overlay_scale": 9,
+                    "auto_close_seconds": 1, "auto_close_action": "Minimize" },
+  "ocr": { "language": "  " }
+})");
+
+    const Platform::ShellSettings settings = Platform::loadShellSettings();
+    CHECK(settings.screenshots.format == QStringLiteral("PNG"));
+    CHECK(settings.screenshots.timerInterval == 0);
+    CHECK(settings.recording.values.fpsIndex == 1);
+    CHECK(settings.recording.values.maxResolutionIndex == 0);
+    CHECK(settings.recording.values.qualityIndex == 1);
+    CHECK(settings.recording.values.codecIndex == 0);
+    CHECK(settings.recording.filenamePattern
+          == QStringLiteral("ApexShot Recording {Date} at {Time}"));
+    CHECK(settings.recording.webcam.sizeIndex == 3);
+    CHECK(settings.recording.webcam.shapeIndex == 0);
+    CHECK(qFuzzyCompare(settings.recording.webcam.relX, 1.0));
+    CHECK(qFuzzyCompare(settings.recording.webcam.relY, 0.0));
+    CHECK(settings.quickAccess.position == QStringLiteral("Right"));
+    CHECK(qFuzzyCompare(settings.quickAccess.overlayScale, 1.5));
+    CHECK(settings.quickAccess.autoCloseSeconds == 5);
+    CHECK(settings.quickAccess.autoCloseAction == QStringLiteral("Close"));
+    CHECK(settings.ocr.language.isEmpty());
+}
+
+void checkPaths(const QTemporaryDir& dir)
+{
+    Platform::ShellSettings settings;
+    settings.screenshots.exportLocation = QStringLiteral("C:/shots");
+    CHECK(Platform::shellScreenshotOutputDir(settings) == QStringLiteral("C:/shots"));
+
+    settings.recording.exportLocation = QStringLiteral("C:/videos");
+    settings.recording.filenamePattern = QStringLiteral("Clip {Date} {Time}");
+    const QDateTime when(QDate(2026, 10, 22), QTime(23, 45, 6));
+    CHECK(Platform::shellRecordingOutputPath(settings, when)
+          == QStringLiteral("C:/videos/Clip 2026-10-22 23-45-06.mp4"));
+    settings.recording.exportLocation = dir.path();
+    const QString first = Platform::shellRecordingOutputPath(settings, when);
+    QFile existing(first);
+    CHECK(existing.open(QIODevice::WriteOnly));
+    existing.close();
+    const QString next = Platform::shellRecordingOutputPath(settings, when);
+    CHECK(next != first);
+    CHECK(next.endsWith(QStringLiteral(" (2).mp4")));
+    const QString temporary = Platform::shellTemporaryRecordingOutputPath();
+    CHECK(QFileInfo(temporary).absolutePath()
+          == QDir(QDir::tempPath()).filePath(QStringLiteral("ApexShot")));
+    CHECK(temporary.endsWith(QStringLiteral(".mp4")));
+    CHECK(temporary != Platform::shellTemporaryRecordingOutputPath());
+}
+
+void checkRecordingDeviceChoices(const QTemporaryDir& dir)
+{
+    const QString path = Platform::recordingDeviceChoicesPath();
+    CHECK(path == QDir(dir.path()).filePath(QStringLiteral("apexshot/recording-devices.json")));
+    QFile::remove(path);
+    CHECK(!Platform::loadRecordingDeviceChoices().present);
+
+    Platform::RecordingDeviceChoices saved;
+    saved.microphoneEnabled = true;
+    saved.microphoneDevice = QStringLiteral("Microphone Array");
+    saved.systemAudioMode = QStringLiteral("app");
+    saved.systemAudioApplication = QStringLiteral("Google Chrome");
+    saved.cameraEnabled = true;
+    saved.cameraDevice = QStringLiteral("Integrated Camera");
+    Platform::saveRecordingDeviceChoices(saved);
+
+    const Platform::RecordingDeviceChoices loaded = Platform::loadRecordingDeviceChoices();
+    CHECK(loaded.present);
+    CHECK(loaded.microphoneEnabled);
+    CHECK(loaded.microphoneDevice == QStringLiteral("Microphone Array"));
+    CHECK(loaded.systemAudioMode == QStringLiteral("app"));
+    CHECK(loaded.systemAudioApplication == QStringLiteral("Google Chrome"));
+    CHECK(loaded.cameraEnabled);
+    CHECK(loaded.cameraDevice == QStringLiteral("Integrated Camera"));
+}
+
+void checkStudioNudges(const QTemporaryDir& dir)
+{
+    const QString path = Platform::studioNudgesPath();
+    CHECK(path == QDir(dir.path()).filePath(QStringLiteral("apexshot/studio-nudges.json")));
+    QFile::remove(path);
+    CHECK(Platform::loadStudioNudges().screenshotCards == 0);
+    CHECK(!Platform::shouldShowEditorHint(0));
+    CHECK(!Platform::shouldShowEditorHint(1));
+
+    for (int expected = 1; expected <= 60; ++expected) {
+        const quint64 count = Platform::bumpScreenshotCardCount();
+        CHECK(count == static_cast<quint64>(expected));
+        CHECK(Platform::shouldShowEditorHint(count)
+              == (expected == 10 || expected == 30 || expected == 60));
+    }
+    CHECK(Platform::loadStudioNudges().screenshotCards == 60);
+
+    // A corrupt file behaves like a fresh install instead of wedging the count.
+    QFile corrupt(path);
+    CHECK(corrupt.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    corrupt.write("not json");
+    corrupt.close();
+    CHECK(Platform::loadStudioNudges().screenshotCards == 0);
+    CHECK(Platform::bumpScreenshotCardCount() == 1);
+
+    QFile::remove(path);
+}
+
+Platform::CloudNudgeState nudgeState(quint64 copies, quint64 shows = 0,
+                                     quint64 dismissals = 0, int lastDay = 0)
+{
+    Platform::CloudNudgeState state;
+    state.copies = copies;
+    state.shows = shows;
+    state.dismissals = dismissals;
+    state.lastDay = lastDay;
+    return state;
+}
+
+void checkCloudNudgeMirror(const QTemporaryDir& dir)
+{
+    // A mirror written before the toggle existed leaves the nudge on.
+    writeSettings(dir, R"({"cloud": {"configured": false}})");
+    CHECK(Platform::loadShellSettings().cloud.nudgeEnabled);
+
+    writeSettings(dir, R"({"cloud": {"nudge_enabled": false}})");
+    CHECK(!Platform::loadShellSettings().cloud.nudgeEnabled);
+
+    writeSettings(dir, R"({"cloud": {"nudge_enabled": true}})");
+    CHECK(Platform::loadShellSettings().cloud.nudgeEnabled);
+
+    removeSettings(dir);
+}
+
+void checkCloudNudges(const QTemporaryDir& dir)
+{
+    const int today = 20261126;
+    const int yesterday = 20261125;
+
+    // The eligibility table: signed out, toggle on, five lifetime screenshots.
+    CHECK(!Platform::cloudNudgeDue(nudgeState(4), false, true, today, 10, false));
+    CHECK(Platform::cloudNudgeDue(nudgeState(5), false, true, today, 10, false));
+    CHECK(!Platform::cloudNudgeDue(nudgeState(6), false, true, today, 10, false));
+    CHECK(Platform::cloudNudgeDue(nudgeState(15), false, true, today, 10, false));
+    CHECK(!Platform::cloudNudgeDue(nudgeState(16), false, true, today, 10, false));
+    CHECK(Platform::cloudNudgeDue(nudgeState(40), false, true, today, 10, false));
+    CHECK(!Platform::cloudNudgeDue(nudgeState(41), false, true, today, 10, false));
+
+    // Both thresholds: fewer than five screenshots, a configured destination,
+    // or the Settings toggle keeps the suggestion quiet.
+    CHECK(!Platform::cloudNudgeDue(nudgeState(5), false, true, today, 4, false));
+    CHECK(Platform::cloudNudgeDue(nudgeState(5), false, true, today, 5, false));
+    CHECK(!Platform::cloudNudgeDue(nudgeState(5), true, true, today, 10, false));
+    CHECK(!Platform::cloudNudgeDue(nudgeState(5), false, false, today, 10, false));
+
+    // Once a day, three dismissals, and three lifetime shows silence it.
+    CHECK(!Platform::cloudNudgeDue(nudgeState(5, 1, 0, today), false, true, today, 10,
+                                   false));
+    CHECK(Platform::cloudNudgeDue(nudgeState(5, 1, 0, yesterday), false, true, today, 10,
+                                  false));
+    CHECK(Platform::cloudNudgeDue(nudgeState(5, 0, 2), false, true, today, 10, false));
+    CHECK(!Platform::cloudNudgeDue(nudgeState(5, 0, 3), false, true, today, 10, false));
+    CHECK(Platform::cloudNudgeDue(nudgeState(5, 2, 0), false, true, today, 10, false));
+    CHECK(!Platform::cloudNudgeDue(nudgeState(5, 3, 0), false, true, today, 10, false));
+
+    // Manual QA forces every Copy while signed out, but not a configured
+    // destination or the Settings toggle.
+    CHECK(Platform::cloudNudgeDue(nudgeState(0, 3, 3, today), false, true, today, 0, true));
+    CHECK(!Platform::cloudNudgeDue(nudgeState(5), true, true, today, 10, true));
+    CHECK(!Platform::cloudNudgeDue(nudgeState(5), false, false, today, 10, true));
+
+    const QString path = Platform::studioNudgesPath();
+    QFile::remove(path);
+    CHECK(Platform::loadStudioNudges().copies == 0);
+    for (int expected = 1; expected <= 15; ++expected)
+        CHECK(Platform::bumpCopyCount() == static_cast<quint64>(expected));
+    CHECK(Platform::loadStudioNudges().copies == 15);
+    CHECK(Platform::loadStudioNudges().screenshotCards == 0);
+
+    Platform::markCloudNudgeShown(today);
+    Platform::StudioNudges shown = Platform::loadStudioNudges();
+    CHECK(shown.cloudNudgeShows == 1);
+    CHECK(shown.cloudNudgeLastDay == today);
+    CHECK(shown.copies == 15);
+
+    Platform::markCloudNudgeShown(yesterday);
+    shown = Platform::loadStudioNudges();
+    CHECK(shown.cloudNudgeShows == 2);
+    CHECK(shown.cloudNudgeLastDay == yesterday);
+
+    Platform::markCloudNudgeDismissed();
+    Platform::markCloudNudgeDismissed();
+    CHECK(Platform::loadStudioNudges().cloudNudgeDismissals == 2);
+
+    // A bump keeps the other counters and any key the Rust editors added.
+    {
+        QFile file(path);
+        CHECK(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        file.write(R"({"screenshots": 9, "editor_opens": 7, "custom": "kept"})");
+        file.close();
+    }
+    CHECK(Platform::bumpCopyCount() == 1);
+    {
+        QFile file(path);
+        CHECK(file.open(QIODevice::ReadOnly));
+        const QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
+        file.close();
+        CHECK(root.value(QStringLiteral("screenshots")).toInt() == 9);
+        CHECK(root.value(QStringLiteral("editor_opens")).toInt() == 7);
+        CHECK(root.value(QStringLiteral("custom")).toString() == QStringLiteral("kept"));
+    }
+
+    // A corrupt file behaves like a fresh install instead of wedging the nudge.
+    {
+        QFile file(path);
+        CHECK(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        file.write("not json");
+        file.close();
+    }
+    const Platform::StudioNudges fresh = Platform::loadStudioNudges();
+    CHECK(fresh.copies == 0);
+    CHECK(fresh.cloudNudgeShows == 0);
+    CHECK(fresh.cloudNudgeDismissals == 0);
+    CHECK(fresh.cloudNudgeLastDay == 0);
+    CHECK(Platform::bumpCopyCount() == 1);
+
+    qunsetenv("APEXSHOT_FORCE_CLOUD_NUDGE");
+    CHECK(!Platform::cloudNudgeForced());
+    qputenv("APEXSHOT_FORCE_CLOUD_NUDGE", "1");
+    CHECK(Platform::cloudNudgeForced());
+    qputenv("APEXSHOT_FORCE_CLOUD_NUDGE", "0");
+    CHECK(!Platform::cloudNudgeForced());
+    qunsetenv("APEXSHOT_FORCE_CLOUD_NUDGE");
+
+    QFile::remove(path);
+    Q_UNUSED(dir);
+}
+
+void checkSaving(const QTemporaryDir& dir)
+{
+    Platform::ShellSettings settings;
+    settings.screenshots.format = QStringLiteral("PNG");
+    settings.screenshots.highDpiSuffix = true;
+
+    QImage image(4, 4, QImage::Format_RGB32);
+    image.fill(Qt::red);
+
+    const QString folder = QDir(dir.path()).filePath(QStringLiteral("shots"));
+    QString path;
+    QString error;
+    CHECK(Platform::saveScreenshotImage(image, settings, folder, 2.0, path, error));
+    CHECK(error.isEmpty());
+    CHECK(QFileInfo::exists(path));
+    CHECK(QFileInfo(path).suffix() == QStringLiteral("png"));
+    CHECK(QFileInfo(path).fileName().contains(QStringLiteral("@2x")));
+    {
+        const QImage restored(path);
+        CHECK(restored.dotsPerMeterX() == qRound(3779.527559 * 2.0));
+        CHECK(restored.dotsPerMeterY() == qRound(3779.527559 * 2.0));
+        CHECK(restored.colorSpace().isValid());
+    }
+    const QString originalPath = path;
+
+    settings.screenshots.highDpiSuffix = false;
+    CHECK(Platform::saveScreenshotImage(image, settings, folder, 2.0, path, error));
+    CHECK(!QFileInfo(path).fileName().contains(QStringLiteral("@2x")));
+    settings.screenshots.highDpiSuffix = true;
+    CHECK(Platform::saveScreenshotImage(image, settings, folder, 1.0, path, error));
+    CHECK(!QFileInfo(path).fileName().contains(QStringLiteral("@2x")));
+
+    CHECK(Platform::saveScreenshotImage(image, settings, folder, 2.0, path, error));
+    CHECK(path != originalPath);
+    CHECK(QFileInfo::exists(originalPath));
+
+    {
+        QImage noisy(64, 64, QImage::Format_RGB32);
+        for (int y = 0; y < noisy.height(); ++y)
+            for (int x = 0; x < noisy.width(); ++x)
+                noisy.setPixel(x, y, qRgb((x * 37 + y * 11) & 0xff, (x * 5 + y * 71) & 0xff,
+                                          (x * y * 13) & 0xff));
+        settings.screenshots.format = QStringLiteral("WebP");
+        CHECK(Platform::saveScreenshotImage(noisy, settings, folder, 1.0, path, error));
+        const QImage restored = QImage(path).convertToFormat(QImage::Format_RGB32);
+        CHECK(restored == noisy);
+    }
+
+    for (const auto& entry : {qMakePair(QStringLiteral("JPEG"), QStringLiteral("jpg")),
+                              qMakePair(QStringLiteral("WebP"), QStringLiteral("webp"))}) {
+        settings.screenshots.format = entry.first;
+        CHECK(Platform::saveScreenshotImage(image, settings, folder, 1.0, path, error));
+        CHECK(QFileInfo(path).suffix() == entry.second);
+        const QImage restored(path);
+        CHECK(!restored.isNull());
+        CHECK(restored.size() == image.size());
+    }
+
+    QFile nonDirectory(QDir(dir.path()).filePath(QStringLiteral("not-a-folder")));
+    CHECK(nonDirectory.open(QIODevice::WriteOnly));
+    nonDirectory.close();
+    CHECK(!Platform::saveScreenshotImage(image, settings,
+                                          nonDirectory.fileName() + QStringLiteral("/child"),
+                                          1.0, path, error));
+    CHECK(path.isEmpty());
+    CHECK(!error.isEmpty());
+}
+
+void checkClipboardData()
+{
+    QImage image(4, 4, QImage::Format_RGB32);
+    image.fill(Qt::red);
+    const QString path = QStringLiteral("C:/shots/capture.png");
+    const auto create = [&](const QString& mode, const QString& file = QString()) {
+        return std::unique_ptr<QMimeData>(Platform::captureClipboardData(
+            image, file.isNull() ? path : file, mode));
+    };
+
+    auto both = create(QStringLiteral("File & Image (default)"));
+    CHECK(both && both->hasImage() && both->hasUrls());
+    CHECK(both && !both->urls().isEmpty() && both->urls().first() == QUrl::fromLocalFile(path));
+    auto imageOnly = create(QStringLiteral("Image Only"));
+    CHECK(imageOnly && imageOnly->hasImage() && !imageOnly->hasUrls());
+    auto fileOnly = create(QStringLiteral("File Path Only"));
+    CHECK(fileOnly && !fileOnly->hasImage() && fileOnly->hasUrls());
+    auto fallback = create(QStringLiteral("unknown"));
+    CHECK(fallback && fallback->hasImage() && fallback->hasUrls());
+    auto missingFile = create(QStringLiteral("File Path Only"), QStringLiteral(""));
+    CHECK(!missingFile);
+    auto missingBoth = create(QStringLiteral("File & Image (default)"), QStringLiteral(""));
+    CHECK(missingBoth && missingBoth->hasImage() && !missingBoth->hasUrls());
+}
+
+}  // namespace
+
+int main(int argc, char** argv)
+{
+    QCoreApplication app(argc, argv);
+
+    QTemporaryDir dir;
+    if (!dir.isValid()) {
+        std::printf("FAIL: could not create a temporary directory\n");
+        return 1;
+    }
+    qputenv("APPDATA", dir.path().toUtf8());
+
+    removeSettings(dir);
+    checkDefaults(dir);
+    checkParsing(dir);
+    checkSanitizing(dir);
+    checkPaths(dir);
+    checkRecordingDeviceChoices(dir);
+    checkStudioNudges(dir);
+    checkCloudNudgeMirror(dir);
+    checkCloudNudges(dir);
+    checkSaving(dir);
+    checkClipboardData();
+
+    if (failures != 0) {
+        std::printf("%d settings-store check(s) failed\n", failures);
+        return 1;
+    }
+    std::printf("settings-store checks passed\n");
+    return 0;
+}

@@ -1,0 +1,1294 @@
+#[allow(dead_code)]
+mod crop_dialog;
+pub(crate) mod custom_wallpaper_popover;
+#[allow(dead_code)]
+mod dialogs;
+#[allow(dead_code)]
+mod export_card;
+#[allow(dead_code)]
+mod export_flow;
+#[allow(dead_code)]
+mod export_options;
+#[allow(dead_code)]
+mod footer;
+#[allow(dead_code)]
+mod inspector;
+#[allow(dead_code)]
+mod media_library;
+mod presets_popover;
+#[allow(dead_code)]
+mod preview;
+#[allow(dead_code)]
+mod rail;
+mod sound_player;
+mod squircle_clip;
+mod timeline_card;
+mod tool_section;
+pub(crate) mod tool_sidebar;
+mod toolbar;
+
+use super::ffmpeg;
+use super::model::{EditorTool, VideoEditState, VideoMetadata, DEFAULT_FRAME_RATE};
+use super::presets;
+use super::project::{self, persist_video_session};
+use super::ui_support::install_recording_editor_css;
+use gtk4::{
+    gdk, gio, glib, prelude::*, Align, Application, ApplicationWindow, Box as GtkBox, Button,
+    DropTarget, EventControllerKey, FileChooserAction, FileChooserNative, FileFilter, GestureClick,
+    Label, MediaFile, Orientation, Overlay, Popover, ResponseType, Widget,
+};
+use std::cell::{Cell, RefCell};
+use std::path::PathBuf;
+use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use crate::i18n::t;
+
+thread_local! {
+    /// The export flags of the windows this process built. The SIGTERM handler
+    /// lives outside any window, so it asks these whether an encode may still
+    /// be interrupted.
+    static EXPORTING_FLAGS: RefCell<Vec<std::rc::Weak<Cell<bool>>>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+/// Whether any window in this process is encoding an export.
+fn any_export_running() -> bool {
+    EXPORTING_FLAGS.with(|flags| {
+        flags
+            .borrow()
+            .iter()
+            .filter_map(|exporting| exporting.upgrade())
+            .any(|exporting| exporting.get())
+    })
+}
+
+/// Let the SIGTERM handler see a window's export flag.
+fn register_exporting_flag(exporting: &Rc<Cell<bool>>) {
+    EXPORTING_FLAGS.with(|flags| flags.borrow_mut().push(Rc::downgrade(exporting)));
+}
+
+pub fn open_empty() -> anyhow::Result<()> {
+    let app = Application::builder()
+        .application_id(crate::app_identity::app_id())
+        .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
+        .build();
+
+    let initial = InitialVideo::None;
+    app.connect_activate(move |application| {
+        install_recording_editor_icons();
+        crate::capture::editor::ui_support::apply_theme_to_gtk();
+        crate::capture::editor::ui_support::install_editor_css();
+        install_recording_editor_css();
+        build_window(application, initial.clone());
+    });
+
+    crate::graceful_close::close_windows_on_sigterm(&app, || !any_export_running());
+    let _ = app.run_with_args::<String>(&[]);
+    Ok(())
+}
+
+fn install_recording_editor_icons() {
+    use crate::capture::editor::window::icon_names;
+    use std::sync::Once;
+    static INIT_ICONS: Once = Once::new();
+    INIT_ICONS.call_once(|| {
+        relm4_icons::initialize_icons(icon_names::GRESOURCE_BYTES, icon_names::RESOURCE_PREFIX);
+    });
+}
+
+/// Open the editor with an empty window and load the video asynchronously,
+/// showing a loading spinner while ffprobe + thumbnail generation run in
+/// the background. This avoids a long frozen gap before the window appears
+/// for large recordings.
+pub fn open_with_path(path: PathBuf) -> anyhow::Result<()> {
+    let thumbnail_dir = ffmpeg::thumbnail_cache_dir(&path);
+
+    let app = Application::builder()
+        .application_id(crate::app_identity::app_id())
+        .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
+        .build();
+
+    let thumbnail_dir_for_cleanup = thumbnail_dir.clone();
+    app.connect_shutdown(move |_| {
+        let _ = std::fs::remove_dir_all(&thumbnail_dir_for_cleanup);
+    });
+
+    let initial = InitialVideo::AsyncLoad(path);
+    app.connect_activate(move |application| {
+        install_recording_editor_icons();
+        crate::capture::editor::ui_support::apply_theme_to_gtk();
+        crate::capture::editor::ui_support::install_editor_css();
+        install_recording_editor_css();
+        build_window(application, initial.clone());
+    });
+
+    crate::graceful_close::close_windows_on_sigterm(&app, || !any_export_running());
+    let _ = app.run_with_args::<String>(&[]);
+    Ok(())
+}
+
+#[derive(Clone)]
+enum InitialVideo {
+    None,
+    AsyncLoad(PathBuf),
+}
+
+fn build_window(application: &Application, initial_video: InitialVideo) {
+    // Clear scratch left by an export that crashed, was killed, or lost power
+    // before its cleanup ran. Opening the editor is the earliest point a user
+    // would notice, and the sweep skips any live process's tree.
+    ffmpeg::sweep_stale_scratch_dirs();
+    // The editor is laid out for 1400x900, but it has to stay inside the
+    // monitor: the default is clamped to 90% of its logical width and 85% of
+    // its height, the same limits the image editor uses, so a small or scaled
+    // display never gets a window the compositor stretches to the screen.
+    let (default_width, default_height) =
+        crate::capture::editor::ui_support::clamp_editor_window_size(1400, 900);
+    let window = ApplicationWindow::builder()
+        .application(application)
+        .title(t("ApexShot Recording Editor"))
+        .icon_name(crate::app_identity::icon_name())
+        .default_width(default_width)
+        .default_height(default_height)
+        .decorated(false)
+        .build();
+    // The transport bar holds the real minimum, near 1055x700, but the floor
+    // may never exceed the default above: on a scaled monitor that ceiling is
+    // lower than 1000x700, and a larger floor would force the window off the
+    // screen.
+    window.set_size_request(1000.min(default_width), 700.min(default_height));
+    window.add_css_class("editor-window");
+
+    let root = GtkBox::new(Orientation::Vertical, 0);
+    root.add_css_class("editor-root");
+    root.add_css_class("recording-editor-root");
+    let prefers_dark = crate::capture::editor::ui_support::prefers_dark_glass_theme();
+    if prefers_dark {
+        root.add_css_class("editor-theme-dark");
+    } else {
+        root.add_css_class("editor-theme-light");
+    }
+    if crate::capture::editor::ui_support::prefers_reduced_transparency() {
+        root.add_css_class("editor-reduced-transparency");
+    }
+
+    let state = match &initial_video {
+        InitialVideo::AsyncLoad(path) => match ffmpeg::probe_metadata(path) {
+            Ok(metadata) => {
+                let mut state = VideoEditState::new(metadata);
+                let has_saved_project = project::restore_into(&mut state);
+                // A recording with no saved project opens on the look the user
+                // chose as every new recording's default, before the first
+                // autosave sees it, so it is the opening document rather than
+                // an edit made after the fact. A saved project keeps its look.
+                if !has_saved_project {
+                    presets::apply_default_preset(&mut state);
+                }
+                // Runs at most once per recording, and never again after the
+                // user has reviewed the result — including after deleting
+                // every suggestion. A saved project keeps whatever it holds.
+                if state.suggest_zooms_on_open(
+                    crate::config::load_config().rec_video_auto_zoom_on_import,
+                    has_saved_project,
+                ) {
+                    state.selected_tool = EditorTool::Timeline;
+                }
+                Some(Arc::new(Mutex::new(state)))
+            }
+            Err(err) => {
+                eprintln!(
+                    "[recording-editor] failed to probe {}: {err}",
+                    path.display()
+                );
+                None
+            }
+        },
+        InitialVideo::None => None,
+    };
+    let state = state.unwrap_or_else(|| Arc::new(Mutex::new(placeholder_edit_state())));
+    let filmstrip: Rc<RefCell<Vec<gtk4::gdk_pixbuf::Pixbuf>>> = Rc::new(RefCell::new(Vec::new()));
+    let media = Rc::new(RefCell::new(match &initial_video {
+        InitialVideo::AsyncLoad(path) => Some(MediaFile::for_filename(path)),
+        InitialVideo::None => Some(MediaFile::new()),
+    }));
+    // The composition's own sound, played beside the muted video stream.
+    let sound = Rc::new(sound_player::SoundSync::new());
+    let exporting = Rc::new(Cell::new(false));
+    register_exporting_flag(&exporting);
+    let export_flow_active: export_flow::FlowActive = Rc::new(Cell::new(false));
+    let export_cancellation = Arc::new(AtomicBool::new(false));
+    let close_after_export = Rc::new(Cell::new(false));
+    let (title_bar, title_label, presets_btn, export_btn) = build_window_controls(
+        &window,
+        state.clone(),
+        exporting.clone(),
+        export_cancellation.clone(),
+        export_flow_active.clone(),
+    );
+    // The Export tooltip carries the free-trial count and follows the
+    // counter after an export finishes, which no edit refresh covers.
+    {
+        let state = state.clone();
+        crate::studio_trial::attach_export_tooltip(&export_btn, move || {
+            crate::studio_entitlement::capabilities_for_video(&state.lock().unwrap())
+        });
+    }
+    root.append(&title_bar);
+
+    let estimate_label = Label::new(None);
+    estimate_label.add_css_class("recording-editor-estimate");
+
+    let paint_slot: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+    let refresh_slot: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+    let ping = {
+        let paint_slot = paint_slot.clone();
+        let refresh_slot = refresh_slot.clone();
+        let state = state.clone();
+        let title_label = title_label.clone();
+        let presets_btn = presets_btn.clone();
+        let export_btn = export_btn.clone();
+        let exporting = exporting.clone();
+        let estimate_label = estimate_label.clone();
+        Rc::new(move || {
+            let (name, has_video) = {
+                let state = state.lock().unwrap();
+                (state.title.clone(), state.has_source_video())
+            };
+            title_label.set_text(&name);
+            title_label.set_tooltip_text(Some(&name));
+            let enabled = has_video && !exporting.get();
+            presets_btn.set_sensitive(enabled);
+            export_btn.set_sensitive(enabled);
+            footer::update_estimate(&estimate_label, &state, false);
+            if let Some(paint) = paint_slot.borrow().clone() {
+                paint();
+            }
+            if let Some(refresh) = refresh_slot.borrow().clone() {
+                refresh();
+            }
+        }) as Rc<dyn Fn()>
+    };
+
+    presets_popover::attach(&presets_btn, state.clone(), ping.clone());
+
+    let workspace = GtkBox::new(Orientation::Horizontal, 0);
+    workspace.add_css_class("recording-editor-workspace");
+    workspace.set_hexpand(true);
+    workspace.set_vexpand(true);
+
+    let stage = GtkBox::new(Orientation::Vertical, 0);
+    stage.add_css_class("recording-editor-stage");
+    stage.set_hexpand(true);
+    stage.set_vexpand(true);
+    let preview_media = media.borrow().clone();
+    let (preview_widget, _, _) = preview::build_preview_with_media(
+        state.clone(),
+        estimate_label.clone(),
+        preview_media,
+        ping.clone(),
+    );
+    stage.append(&preview_widget);
+    stage.append(&preview::build_stage_tools(
+        &window,
+        state.clone(),
+        estimate_label,
+        ping.clone(),
+    ));
+    workspace.append(&stage);
+
+    // Tools sit on the right: a compact icon bar picks the tool, and the
+    // selected tool's controls stack directly beneath it.
+    let tools = tool_section::build_tool_section(state.clone(), ping.clone());
+
+    let pause_playback_slot: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+    let sidebar_pause_playback = {
+        let pause_playback_slot = pause_playback_slot.clone();
+        Rc::new(move || {
+            if let Some(pause_playback) = pause_playback_slot.borrow().as_ref() {
+                pause_playback();
+            }
+        }) as Rc<dyn Fn()>
+    };
+    let sidebar =
+        tool_sidebar::build_tool_sidebar(state.clone(), ping.clone(), sidebar_pause_playback);
+
+    let tools_column = GtkBox::new(Orientation::Vertical, 0);
+    tools_column.add_css_class("recording-editor-tools-column");
+    tools_column.set_hexpand(false);
+    tools_column.set_vexpand(true);
+    tools_column.append(&tools.widget);
+    tools_column.append(&sidebar.widget);
+    workspace.append(&tools_column);
+    root.append(&workspace);
+
+    let (timeline, paint, pause_playback) = timeline_card::build_timeline_card(
+        state.clone(),
+        media.clone(),
+        sound,
+        filmstrip.clone(),
+        ping.clone(),
+        &window,
+        &stage,
+    );
+    root.append(&timeline);
+    *paint_slot.borrow_mut() = Some(paint.clone());
+    if state.lock().unwrap().has_source_video() {
+        let metadata = state.lock().unwrap().metadata.clone();
+        spawn_filmstrip_job(metadata, filmstrip.clone(), state.clone(), paint);
+    }
+    *pause_playback_slot.borrow_mut() = Some(pause_playback);
+    *refresh_slot.borrow_mut() = Some({
+        let refresh_tools = tools.refresh;
+        let refresh_sidebar = sidebar.refresh;
+        Rc::new(move || {
+            refresh_tools();
+            refresh_sidebar();
+        }) as Rc<dyn Fn()>
+    });
+    let drop_target = DropTarget::new(gio::File::static_type(), gdk::DragAction::COPY);
+    drop_target.connect_drop({
+        let state = state.clone();
+        let media = media.clone();
+        let filmstrip = filmstrip.clone();
+        let window = window.clone();
+        let ping = ping.clone();
+        let export_flow_active = export_flow_active.clone();
+        move |_, value, _, _| {
+            if export_flow_active.get() {
+                return false;
+            }
+            let Ok(file) = value.get::<gio::File>() else {
+                return false;
+            };
+            let Some(path) = file.path() else {
+                return false;
+            };
+            load_preview_video(path, &state, &media, &filmstrip, &window, &ping)
+        }
+    });
+    preview_widget.add_controller(drop_target);
+
+    let open_video_chooser = OpenVideoChooser::default();
+    let open_click = GestureClick::new();
+    open_click.set_button(1);
+    open_click.connect_released({
+        let state = state.clone();
+        let media = media.clone();
+        let filmstrip = filmstrip.clone();
+        let window = window.clone();
+        let ping = ping.clone();
+        let open_video_chooser = open_video_chooser.clone();
+        move |_, _, _, _| {
+            if state.lock().unwrap().metadata.duration_seconds > 0.0 {
+                return;
+            }
+            // The picker on Wayland belongs to the compositor, so the empty
+            // preview keeps taking clicks while one is up. Refuse the click
+            // rather than stacking a second chooser on the one already waiting.
+            if !open_video_chooser.claim() {
+                return;
+            }
+            show_open_preview_video(
+                &window,
+                state.clone(),
+                media.clone(),
+                filmstrip.clone(),
+                ping.clone(),
+                open_video_chooser.clone(),
+            );
+        }
+    });
+    preview_widget.add_controller(open_click);
+    ping();
+
+    let shell = Overlay::new();
+    shell.add_css_class("recording-editor-shell");
+    shell.set_hexpand(true);
+    shell.set_vexpand(true);
+    if root.has_css_class("editor-theme-light") {
+        shell.add_css_class("editor-theme-light");
+    }
+    if root.has_css_class("editor-reduced-transparency") {
+        shell.add_css_class("editor-reduced-transparency");
+    }
+    let scrim = GtkBox::new(Orientation::Vertical, 0);
+    scrim.add_css_class("recording-editor-modal-scrim");
+    scrim.set_halign(Align::Fill);
+    scrim.set_valign(Align::Fill);
+    scrim.set_hexpand(true);
+    scrim.set_vexpand(true);
+    scrim.set_visible(false);
+    scrim.set_can_target(true);
+    shell.set_child(Some(&root));
+    shell.add_overlay(&scrim);
+    shell.set_clip_overlay(&scrim, true);
+    crate::capture::editor::ui_support::install_edge_resize(&shell, &window);
+    window.set_child(Some(&shell));
+    wire_close_persist(
+        &window,
+        state.clone(),
+        exporting.clone(),
+        export_cancellation,
+        close_after_export,
+    );
+    sweep_popovers_on_deactivate(&window);
+    window.add_controller(build_zoom_history_keys(
+        state.clone(),
+        ping.clone(),
+        export_flow_active.clone(),
+    ));
+    window.present();
+    crate::update_ui::present_if_needed(&shell);
+}
+
+/// What a Ctrl+key combination asks the zoom track's history to do.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ZoomHistoryKey {
+    Undo,
+    Redo,
+}
+
+/// Map a key press to a zoom-history action.
+///
+/// The key is read through its Unicode value rather than the `gdk::Key`
+/// variant, so Ctrl+Shift+Z works whether the backend reports it as `z` or
+/// `Z`, and Ctrl+Y is accepted alongside it.
+fn zoom_history_key(key: gdk::Key, modifiers: gdk::ModifierType) -> Option<ZoomHistoryKey> {
+    if !modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
+        return None;
+    }
+    let redo = modifiers.contains(gdk::ModifierType::SHIFT_MASK);
+    match key.to_unicode().map(|c| c.to_ascii_lowercase()) {
+        Some('z') if redo => Some(ZoomHistoryKey::Redo),
+        Some('z') => Some(ZoomHistoryKey::Undo),
+        Some('y') => Some(ZoomHistoryKey::Redo),
+        _ => None,
+    }
+}
+
+/// Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y for the zoom track's undo history.
+///
+/// The zoom track is the one automatic generation rewrites, so taking a pass
+/// back has to work from anywhere in the editor. The controller sits on the
+/// window and runs in the bubble phase: a focused text entry keeps its own
+/// Ctrl+Z, because GTK offers the key to the focused widget's controllers
+/// first.
+fn build_zoom_history_keys(
+    state: Arc<Mutex<VideoEditState>>,
+    ping: Rc<dyn Fn()>,
+    export_flow_active: export_flow::FlowActive,
+) -> EventControllerKey {
+    let keys = EventControllerKey::new();
+    keys.connect_key_pressed(move |_, key, _, modifiers| {
+        if export_flow_active.get() {
+            return glib::Propagation::Stop;
+        }
+        // Escape puts the Add zoom tool away from anywhere in the editor; the
+        // armed tool is a gesture waiting for a click, and the key is its
+        // usual way out.
+        if key == gdk::Key::Escape {
+            let changed = state.lock().unwrap().set_add_zoom_tool(false);
+            if changed {
+                ping();
+                return glib::Propagation::Stop;
+            }
+            return glib::Propagation::Proceed;
+        }
+        let Some(action) = zoom_history_key(key, modifiers) else {
+            return glib::Propagation::Proceed;
+        };
+        let changed = {
+            let mut guard = state.lock().unwrap();
+            match action {
+                ZoomHistoryKey::Undo => guard.undo_zoom_edit(),
+                ZoomHistoryKey::Redo => guard.redo_zoom_edit(),
+            }
+        };
+        if changed {
+            ping();
+            glib::Propagation::Stop
+        } else {
+            // Nothing left to take back: let the key travel on rather than
+            // swallowing it for a handler that might have work to do.
+            glib::Propagation::Proceed
+        }
+    });
+    keys
+}
+
+/// Pop down `window`'s popovers when it stops being the active window.
+///
+/// A popover must not outlive its window's activation. GTK leaves that to the
+/// app, and an autohiding popover holds a grab for as long as it is up: leave
+/// the Custom Wallpaper popover open while another window takes focus — a
+/// screenshot overlay, say — and that grab is still live while the overlay
+/// tries to take the pointer. See `popdown_popovers`.
+///
+/// The decision is deferred to the main loop's idle, because `is-active` does
+/// not mean what it says at the moment it notifies. Mapping an autohiding
+/// popover takes its grab, and GTK blips the toplevel inactive and back while
+/// that grab lands — measured on the Edit pill's click: `is-active` ran false,
+/// true, false, true inside a single dispatch, ~100µs apart. Sweeping on the
+/// blip took the popover down in the same breath as it opened, so clicking
+/// Edit looked like a dead button. Re-checking at idle reads the settled
+/// value instead: the blip is long over, while a real deactivation — the
+/// capture overlay taking focus — is not.
+pub(crate) fn sweep_popovers_on_deactivate(window: &(impl IsA<gtk4::Window> + IsA<Widget>)) {
+    window.connect_is_active_notify(|window| {
+        if window.is_active() {
+            return;
+        }
+        let window = window.clone();
+        glib::idle_add_local_once(move || {
+            if !window.is_active() {
+                popdown_popovers(&window);
+            }
+        });
+    });
+}
+
+/// Pop down every popover in `root`'s tree that is still up.
+///
+/// Popovers are widgets in the tree, so a plain walk finds them, nested ones
+/// included. This runs when the editor window's loss of activation has
+/// settled: an autohiding popover holds a grab until it is dismissed, and
+/// dismissing it is what GTK expects the app to do on focus-out (`GtkWindow`
+/// does not do it for you). Leaving one up while a capture overlay takes focus
+/// is how a popover ends up fighting the overlay for the pointer — on Wayland
+/// that lands as a protocol error, and a protocol error takes the whole
+/// connection down with it, this window included.
+fn popdown_popovers(root: &impl IsA<Widget>) {
+    let mut stack = vec![root.clone().upcast::<Widget>()];
+    while let Some(widget) = stack.pop() {
+        if let Ok(popover) = widget.clone().downcast::<Popover>() {
+            if popover.is_visible() && !popover.has_css_class("recording-editor-export-popover") {
+                popover.popdown();
+            }
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            stack.push(current.clone());
+            child = current.next_sibling();
+        }
+    }
+}
+
+fn wire_close_persist(
+    window: &ApplicationWindow,
+    state: Arc<Mutex<VideoEditState>>,
+    exporting: Rc<Cell<bool>>,
+    export_cancellation: Arc<AtomicBool>,
+    close_after_export: Rc<Cell<bool>>,
+) {
+    // Crash safety: the project is written while the video is edited, not
+    // only on close. `persist_video_session` compares against this window's
+    // own baseline, so a tick with nothing new writes nothing — including
+    // while another editor is saving the same recording.
+    {
+        let state = state.clone();
+        let window = window.downgrade();
+        glib::timeout_add_local(std::time::Duration::from_secs(2), move || {
+            if window.upgrade().is_none() {
+                return glib::ControlFlow::Break;
+            }
+            // `try_lock`: a tick never waits on the export or the preview.
+            if let Ok(mut state) = state.try_lock() {
+                persist_video_session(&mut state);
+            }
+            glib::ControlFlow::Continue
+        });
+    }
+    window.connect_close_request(move |window| {
+        if !state.lock().unwrap().has_source_video() {
+            return glib::Propagation::Proceed;
+        }
+        if close_after_export.get() {
+            return glib::Propagation::Stop;
+        }
+        if exporting.get() {
+            let window = window.clone();
+            let state = state.clone();
+            let export_cancellation = export_cancellation.clone();
+            let close_after_export = close_after_export.clone();
+            let exporting = exporting.clone();
+            dialogs::show_export_in_progress_close(&window, {
+                let window = window.clone();
+                move || {
+                    export_cancellation.store(true, Ordering::Release);
+                    persist_video_session(&mut state.lock().unwrap());
+                    close_after_export.set(true);
+                    let window = window.clone();
+                    let exporting = exporting.clone();
+                    let close_after_export = close_after_export.clone();
+                    glib::timeout_add_local(Duration::from_millis(50), move || {
+                        if exporting.get() {
+                            return glib::ControlFlow::Continue;
+                        }
+                        close_after_export.set(false);
+                        window.close();
+                        glib::ControlFlow::Break
+                    });
+                }
+            });
+            return glib::Propagation::Stop;
+        }
+        persist_video_session(&mut state.lock().unwrap());
+        glib::Propagation::Proceed
+    });
+}
+
+fn load_preview_video(
+    path: PathBuf,
+    state: &Arc<Mutex<VideoEditState>>,
+    media: &Rc<RefCell<Option<MediaFile>>>,
+    filmstrip: &Rc<RefCell<Vec<gtk4::gdk_pixbuf::Pixbuf>>>,
+    window: &ApplicationWindow,
+    ping: &Rc<dyn Fn()>,
+) -> bool {
+    let Ok(metadata) = ffmpeg::probe_metadata(&path) else {
+        return false;
+    };
+    let mut next = VideoEditState::new(metadata.clone());
+    let has_saved_project = project::restore_into(&mut next);
+    // Opening another video is the same first open a launch performs: the
+    // default look lands under the same rule, and the automatic pass runs
+    // under the same setting and the same "no saved project" rule.
+    if !has_saved_project {
+        presets::apply_default_preset(&mut next);
+    }
+    next.suggest_zooms_on_open(
+        crate::config::load_config().rec_video_auto_zoom_on_import,
+        has_saved_project,
+    );
+    *state.lock().unwrap() = next;
+    filmstrip.borrow_mut().clear();
+    spawn_filmstrip_job(metadata, filmstrip.clone(), state.clone(), ping.clone());
+    let has_mouse_data = state.lock().unwrap().supports_auto_zoom();
+    if let Some(player) = media.borrow().as_ref() {
+        player.set_file(Some(&gio::File::for_path(&path)));
+    }
+    ping();
+    if !has_mouse_data {
+        dialogs::show_manual_zoom_notice(window);
+    }
+    true
+}
+
+/// Decodes the timeline filmstrip for `metadata` on a worker thread, then
+/// swaps the frames into `filmstrip` and repaints. A stale job (a newer video
+/// was loaded meanwhile) is discarded. On failure the slot keeps whatever it
+/// held — usually empty — and the clip still draws its orange fill.
+///
+/// Pixbufs cross into the UI on the main thread: `Pixbuf` is neither `Send`
+/// nor `Sync`, and the cache dir is keyed per source path, so a superseded
+/// job's files are either still equivalent tiles or gone — `from_file` failure
+/// just drops that tile.
+fn spawn_filmstrip_job(
+    metadata: VideoMetadata,
+    filmstrip: Rc<RefCell<Vec<gtk4::gdk_pixbuf::Pixbuf>>>,
+    state: Arc<Mutex<VideoEditState>>,
+    ping: Rc<dyn Fn()>,
+) {
+    let source = metadata.path.clone();
+    let (sender, receiver) = mpsc::channel::<Vec<PathBuf>>();
+    std::thread::spawn(move || {
+        let thumbnails = ffmpeg::generate_thumbnails(&metadata).unwrap_or_default();
+        let _ = sender.send(thumbnails);
+    });
+    glib::timeout_add_local(Duration::from_millis(100), move || {
+        match receiver.try_recv() {
+            Ok(thumbnails) => {
+                if state.lock().unwrap().metadata.path == source {
+                    let frames = thumbnails
+                        .iter()
+                        .filter_map(|thumb| gtk4::gdk_pixbuf::Pixbuf::from_file(thumb).ok())
+                        .collect();
+                    *filmstrip.borrow_mut() = frames;
+                    ping();
+                }
+                glib::ControlFlow::Break
+            }
+            Err(mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+            Err(mpsc::TryRecvError::Disconnected) => glib::ControlFlow::Break,
+        }
+    });
+}
+
+/// The one open-video chooser the editor may have up at a time.
+///
+/// The picker on Wayland belongs to the compositor, not to this window, so the
+/// empty preview stays clickable for as long as one is up: every click raised
+/// another file chooser on top of the one already waiting. The chooser remains
+/// strongly owned until its response, while the response closure holds only a
+/// weak reference to the slot.
+#[derive(Clone, Default)]
+struct OpenVideoChooser(Rc<RefCell<OpenVideoChooserState>>);
+
+#[derive(Default)]
+struct OpenVideoChooserState {
+    active: bool,
+    chooser: Option<FileChooserNative>,
+}
+
+impl OpenVideoChooser {
+    /// Claims the slot, reporting false when a chooser is already up.
+    fn claim(&self) -> bool {
+        let mut state = self.0.borrow_mut();
+        if state.active {
+            return false;
+        }
+        state.active = true;
+        true
+    }
+
+    fn retain(&self, chooser: &FileChooserNative) {
+        self.0.borrow_mut().chooser = Some(chooser.clone());
+    }
+
+    /// Frees the slot once the chooser's response has landed.
+    fn release(&self) {
+        let mut state = self.0.borrow_mut();
+        state.active = false;
+        state.chooser.take();
+    }
+}
+
+fn show_open_preview_video(
+    window: &ApplicationWindow,
+    state: Arc<Mutex<VideoEditState>>,
+    media: Rc<RefCell<Option<MediaFile>>>,
+    filmstrip: Rc<RefCell<Vec<gtk4::gdk_pixbuf::Pixbuf>>>,
+    ping: Rc<dyn Fn()>,
+    open_video_chooser: OpenVideoChooser,
+) {
+    let title = t("Open video");
+    let open = t("Open");
+    let cancel = t("Cancel");
+    let chooser = FileChooserNative::new(
+        Some(&title),
+        Some(window),
+        FileChooserAction::Open,
+        Some(&open),
+        Some(&cancel),
+    );
+    let filter = FileFilter::new();
+    filter.set_name(Some(&t("Videos")));
+    filter.add_mime_type("video/mp4");
+    filter.add_pattern("*.mp4");
+    chooser.add_filter(&filter);
+    let window = window.clone();
+    let chooser_slot = Rc::downgrade(&open_video_chooser.0);
+    chooser.connect_response(move |dialog, response| {
+        let selected_file = (response == ResponseType::Accept)
+            .then(|| dialog.file())
+            .flatten();
+        dialog.hide();
+        if let Some(chooser_slot) = chooser_slot.upgrade() {
+            OpenVideoChooser(chooser_slot).release();
+        }
+        if response == ResponseType::Accept {
+            if let Some(path) = selected_file.and_then(|file| file.path()) {
+                load_preview_video(path, &state, &media, &filmstrip, &window, &ping);
+            }
+        }
+    });
+    open_video_chooser.retain(&chooser);
+    chooser.show();
+}
+
+fn placeholder_edit_state() -> VideoEditState {
+    let mut state = VideoEditState::new(VideoMetadata {
+        path: PathBuf::from("Screen Recording.mp4"),
+        duration_seconds: 0.0,
+        width: 1920,
+        height: 1080,
+        file_size_bytes: 0,
+        has_audio: false,
+        frame_rate: DEFAULT_FRAME_RATE,
+    });
+    state.title = t("Drop a recording to begin");
+    state
+}
+
+fn build_window_controls(
+    window: &ApplicationWindow,
+    state: Arc<Mutex<VideoEditState>>,
+    exporting: Rc<Cell<bool>>,
+    export_cancellation: Arc<AtomicBool>,
+    export_flow_active: export_flow::FlowActive,
+) -> (GtkBox, Label, Button, Button) {
+    const TRAFFIC_LIGHTS_WIDTH: i32 = 100;
+    let bar = GtkBox::new(Orientation::Horizontal, 8);
+    bar.add_css_class("recording-editor-window-controls");
+    bar.set_hexpand(true);
+    bar.set_vexpand(false);
+    bar.set_valign(Align::Start);
+
+    let left_balance = GtkBox::new(Orientation::Horizontal, 0);
+    left_balance.set_size_request(TRAFFIC_LIGHTS_WIDTH, -1);
+    bar.append(&left_balance);
+
+    let title_text = state.lock().unwrap().title.clone();
+    let title = Label::new(Some(&title_text));
+    title.add_css_class("recording-editor-title");
+    title.set_hexpand(true);
+    title.set_halign(Align::Center);
+    title.set_valign(Align::Center);
+    title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+    title.set_max_width_chars(64);
+    title.set_can_target(false);
+    bar.append(&title);
+
+    let (export, export_spinner) = footer::build_export_action(
+        window,
+        state,
+        exporting,
+        export_cancellation,
+        export_flow_active,
+    );
+    // The presets button takes the spot the cloud button used to hold. Upload
+    // stays reachable from the export page, so the title bar keeps one action
+    // beside Export rather than two.
+    let presets = presets_popover::title_button();
+    // Export goes insensitive while it encodes, and a preset cannot land on a
+    // recording that is being written, so the bookmark follows it. The edit
+    // refresh below sets both again whenever the document changes.
+    presets.set_sensitive(export.is_sensitive());
+    {
+        let presets = presets.clone();
+        export.connect_sensitive_notify(move |export| {
+            presets.set_sensitive(export.is_sensitive());
+        });
+    }
+    let actions = GtkBox::new(Orientation::Horizontal, 8);
+    actions.add_css_class("recording-editor-title-actions");
+    actions.set_valign(Align::Center);
+    actions.append(&presets);
+    actions.append(&export_spinner);
+    actions.append(&export);
+    let lights = toolbar::build_traffic_lights(window);
+    lights.set_size_request(TRAFFIC_LIGHTS_WIDTH, -1);
+    lights.set_halign(Align::End);
+    lights.set_valign(Align::Center);
+    // The tools column is as wide as the actions and traffic lights beside
+    // it, so the title stays optically centred across the window.
+    let right_balance = GtkBox::new(Orientation::Horizontal, 16);
+    right_balance.set_size_request(tool_sidebar::TOOL_SIDEBAR_WIDTH + TRAFFIC_LIGHTS_WIDTH, -1);
+    right_balance.set_hexpand(false);
+    let right_spacer = GtkBox::new(Orientation::Horizontal, 0);
+    right_spacer.set_hexpand(true);
+    right_balance.append(&right_spacer);
+    right_balance.append(&actions);
+    right_balance.append(&lights);
+    bar.append(&right_balance);
+
+    crate::capture::editor::ui_support::install_window_drag(&bar, window);
+    (bar, title, presets, export)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn ctrl_z_undoes_and_ctrl_shift_z_or_ctrl_y_redoes() {
+        use super::{zoom_history_key, ZoomHistoryKey};
+        use gtk4::gdk::{Key, ModifierType};
+        let ctrl = ModifierType::CONTROL_MASK;
+        let shift = ModifierType::SHIFT_MASK;
+
+        assert_eq!(zoom_history_key(Key::z, ctrl), Some(ZoomHistoryKey::Undo));
+        // Backends differ on whether Shift folds into the keyval, so both
+        // spellings of redo have to land on redo.
+        assert_eq!(
+            zoom_history_key(Key::z, ctrl | shift),
+            Some(ZoomHistoryKey::Redo)
+        );
+        assert_eq!(
+            zoom_history_key(Key::Z, ctrl | shift),
+            Some(ZoomHistoryKey::Redo)
+        );
+        assert_eq!(zoom_history_key(Key::y, ctrl), Some(ZoomHistoryKey::Redo));
+        // Without Ctrl the key belongs to whatever has focus, and an unrelated
+        // Ctrl shortcut is not ours either.
+        assert_eq!(zoom_history_key(Key::z, ModifierType::empty()), None);
+        assert_eq!(zoom_history_key(Key::Escape, ctrl), None);
+
+        // Nothing tests the controller's wiring by pressing a key, so pin the
+        // installation itself the way the popover sweep is pinned above.
+        let source = include_str!("mod.rs");
+        let production = &source[..source.find("\n#[cfg(test)]").expect("tests module")];
+        assert!(
+            production.contains("window.add_controller(build_zoom_history_keys"),
+            "the window must install the zoom history shortcut"
+        );
+    }
+
+    #[test]
+    fn the_window_takes_its_popovers_down_when_it_deactivates() {
+        // A popover that stays up past its window's activation keeps a live
+        // pointer grab, which is what let an open Custom Wallpaper popover fight
+        // a capture overlay for the pointer — and a Wayland protocol error there
+        // kills the whole connection, this window included. Both the wiring and
+        // the walk (it has to find nested popovers too) are pinned here.
+        let source = include_str!("mod.rs");
+        let production = &source[..source.find("\n#[cfg(test)]").expect("tests module")];
+        assert!(
+            production.contains("connect_is_active_notify"),
+            "the editor must react to its own activation"
+        );
+        assert!(
+            production.contains("!window.is_active()"),
+            "popovers must come down when the window loses activation"
+        );
+        assert!(
+            production.contains("popdown_popovers(&window)"),
+            "the window must sweep its popovers on focus-out"
+        );
+        assert!(
+            production.contains("idle_add_local_once"),
+            "the sweep must read settled activation: mapping a popover blips is-active off and back"
+        );
+
+        let Some(count) = crate::test_support::with_gtk(|| {
+            use gtk4::prelude::*;
+            use gtk4::{glib as gtk_glib, Box as GtkBox, Orientation, Popover};
+
+            let window = gtk4::Window::new();
+            let root = GtkBox::new(Orientation::Vertical, 0);
+            window.set_child(Some(&root));
+
+            let outer = Popover::new();
+            outer.set_has_arrow(false);
+            outer.set_parent(&root);
+            let body = GtkBox::new(Orientation::Vertical, 0);
+            outer.set_child(Some(&body));
+
+            let nested = Popover::new();
+            nested.set_has_arrow(false);
+            nested.set_parent(&body);
+            let nested_body = GtkBox::new(Orientation::Vertical, 0);
+            nested.set_child(Some(&nested_body));
+
+            // Surfaces are positioned by the compositor, so the loop has to run
+            // in real time before visibility means anything.
+            window.present();
+            let pump = || {
+                let ctx = gtk_glib::MainContext::default();
+                let deadline = std::time::Instant::now() + std::time::Duration::from_millis(150);
+                while std::time::Instant::now() < deadline {
+                    while ctx.iteration(false) {}
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+            };
+            pump();
+            outer.popup();
+            nested.popup();
+            pump();
+            let up = usize::from(outer.is_visible()) + usize::from(nested.is_visible());
+            super::popdown_popovers(&window);
+            pump();
+            let down = usize::from(outer.is_visible()) + usize::from(nested.is_visible());
+
+            nested.unparent();
+            outer.unparent();
+            window.destroy();
+            (up, down)
+        }) else {
+            eprintln!("skipping: no display available");
+            return;
+        };
+
+        assert_eq!(count.0, 2, "both popovers must be up before the sweep");
+        assert_eq!(count.1, 0, "the sweep must take nested popovers down too");
+    }
+
+    #[test]
+    fn clicking_edit_opens_the_custom_wallpaper_popover() {
+        // The regression this pins: the popover's own opener was fine, but the
+        // deactivation sweep ate the card in the same breath it opened. Mapping
+        // an autohiding popover takes its grab, and GTK blips the toplevel's
+        // `is-active` off and back while the grab lands — measured on this very
+        // click: false, true, false, true inside one dispatch, ~100µs apart.
+        // The sweep read that blip as "the window lost activation", popped the
+        // card straight back down, and from the Background panel the Edit pill
+        // looked like a dead button. Built through the real opener and the real
+        // sweep wiring, so the settle the wiring depends on is in play: the card
+        // must still be up once the blip has passed.
+        use crate::recording::editor::model::{VideoEditState, VideoMetadata};
+        use crate::recording::editor::window::custom_wallpaper_popover::{
+            build_custom_fill_popover, FillOps,
+        };
+        use gtk4::prelude::*;
+        use gtk4::{glib as gtk_glib, Box as GtkBox, Button, Orientation};
+        use std::path::PathBuf;
+        use std::rc::Rc;
+        use std::sync::{Arc, Mutex};
+
+        let Some(opened) = crate::test_support::with_gtk(|| {
+            let state = Arc::new(Mutex::new(VideoEditState::new(VideoMetadata {
+                path: PathBuf::from("/tmp/input.mp4"),
+                duration_seconds: 10.0,
+                width: 1920,
+                height: 1080,
+                file_size_bytes: 1024,
+                has_audio: false,
+                frame_rate: 30.0,
+            })));
+            let window = gtk4::Window::new();
+            window.set_default_size(1200, 800);
+            let sidebar = GtkBox::new(Orientation::Vertical, 0);
+            window.set_child(Some(&sidebar));
+            let edit = Button::with_label("Edit");
+            sidebar.append(&edit);
+            let popover = build_custom_fill_popover(
+                &sidebar,
+                &edit,
+                "Custom Wallpaper",
+                FillOps::for_video(state),
+                Rc::new(|| {}),
+            );
+            super::sweep_popovers_on_deactivate(&window);
+
+            // Surfaces are positioned by the compositor, so the loop has to run
+            // in real time before visibility means anything.
+            window.present();
+            let pump = || {
+                let ctx = gtk_glib::MainContext::default();
+                let deadline = std::time::Instant::now() + std::time::Duration::from_millis(250);
+                while std::time::Instant::now() < deadline {
+                    while ctx.iteration(false) {}
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+            };
+            pump();
+            edit.emit_clicked();
+            pump();
+            let opened = popover.is_visible();
+            popover.popdown();
+            popover.unparent();
+            window.destroy();
+            opened
+        }) else {
+            eprintln!("skipping: no display available");
+            return;
+        };
+
+        assert!(
+            opened,
+            "clicking Edit must open the Custom Wallpaper popover and leave it up"
+        );
+    }
+
+    #[test]
+    fn close_persists_project_and_does_not_export() {
+        let source = include_str!("mod.rs");
+        let start = source
+            .find("fn wire_close_persist(")
+            .expect("video close persist handler");
+        let rest = &source[start + 1..];
+        let end = rest
+            .find("\nfn ")
+            .map(|i| start + 1 + i)
+            .unwrap_or(source.len());
+        let handler = &source[start..end];
+        assert!(
+            handler.contains("persist_video_session"),
+            "Video close handler must persist the project sidecar"
+        );
+        assert!(
+            !handler.contains("export_edited_to"),
+            "Video close must not encode an MP4"
+        );
+    }
+
+    #[test]
+    fn close_anyway_cancels_the_export_process_before_persisting() {
+        let source = include_str!("mod.rs");
+        let start = source
+            .find("fn wire_close_persist(")
+            .expect("video close persist handler");
+        let rest = &source[start + 1..];
+        let end = rest
+            .find("\nfn ")
+            .map(|i| start + 1 + i)
+            .unwrap_or(source.len());
+        let handler = &source[start..end];
+        // The autosave tick before the handler also persists, so the ordering
+        // check starts at the close handler itself.
+        let handler = &handler[handler
+            .find("connect_close_request")
+            .expect("close request handler")..];
+
+        let cancel = handler
+            .find("export_cancellation.store(true, Ordering::Release)")
+            .expect("closing during an encode should cancel its process");
+        let persist = handler
+            .find("persist_video_session")
+            .expect("the project state should still be retained");
+        assert!(cancel < persist);
+        assert!(handler.contains("close_after_export.set(true)"));
+    }
+
+    #[test]
+    fn light_theme_playhead_is_black_and_clips_have_no_lift_shadow() {
+        let painting = include_str!("timeline_card_parts/painting.rs");
+        assert!(
+            painting.contains("(0.07, 0.08, 0.09)"),
+            "Light-theme playhead stem and capsule outline must paint black"
+        );
+        assert!(
+            painting.contains("cr.set_source_rgba(0.80, 0.22, 0.20, 0.95)"),
+            "Hover read-out must paint the Motion red hairline"
+        );
+        assert!(
+            !painting.contains("x - 5.0, 20.0"),
+            "Playhead head must be a capsule, not a triangle"
+        );
+        assert!(
+            !painting.contains("0.0, 0.0, 0.0, 0.38"),
+            "Lifted clips must not draw a drop shadow"
+        );
+        assert!(
+            painting.contains("fn widget_is_light"),
+            "Timeline painting must detect the light theme"
+        );
+    }
+
+    #[test]
+    fn video_lane_is_empty_before_upload_and_dark_while_frames_load() {
+        let painting = include_str!("timeline_card_parts/painting.rs");
+        assert!(
+            painting.contains("if !state.has_source_video()"),
+            "no clip may be drawn before a video is loaded"
+        );
+        assert!(
+            painting.contains("fill: (0.10, 0.11, 0.13, 0.9)"),
+            "while frames load the lane must read as an empty media strip, not orange"
+        );
+        let shell = include_str!("timeline_card_parts/shell.rs");
+        assert!(
+            shell.contains("const VIDEO_LANE_HEIGHT: f64 = 42.0;")
+                && shell.contains("video_track.set_size_request(-1, VIDEO_LANE_HEIGHT as i32)"),
+            "video track must keep the compact 42px height"
+        );
+        let css = include_str!("../ui_support_css/07.css");
+        assert!(
+            css.contains(".recording-editor-card-video-track {\n                min-height: 42px;"),
+            "CSS floor must match the 42px video track"
+        );
+        assert!(
+            css.contains(".editor-motion-timeline-dock .recording-editor-card-board"),
+            "the Motion board must keep its own taller floor"
+        );
+    }
+
+    #[test]
+    fn zoom_and_video_clips_outline_only_the_selected_clip() {
+        let painting = include_str!("timeline_card_parts/painting.rs");
+        assert!(
+            painting.contains("edge: (f64, f64, f64, f64)"),
+            "ClipTone must carry a selection outline color like the Motion tones"
+        );
+        assert!(
+            painting.contains("let (r, g, b, a) = blue.edge;"),
+            "Selected zoom clips must stroke their outline"
+        );
+        assert!(
+            painting.contains("let (r, g, b, a) = tone.edge;"),
+            "Selected video clips must stroke their outline"
+        );
+    }
+
+    #[test]
+    fn the_empty_preview_lets_only_one_open_video_chooser_through() {
+        // The regression this pins: the empty preview keeps taking clicks while
+        // the picker is up — on Wayland that picker belongs to the compositor,
+        // so it leaves the editor interactive — and every click built another
+        // file chooser on top of the one already waiting. The slot is claimed
+        // before the chooser is built and freed when its response lands.
+        let chooser = super::OpenVideoChooser::default();
+        assert!(chooser.claim(), "the first click must raise a chooser");
+        assert!(
+            !chooser.claim(),
+            "a click while one is up must not raise a second chooser"
+        );
+        chooser.release();
+        assert!(
+            chooser.claim(),
+            "the slot must free once the chooser's response has landed"
+        );
+    }
+
+    #[test]
+    fn editor_refresh_recalculates_export_size() {
+        let source = include_str!("mod.rs");
+        let production = &source[..source.find("\n#[cfg(test)]").expect("tests module")];
+        let start = production
+            .find("let ping = {")
+            .expect("the window's status refresh closure");
+        let ping = {
+            let rest = &production[start + 1..];
+            let end = rest
+                .find("\n    let workspace =")
+                .expect("the status refresh closes before the workspace is built");
+            &production[start..start + 1 + end]
+        };
+        assert!(
+            ping.contains("let estimate_label = estimate_label.clone();"),
+            "the refresh must capture the estimate label, not borrow the row's"
+        );
+        assert!(
+            ping.contains("footer::update_estimate(&estimate_label, &state, false);"),
+            "the refresh must recompute the estimated export size"
+        );
+        assert!(
+            production
+                .find("let estimate_label = Label::new(None);")
+                .expect("the estimate label")
+                < start,
+            "the label must exist before the refresh captures it"
+        );
+
+        let start = production
+            .find("fn load_preview_video(")
+            .expect("the preview video loader");
+        let loader = {
+            let rest = &production[start + 1..];
+            let end = rest.find("\nfn ").expect("the loader is followed by a fn");
+            &production[start..start + 1 + end]
+        };
+        let replace = loader
+            .find("*state.lock().unwrap() = next;")
+            .expect("the loader must replace the edit state");
+        let refresh = loader
+            .find("ping();")
+            .expect("the loader must refresh the window after replacing the state");
+        assert!(
+            replace < refresh,
+            "the refresh must run after the new metadata is in place"
+        );
+    }
+
+    #[test]
+    fn the_open_video_click_claims_the_slot_before_it_shows_a_chooser() {
+        let source = include_str!("mod.rs");
+        let production = &source[..source.find("\n#[cfg(test)]").expect("tests module")];
+        assert!(
+            production.contains("if !open_video_chooser.claim()"),
+            "the empty preview must refuse a click while a chooser is already up"
+        );
+        assert!(
+            production.contains("OpenVideoChooser(chooser_slot).release()")
+                && production.contains("open_video_chooser.retain(&chooser)"),
+            "the chooser's response must free the slot for the next click"
+        );
+        assert!(
+            production.contains("open_video_chooser.retain(&chooser)")
+                && production.contains("Rc::downgrade(&open_video_chooser.0)"),
+            "the chooser must be retained without creating a response-closure cycle"
+        );
+    }
+}

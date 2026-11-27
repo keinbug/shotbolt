@@ -1,0 +1,968 @@
+use super::{CaptureData, DisplayError, DisplayResult, PixelFormat};
+use ashpd::desktop::{
+    screencast::{
+        CursorMode, OpenPipeWireRemoteOptions, Screencast, SelectSourcesOptions, SourceType,
+        StartCastOptions,
+    },
+    CreateSessionOptions, PersistMode, ResponseError, Session,
+};
+use sha2::{Digest, Sha256};
+use std::{
+    io::{BufRead, Write},
+    os::unix::fs::OpenOptionsExt,
+    path::PathBuf,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+
+#[derive(Debug, thiserror::Error)]
+pub enum StillError {
+    #[error("Screenshot capture cancelled")]
+    Cancelled,
+    #[error(transparent)]
+    Portal(#[from] ashpd::Error),
+    #[error(transparent)]
+    Capture(#[from] DisplayError),
+}
+
+fn portal_error(error: ashpd::Error) -> StillError {
+    match error {
+        ashpd::Error::Response(ResponseError::Cancelled) => StillError::Cancelled,
+        error => StillError::Portal(error),
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct StillMonitor {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+impl StillMonitor {
+    fn matches_stream(self, position: Option<(i32, i32)>, size: Option<(i32, i32)>) -> bool {
+        position.is_none_or(|position| position == (self.x, self.y))
+            && size.is_none_or(|size| size == (self.width, self.height))
+    }
+}
+
+fn token_path(key: &str, monitor: StillMonitor) -> Option<PathBuf> {
+    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
+    let app_id = crate::app_identity::app_id();
+    let digest = Sha256::digest(format!(
+        "{app_id}\n{desktop}\n{key}\n{},{},{},{}",
+        monitor.x, monitor.y, monitor.width, monitor.height
+    ));
+    Some(
+        dirs::cache_dir()?
+            .join("apexshot")
+            .join(format!("still-monitor-{:x}.token", digest)),
+    )
+}
+
+fn select_options(version: u32, cursor: bool, token: Option<&str>) -> SelectSourcesOptions {
+    let options = SelectSourcesOptions::default()
+        .set_sources(ashpd::enumflags2::BitFlags::from(SourceType::Monitor))
+        .set_multiple(false);
+    let options = if version >= 2 {
+        options.set_cursor_mode(if cursor {
+            CursorMode::Embedded
+        } else {
+            CursorMode::Hidden
+        })
+    } else {
+        options
+    };
+    if version >= 4 {
+        options
+            .set_persist_mode(PersistMode::ExplicitlyRevoked)
+            .set_restore_token(token)
+    } else {
+        options
+    }
+}
+
+fn window_select_options(version: u32, cursor_mode: Option<CursorMode>) -> SelectSourcesOptions {
+    let options = SelectSourcesOptions::default()
+        .set_sources(ashpd::enumflags2::BitFlags::from(SourceType::Window))
+        .set_multiple(false);
+    let options = if let Some(cursor_mode) = cursor_mode {
+        options.set_cursor_mode(cursor_mode)
+    } else {
+        options
+    };
+    if version >= 4 {
+        options.set_persist_mode(PersistMode::DoNot)
+    } else {
+        options
+    }
+}
+
+fn select_window_cursor_mode(
+    requested: bool,
+    available: ashpd::enumflags2::BitFlags<CursorMode>,
+) -> DisplayResult<CursorMode> {
+    if requested && available.contains(CursorMode::Embedded) {
+        return Ok(CursorMode::Embedded);
+    }
+    if available.contains(CursorMode::Hidden) {
+        return Ok(CursorMode::Hidden);
+    }
+    Err(DisplayError::UnsupportedBackend(
+        "The ScreenCast portal does not offer a supported cursor mode".into(),
+    ))
+}
+
+fn validate_window_source_support(
+    available: ashpd::enumflags2::BitFlags<SourceType>,
+) -> DisplayResult<()> {
+    if available.contains(SourceType::Window) {
+        return Ok(());
+    }
+    Err(DisplayError::UnsupportedBackend(
+        "The ScreenCast portal does not support window capture".into(),
+    ))
+}
+
+fn validate_window_stream(
+    stream_count: usize,
+    source_type: Option<SourceType>,
+) -> DisplayResult<()> {
+    if stream_count != 1 {
+        return Err(DisplayError::UnsupportedBackend(
+            "The ScreenCast portal did not return one selected window stream".into(),
+        ));
+    }
+    if source_type.is_some_and(|source| source != SourceType::Window) {
+        return Err(DisplayError::UnsupportedBackend(
+            "The ScreenCast portal returned a monitor instead of a window".into(),
+        ));
+    }
+    Ok(())
+}
+
+pub struct PortalStillSession {
+    session: Session<Screencast>,
+    portal: Screencast,
+    node: u32,
+    pub position: Option<(i32, i32)>,
+    pub size: Option<(i32, i32)>,
+}
+
+impl PortalStillSession {
+    pub async fn prepare(
+        key: &str,
+        monitor: StillMonitor,
+        cursor: bool,
+    ) -> Result<Self, StillError> {
+        if monitor.width <= 0 || monitor.height <= 0 {
+            return Err(
+                DisplayError::InvalidArea("Invalid screenshot monitor bounds".into()).into(),
+            );
+        }
+        let _identity = crate::utils::desktop_env::scoped_portal_capture_identity();
+        let path = token_path(key, monitor);
+        let token = path
+            .as_ref()
+            .and_then(|path| std::fs::read_to_string(path).ok())
+            .filter(|token| !token.is_empty());
+        match Self::prepare_once(monitor, cursor, token.as_deref(), path.as_deref()).await {
+            Ok(session) => Ok(session),
+            Err(error) => {
+                if matches!(&error, StillError::Capture(DisplayError::CaptureError(_))) {
+                    return Err(error);
+                }
+                if let Some(path) = path.as_ref() {
+                    let _ = std::fs::remove_file(path);
+                }
+                if token.is_none() || matches!(error, StillError::Cancelled) {
+                    return Err(error);
+                }
+                Self::prepare_once(monitor, cursor, None, path.as_deref()).await
+            }
+        }
+    }
+
+    async fn prepare_once(
+        monitor: StillMonitor,
+        cursor: bool,
+        token: Option<&str>,
+        token_path: Option<&std::path::Path>,
+    ) -> Result<Self, StillError> {
+        let connection = zbus::Connection::session()
+            .await
+            .map_err(ashpd::Error::from)?;
+        if !crate::app_identity::portal_only() {
+            let app_id =
+                ashpd::AppID::try_from(crate::app_identity::app_id()).map_err(portal_error)?;
+            if let Err(error) =
+                ashpd::register_host_app_with_connection(connection.clone(), app_id).await
+            {
+                eprintln!("[capture] Host portal identity registration unavailable: {error}");
+            }
+        }
+        let portal = Screencast::with_connection(connection)
+            .await
+            .map_err(portal_error)?;
+        if !portal
+            .available_source_types()
+            .await
+            .map_err(portal_error)?
+            .contains(SourceType::Monitor)
+        {
+            return Err(DisplayError::UnsupportedBackend(
+                "The desktop portal cannot share monitors".into(),
+            )
+            .into());
+        }
+        let cursor = if cursor && portal.version() >= 2 {
+            portal
+                .available_cursor_modes()
+                .await
+                .map_err(portal_error)?
+                .contains(CursorMode::Embedded)
+        } else {
+            false
+        };
+        let session = portal
+            .create_session(CreateSessionOptions::default())
+            .await
+            .map_err(portal_error)?;
+        let result = async {
+            portal
+                .select_sources(&session, select_options(portal.version(), cursor, token))
+                .await
+                .map_err(portal_error)?
+                .response()
+                .map_err(portal_error)?;
+            let response = portal
+                .start(&session, None, StartCastOptions::default())
+                .await
+                .map_err(portal_error)?
+                .response()
+                .map_err(portal_error)?;
+            if response.streams().len() != 1 {
+                return Err(DisplayError::PortalError("Expected one shared monitor".into()).into());
+            }
+            let stream = &response.streams()[0];
+            if stream.source_type().is_some_and(|source| source != SourceType::Monitor)
+                || !monitor.matches_stream(stream.position(), stream.size())
+            {
+                return Err(DisplayError::PortalError(
+                    "The shared source does not match the selected display. Share that display and try again.".into(),
+                ).into());
+            }
+            if let Some(path) = token_path {
+                let _ = std::fs::remove_file(path);
+                if let Some(token) = response.restore_token().filter(|token| !token.is_empty()) {
+                    if let Some(parent) = path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    if let Ok(mut file) = std::fs::OpenOptions::new()
+                        .write(true)
+                        .create_new(true)
+                        .mode(0o600)
+                        .open(path)
+                    {
+                        let _ = file.write_all(token.as_bytes());
+                    }
+                }
+            }
+            let _fd = portal
+                .open_pipe_wire_remote(&session, OpenPipeWireRemoteOptions::default())
+                .await
+                .map_err(|error| StillError::Capture(DisplayError::CaptureError(format!(
+                    "Screen sharing was approved, but the PipeWire remote is unavailable: {error}"
+                ))))?;
+            if super::wayland::should_wait_for_portal_dialog_to_close(token) {
+                tokio::time::sleep(Duration::from_millis(650)).await;
+            }
+            Ok((stream.pipe_wire_node_id(), stream.position(), stream.size()))
+        }.await;
+        match result {
+            Ok((node, position, size)) => Ok(Self {
+                session,
+                portal,
+                node,
+                position,
+                size,
+            }),
+            Err(error) => {
+                let _ = tokio::time::timeout(Duration::from_secs(2), session.close()).await;
+                Err(error)
+            }
+        }
+    }
+
+    pub async fn capture(&self) -> DisplayResult<CaptureData> {
+        let fd = self
+            .portal
+            .open_pipe_wire_remote(&self.session, OpenPipeWireRemoteOptions::default())
+            .await
+            .map_err(|error| {
+                DisplayError::PortalError(format!("Failed to open PipeWire remote: {error}"))
+            })?;
+        let frame =
+            crate::pipewire_engine::capture_single_frame(fd, self.node, Duration::from_secs(5))
+                .map_err(|error| {
+                    DisplayError::CaptureError(format!("PipeWire still capture failed: {error}"))
+                })?;
+        Ok(CaptureData::new(
+            frame.pixels,
+            frame.width,
+            frame.height,
+            PixelFormat::RGBA32,
+        ))
+    }
+
+    pub async fn close(self) {
+        let _ = tokio::time::timeout(Duration::from_secs(2), self.session.close()).await;
+    }
+}
+
+/// A portal-authorized still-capture session for one selected window.
+pub struct PortalWindowStillSession {
+    session: Session<Screencast>,
+    portal: Screencast,
+    node: u32,
+    size: Option<(u32, u32)>,
+}
+
+impl PortalWindowStillSession {
+    /// Request a non-persistent ScreenCast grant for one window.
+    pub async fn prepare(cursor: bool) -> Result<Self, StillError> {
+        let _identity = crate::utils::desktop_env::scoped_portal_capture_identity();
+        let connection = zbus::Connection::session()
+            .await
+            .map_err(ashpd::Error::from)?;
+        if !crate::app_identity::portal_only() {
+            let app_id =
+                ashpd::AppID::try_from(crate::app_identity::app_id()).map_err(portal_error)?;
+            if let Err(error) =
+                ashpd::register_host_app_with_connection(connection.clone(), app_id).await
+            {
+                eprintln!("[capture] Host portal identity registration unavailable: {error}");
+            }
+        }
+        let portal = Screencast::with_connection(connection)
+            .await
+            .map_err(portal_error)?;
+        let available_sources = portal
+            .available_source_types()
+            .await
+            .map_err(portal_error)?;
+        validate_window_source_support(available_sources)?;
+        let cursor_mode = if portal.version() >= 2 {
+            let available_modes = portal
+                .available_cursor_modes()
+                .await
+                .map_err(portal_error)?;
+            Some(select_window_cursor_mode(cursor, available_modes)?)
+        } else {
+            None
+        };
+        let session = portal
+            .create_session(CreateSessionOptions::default())
+            .await
+            .map_err(portal_error)?;
+        let result = async {
+            portal
+                .select_sources(
+                    &session,
+                    window_select_options(portal.version(), cursor_mode),
+                )
+                .await
+                .map_err(portal_error)?
+                .response()
+                .map_err(portal_error)?;
+            let response = portal
+                .start(&session, None, StartCastOptions::default())
+                .await
+                .map_err(portal_error)?
+                .response()
+                .map_err(portal_error)?;
+            validate_window_stream(
+                response.streams().len(),
+                response
+                    .streams()
+                    .first()
+                    .and_then(|stream| stream.source_type()),
+            )?;
+            let stream = &response.streams()[0];
+            let _fd = portal
+                .open_pipe_wire_remote(&session, OpenPipeWireRemoteOptions::default())
+                .await
+                .map_err(|error| {
+                    StillError::Capture(DisplayError::CaptureError(format!(
+                        "Window sharing was approved, but the PipeWire remote is unavailable: {error}"
+                    )))
+                })?;
+            if super::wayland::should_wait_for_portal_dialog_to_close(None) {
+                tokio::time::sleep(Duration::from_millis(650)).await;
+            }
+            Ok((
+                stream.pipe_wire_node_id(),
+                stream.size().and_then(|(width, height)| {
+                    let size = (u32::try_from(width).ok()?, u32::try_from(height).ok()?);
+                    (size.0 > 0 && size.1 > 0).then_some(size)
+                }),
+            ))
+        }
+        .await;
+        match result {
+            Ok((node, size)) => Ok(Self {
+                session,
+                portal,
+                node,
+                size,
+            }),
+            Err(error) => {
+                let _ = tokio::time::timeout(Duration::from_secs(2), session.close()).await;
+                Err(error)
+            }
+        }
+    }
+
+    /// Capture and normalize a fresh frame from the selected window stream.
+    pub async fn capture(&self) -> DisplayResult<CaptureData> {
+        let fd = self
+            .portal
+            .open_pipe_wire_remote(&self.session, OpenPipeWireRemoteOptions::default())
+            .await
+            .map_err(|error| {
+                DisplayError::PortalError(format!("Failed to open PipeWire remote: {error}"))
+            })?;
+        let width = self.size.map(|(width, _)| width);
+        let height = self.size.map(|(_, height)| height);
+        let capture = crate::pipewire_engine::PipeWireCapture::connect_window(
+            fd, self.node, None, width, height, false,
+        )
+        .map_err(|error| {
+            DisplayError::CaptureError(format!("PipeWire window capture failed: {error}"))
+        })?;
+        let deadline = std::time::Instant::now() + Duration::from_secs(8);
+        loop {
+            match capture.try_recv_frame() {
+                Ok(Some(frame)) => {
+                    if let Some(capture) = crate::recording::normalize_window_still_frame(&frame) {
+                        return Ok(capture);
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    return Err(DisplayError::CaptureError(format!(
+                        "PipeWire window frame failed: {error}"
+                    )))
+                }
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(DisplayError::CaptureError(
+                    "The selected window did not produce a valid frame within 8 seconds".into(),
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    /// Close the portal session and release its source selection.
+    pub async fn close(self) {
+        let _ = tokio::time::timeout(Duration::from_secs(2), self.session.close()).await;
+    }
+}
+
+fn write_message(message: serde_json::Value) -> std::io::Result<()> {
+    let mut stdout = std::io::stdout().lock();
+    writeln!(stdout, "{message}")?;
+    stdout.flush()
+}
+
+fn capture_to_png(capture: CaptureData) -> anyhow::Result<serde_json::Value> {
+    use image::{
+        codecs::png::{CompressionType, FilterType, PngEncoder},
+        ImageEncoder,
+    };
+
+    let image = image::RgbaImage::from_raw(capture.width, capture.height, capture.pixels)
+        .ok_or_else(|| anyhow::anyhow!("Invalid screenshot pixels"))?;
+    let path = std::env::temp_dir().join(format!(
+        "apexshot-portal-{}-{}.png",
+        std::process::id(),
+        SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+    ));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .read(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&path)?;
+    // Helper transport only: the C++ overlay decodes this file and deletes it
+    // immediately, so spend the CPU budget on latency instead of ratio. The
+    // PNG stays lossless. Screenshots saved for the user keep the normal
+    // compression in `utils::png_io`.
+    let encoded =
+        PngEncoder::new_with_quality(&mut file, CompressionType::Fast, FilterType::NoFilter)
+            .write_image(
+                image.as_raw(),
+                capture.width,
+                capture.height,
+                image::ColorType::Rgba8,
+            );
+    if let Err(error) = encoded {
+        let _ = std::fs::remove_file(&path);
+        return Err(error.into());
+    }
+    Ok(serde_json::json!({"path": path, "width": capture.width, "height": capture.height}))
+}
+
+enum StillSource {
+    Native(StillMonitor),
+    Portal(PortalStillSession),
+    Window(PortalWindowStillSession),
+    X11Window(Box<super::x11_window_pick::X11PickedWindow>),
+}
+
+fn named_monitor(
+    key: &str,
+    requested: StillMonitor,
+    monitors: impl IntoIterator<Item = (String, StillMonitor)>,
+) -> StillMonitor {
+    let Some((connector, _)) = key.split_once('@') else {
+        return requested;
+    };
+    monitors
+        .into_iter()
+        .find_map(|(name, monitor)| (name == connector).then_some(monitor))
+        .unwrap_or(requested)
+}
+
+fn helper_logical_monitor(key: &str, requested: StillMonitor) -> StillMonitor {
+    use gtk4::prelude::*;
+    if std::env::var("XDG_SESSION_TYPE").is_ok_and(|session| session == "x11")
+        || std::env::var_os("WAYLAND_DISPLAY").is_none()
+    {
+        return requested;
+    }
+    std::env::set_var("GDK_BACKEND", "wayland");
+    if gtk4::init().is_err() {
+        return requested;
+    }
+    let Some(display) = gtk4::gdk::Display::default() else {
+        return requested;
+    };
+    let monitors = display.monitors();
+    named_monitor(
+        key,
+        requested,
+        (0..monitors.n_items()).filter_map(|index| {
+            let monitor = monitors
+                .item(index)?
+                .downcast::<gtk4::gdk::Monitor>()
+                .ok()?;
+            let connector = monitor.connector()?.to_string();
+            let rect = monitor.geometry();
+            Some((
+                connector,
+                StillMonitor {
+                    x: rect.x(),
+                    y: rect.y(),
+                    width: rect.width(),
+                    height: rect.height(),
+                },
+            ))
+        }),
+    )
+}
+
+impl StillSource {
+    fn capture(&self, runtime: &tokio::runtime::Runtime) -> DisplayResult<CaptureData> {
+        match self {
+            Self::Native(monitor) => {
+                let capture = super::WaylandBackend::capture_monitor_via_native_screencopy_at(
+                    Some((monitor.x, monitor.y)),
+                )
+                .unwrap_or_else(|| {
+                    Err(DisplayError::CaptureError(
+                        "The selected display is no longer available for native capture".into(),
+                    ))
+                })?;
+                if (capture.output_origin_x, capture.output_origin_y) != (monitor.x, monitor.y) {
+                    return Err(DisplayError::CaptureError(
+                        "The selected display changed during capture".into(),
+                    ));
+                }
+                Ok(capture)
+            }
+            Self::Portal(session) => runtime.block_on(session.capture()),
+            Self::Window(session) => runtime.block_on(session.capture()),
+            Self::X11Window(window) => window.capture(),
+        }
+    }
+
+    fn close(self, runtime: &tokio::runtime::Runtime) {
+        match self {
+            Self::Native(_) => {}
+            Self::Portal(session) => runtime.block_on(session.close()),
+            Self::Window(session) => runtime.block_on(session.close()),
+            Self::X11Window(_) => {}
+        }
+    }
+}
+
+fn run_capture_requests(
+    source: &StillSource,
+    runtime: &tokio::runtime::Runtime,
+    ready: serde_json::Value,
+) -> anyhow::Result<()> {
+    write_message(ready)?;
+    for command in std::io::stdin().lock().lines() {
+        if command? != "capture" {
+            break;
+        }
+        match source
+            .capture(runtime)
+            .map_err(anyhow::Error::from)
+            .and_then(capture_to_png)
+        {
+            Ok(message) => write_message(message)?,
+            Err(error) => {
+                write_message(serde_json::json!({"error": error.to_string(), "cancelled": false}))?;
+                return Err(error);
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn run_internal_helper(args: &[String]) -> anyhow::Result<()> {
+    if args.len() != 8 {
+        anyhow::bail!("Invalid portal still helper arguments");
+    }
+    let monitor = StillMonitor {
+        x: args[3].parse()?,
+        y: args[4].parse()?,
+        width: args[5].parse()?,
+        height: args[6].parse()?,
+    };
+    let requested_monitor = monitor;
+    let monitor = helper_logical_monitor(&args[2], monitor);
+    let runtime = tokio::runtime::Runtime::new()?;
+    let native = !super::WaylandBackend::should_force_screenshot_portal_first()
+        && super::WaylandBackend::capture_monitor_via_native_screencopy_at(Some((
+            monitor.x, monitor.y,
+        )))
+        .is_some_and(|capture| {
+            capture.is_ok_and(|capture| {
+                (capture.output_origin_x, capture.output_origin_y) == (monitor.x, monitor.y)
+            })
+        });
+    let source = if native {
+        StillSource::Native(monitor)
+    } else {
+        match runtime.block_on(PortalStillSession::prepare(
+            &args[2],
+            monitor,
+            args[7] == "1",
+        )) {
+            Ok(session) => StillSource::Portal(session),
+            Err(error) => {
+                write_message(
+                    serde_json::json!({"error": error.to_string(), "cancelled": matches!(error, StillError::Cancelled)}),
+                )?;
+                return Err(error.into());
+            }
+        }
+    };
+    let position = (requested_monitor.x, requested_monitor.y);
+    let size = (requested_monitor.width, requested_monitor.height);
+    let result = run_capture_requests(
+        &source,
+        &runtime,
+        serde_json::json!({"ready": true, "position": position, "size": size}),
+    );
+    source.close(&runtime);
+    result
+}
+
+/// Run the internal helper protocol for portal-authorized window screenshots.
+pub fn run_window_internal_helper(args: &[String]) -> anyhow::Result<()> {
+    if args.len() != 3 {
+        anyhow::bail!("Invalid portal window still helper arguments");
+    }
+    if super::is_x11_session() {
+        return run_x11_window_internal_helper(args[2] == "1");
+    }
+    let runtime = tokio::runtime::Runtime::new()?;
+    let source = match runtime.block_on(PortalWindowStillSession::prepare(args[2] == "1")) {
+        Ok(session) => StillSource::Window(session),
+        Err(error) => {
+            write_message(serde_json::json!({
+                "error": error.to_string(),
+                "cancelled": matches!(error, StillError::Cancelled)
+            }))?;
+            return Err(error.into());
+        }
+    };
+    let result = run_capture_requests(&source, &runtime, serde_json::json!({"ready": true}));
+    source.close(&runtime);
+    result
+}
+
+/// Pick a window on the root window instead of asking a ScreenCast portal.
+fn run_x11_window_internal_helper(include_cursor: bool) -> anyhow::Result<()> {
+    let window = match super::x11_window_pick::pick_window(include_cursor) {
+        Ok(super::x11_window_pick::PickOutcome::Picked(window)) => window,
+        Ok(super::x11_window_pick::PickOutcome::Cancelled) => {
+            write_message(serde_json::json!({
+                "error": "Window selection cancelled",
+                "cancelled": true
+            }))?;
+            return Ok(());
+        }
+        Err(error) => {
+            write_message(serde_json::json!({
+                "error": error.to_string(),
+                "cancelled": false
+            }))?;
+            return Err(error);
+        }
+    };
+    let runtime = tokio::runtime::Runtime::new()?;
+    let source = StillSource::X11Window(window);
+    let result = run_capture_requests(&source, &runtime, serde_json::json!({"ready": true}));
+    source.close(&runtime);
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn monitor(x: i32) -> StillMonitor {
+        StillMonitor {
+            x,
+            y: -100,
+            width: 1920,
+            height: 1080,
+        }
+    }
+
+    #[test]
+    fn monitor_grants_are_scoped_to_output_and_topology() {
+        assert_ne!(
+            token_path("same-layout", monitor(0)),
+            token_path("same-layout", monitor(1920))
+        );
+        assert_ne!(
+            token_path("old-layout", monitor(0)),
+            token_path("new-layout", monitor(0))
+        );
+        assert!(token_path("display/name", monitor(0))
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("still-monitor-"));
+    }
+
+    #[test]
+    fn monitor_matching_supports_negative_origins_and_missing_metadata() {
+        assert!(monitor(-1920).matches_stream(Some((-1920, -100)), Some((1920, 1080))));
+        assert!(monitor(0).matches_stream(None, None));
+        assert!(!monitor(0).matches_stream(Some((1920, -100)), None));
+        assert!(!monitor(0).matches_stream(None, Some((1280, 720))));
+    }
+
+    #[test]
+    fn helper_png_round_trips_rgba_pixels_losslessly() {
+        use std::os::unix::fs::PermissionsExt;
+
+        // Three rows so the encoder cannot get away with a single row filter,
+        // varied channels, and both fully transparent and fully opaque pixels.
+        let pixels = vec![
+            7, 31, 201, 0, 240, 17, 85, 123, 0, 0, 0, 255, 13, 200, 4, 128, 255, 255, 255, 0, 90,
+            12, 73, 64,
+        ];
+        let capture = CaptureData::new(pixels.clone(), 2, 3, PixelFormat::RGBA32);
+        let message = capture_to_png(capture).expect("helper PNG should encode");
+        let path = PathBuf::from(message["path"].as_str().expect("PNG path"));
+        let metadata = std::fs::metadata(&path).expect("helper PNG metadata");
+        let bytes = std::fs::read(&path);
+        let cleanup = std::fs::remove_file(&path);
+        let bytes = bytes.expect("helper PNG should be readable");
+        cleanup.expect("helper PNG should be removed");
+
+        assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            &bytes[..8],
+            &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a],
+            "helper transport must still be a real PNG"
+        );
+
+        let decoded = image::load_from_memory(&bytes)
+            .expect("helper PNG should decode")
+            .to_rgba8();
+        assert_eq!(decoded.as_raw(), &pixels);
+        assert_eq!(decoded.dimensions(), (2, 3));
+        assert_eq!(message["width"].as_u64(), Some(2));
+        assert_eq!(message["height"].as_u64(), Some(3));
+    }
+
+    #[test]
+    fn helper_png_rejects_malformed_pixel_data() {
+        let capture = CaptureData {
+            pixels: vec![1, 2, 3, 4, 5, 6, 7],
+            width: 2,
+            height: 1,
+            stride: 8,
+            format: PixelFormat::RGBA32,
+            cursor: None,
+            output_origin_x: 0,
+            output_origin_y: 0,
+            output_scale: 1,
+        };
+
+        let error = capture_to_png(capture).expect_err("malformed pixel data must fail");
+        assert_eq!(error.to_string(), "Invalid screenshot pixels");
+    }
+
+    #[test]
+    fn helper_resolves_named_outputs_to_compositor_coordinates() {
+        let requested = StillMonitor {
+            x: -3840,
+            y: 0,
+            width: 3840,
+            height: 2160,
+        };
+        let logical = StillMonitor {
+            x: -1920,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        };
+        let resolved = named_monitor(
+            "DP-2@-3840,0,3840x2160|layout",
+            requested,
+            [("DP-2".into(), logical)],
+        );
+        assert_eq!((resolved.x, resolved.width), (-1920, 1920));
+        assert!(resolved.matches_stream(Some((-1920, 0)), Some((1920, 1080))));
+        let unresolved = named_monitor(
+            "unknown@0,0,3840x2160",
+            requested,
+            [("DP-2".into(), logical)],
+        );
+        assert_eq!((unresolved.x, unresolved.width), (-3840, 3840));
+    }
+
+    #[test]
+    fn user_cancellation_is_not_a_restore_retry() {
+        assert!(matches!(
+            portal_error(ashpd::Error::Response(ResponseError::Cancelled)),
+            StillError::Cancelled
+        ));
+        assert!(matches!(
+            portal_error(ashpd::Error::Response(ResponseError::Other)),
+            StillError::Portal(_)
+        ));
+    }
+
+    #[test]
+    fn portal_options_use_monitor_only_numeric_sources_and_versioned_persistence() {
+        use zbus::zvariant::{serialized::Context, to_bytes, OwnedValue, LE};
+        for version in [3, 4, 6] {
+            let options = select_options(version, false, Some("test-grant"));
+            let data = to_bytes(Context::new_dbus(LE, 0), &options).unwrap();
+            let (values, _): (std::collections::HashMap<String, OwnedValue>, _) =
+                data.deserialize().unwrap();
+            assert_eq!(u32::try_from(values.get("types").unwrap()).unwrap(), 1);
+            assert!(!bool::try_from(values.get("multiple").unwrap()).unwrap());
+            assert_eq!(
+                u32::try_from(values.get("cursor_mode").unwrap()).unwrap(),
+                1
+            );
+            if version >= 4 {
+                assert_eq!(
+                    u32::try_from(values.get("persist_mode").unwrap()).unwrap(),
+                    2
+                );
+                assert_eq!(
+                    <&str>::try_from(values.get("restore_token").unwrap()).unwrap(),
+                    "test-grant"
+                );
+            } else {
+                assert!(!values.contains_key("persist_mode"));
+                assert!(!values.contains_key("restore_token"));
+            }
+        }
+    }
+
+    #[test]
+    fn window_options_select_one_window_without_restore_tokens() {
+        use zbus::zvariant::{serialized::Context, to_bytes, OwnedValue, LE};
+
+        for version in [3, 4, 6] {
+            let options = window_select_options(version, Some(CursorMode::Hidden));
+            let data = to_bytes(Context::new_dbus(LE, 0), &options).unwrap();
+            let (values, _): (std::collections::HashMap<String, OwnedValue>, _) =
+                data.deserialize().unwrap();
+            assert_eq!(u32::try_from(values.get("types").unwrap()).unwrap(), 2);
+            assert!(!bool::try_from(values.get("multiple").unwrap()).unwrap());
+            assert_eq!(
+                u32::try_from(values.get("cursor_mode").unwrap()).unwrap(),
+                1
+            );
+            if version >= 4 {
+                assert_eq!(
+                    u32::try_from(values.get("persist_mode").unwrap()).unwrap(),
+                    0
+                );
+                assert!(!values.contains_key("restore_token"));
+            } else {
+                assert!(!values.contains_key("persist_mode"));
+                assert!(!values.contains_key("restore_token"));
+            }
+        }
+
+        let options = window_select_options(1, None);
+        let data = to_bytes(Context::new_dbus(LE, 0), &options).unwrap();
+        let (values, _): (std::collections::HashMap<String, OwnedValue>, _) =
+            data.deserialize().unwrap();
+        assert_eq!(u32::try_from(values.get("types").unwrap()).unwrap(), 2);
+        assert!(!values.contains_key("cursor_mode"));
+        assert!(!values.contains_key("persist_mode"));
+        assert!(!values.contains_key("restore_token"));
+    }
+
+    #[test]
+    fn window_cursor_mode_uses_only_advertised_modes() {
+        use ashpd::enumflags2::BitFlags;
+
+        assert_eq!(
+            select_window_cursor_mode(true, BitFlags::from(CursorMode::Embedded)).unwrap(),
+            CursorMode::Embedded
+        );
+        assert_eq!(
+            select_window_cursor_mode(true, BitFlags::from(CursorMode::Hidden)).unwrap(),
+            CursorMode::Hidden
+        );
+        assert!(select_window_cursor_mode(false, BitFlags::from(CursorMode::Embedded)).is_err());
+        assert!(select_window_cursor_mode(false, BitFlags::empty()).is_err());
+    }
+
+    #[test]
+    fn window_stream_validation_rejects_empty_multiple_and_monitor_streams() {
+        assert!(validate_window_stream(1, Some(SourceType::Window)).is_ok());
+        assert!(validate_window_stream(1, None).is_ok());
+        assert!(validate_window_stream(0, None).is_err());
+        assert!(validate_window_stream(2, Some(SourceType::Window)).is_err());
+        assert!(validate_window_stream(1, Some(SourceType::Monitor)).is_err());
+    }
+
+    #[test]
+    fn window_capture_requires_window_source_support() {
+        use ashpd::enumflags2::BitFlags;
+
+        assert!(validate_window_source_support(BitFlags::from(SourceType::Window)).is_ok());
+        assert!(validate_window_source_support(BitFlags::from(SourceType::Monitor)).is_err());
+    }
+}

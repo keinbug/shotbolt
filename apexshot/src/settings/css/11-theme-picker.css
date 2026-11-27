@@ -1,0 +1,6 @@
+            /* Theme choice reuses the settings checkbox control verbatim —
+               04-native-widgets.css styles `checkbutton check` for the whole
+               window — so only the row's own spacing lives here. */
+            .settings-theme-picker {
+                padding: 2px 0;
+            }

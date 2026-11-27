@@ -1,0 +1,170 @@
+use crate::recording::editor::project::ProjectSync;
+use crate::recording::editor::sound::SoundSettings;
+
+pub fn format_zoom_scale(scale: f64) -> String {
+    for &(label, preset) in &ZOOM_SCALE_PRESETS {
+        if (scale - preset).abs() < 0.04 {
+            return label.to_string();
+        }
+    }
+    if (scale - scale.round()).abs() < 0.05 {
+        format!("{:.0}×", scale.round())
+    } else {
+        format!("{scale:.1}×")
+    }
+}
+
+pub fn nearest_zoom_preset(scale: f64) -> f64 {
+    ZOOM_SCALE_PRESETS
+        .iter()
+        .min_by(|(_, a), (_, b)| (a - scale).abs().total_cmp(&(b - scale).abs()))
+        .map(|(_, value)| *value)
+        .unwrap_or(DEFAULT_ZOOM_SCALE)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CropSelection {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectMediaKind {
+    Video,
+    Audio,
+    Image,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProjectMedia {
+    pub path: PathBuf,
+    pub display_name: String,
+    pub kind: ProjectMediaKind,
+    pub duration_seconds: Option<f64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VideoEditState {
+    pub metadata: VideoMetadata,
+    pub trim_start_seconds: f64,
+    pub trim_end_seconds: f64,
+    /// Playhead on the composition ruler. Dragging a clip must not move this.
+    pub playhead_seconds: f64,
+    pub dimension_preset: DimensionPreset,
+    pub custom_width: u32,
+    pub custom_height: u32,
+    /// Export quality tier. `High` is the default; only a non-default tier
+    /// forces a re-encode (see `needs_reencode`), so an untouched export stays
+    /// a bit-identical stream copy.
+    pub quality: ExportQuality,
+    pub audio_mode: AudioMode,
+    /// Sorted list of cut points (seconds) within the trim range.
+    pub cuts: Vec<f64>,
+    /// Seconds the last segment holds its final frame on screen after
+    /// `trim_end_seconds`. The source has no frames there: the composition is
+    /// longer than the media and the exporter pads the tail.
+    pub freeze_tail: f64,
+    /// Which segment holds the frozen tail (only the final one can).
+    pub frozen_segment: Option<usize>,
+    /// Whether each segment is kept (true) or removed (false).
+    /// Length is always cuts.len() + 1.
+    pub segments_kept: Vec<bool>,
+    /// Output order of segments (indices into segment_boundaries()).
+    /// Length is always cuts.len() + 1.
+    pub segment_order: Vec<usize>,
+    /// Composition start of each chronological segment. Dragging a cut piece
+    /// changes only its start so a gap can open between neighbors.
+    pub segment_starts: Vec<f64>,
+    pub segment_speeds: Vec<f64>,
+    pub segment_muted: Vec<bool>,
+    pub zoom_clips: Vec<ZoomClip>,
+    pub zoom_camera: ZoomCameraSettings,
+    pub(super) zoom_camera_cache: std::sync::Arc<std::sync::Mutex<ZoomCameraCache>>,
+    pub selected_zoom: Option<usize>,
+    pub selected_segment: Option<usize>,
+    /// Session-only clip clipboard for the timeline's context menu. Never
+    /// persisted: a paste target is the live playhead, which has no meaning in
+    /// a saved project.
+    pub clipboard: Option<ZoomClip>,
+    /// The Add zoom tool is armed: the next click on the preview places a
+    /// Manual zoom at the playhead, aimed at the point clicked. Session-only
+    /// like the clipboard — it is a gesture in progress, not an edit.
+    pub add_zoom_tool: bool,
+    pub background: VideoBackground,
+    pub background_padding: f64,
+    /// The composition's sound: master volume, the microphone mode, the music
+    /// under it and the click sound. Applies to preview and export alike.
+    pub sound: SoundSettings,
+    /// Rounded corners on the video card, in 400px-long-edge slider units.
+    /// 0 = square. Applied in both preview and export.
+    pub background_corner_radius: f64,
+    /// Static source crop in original video pixels. `None` keeps the full frame.
+    pub crop: Option<CropSelection>,
+    pub sidecar: Option<PointerSidecar>,
+    pub cursor: CursorSettings,
+    pub selected_tool: EditorTool,
+    pub project_media: Vec<ProjectMedia>,
+    /// Display / export name (file stem, without extension).
+    pub title: String,
+    pub video_locked: bool,
+    pub video_hidden: bool,
+    pub audio_locked: bool,
+    pub audio_removed: bool,
+    pub zoom_locked: bool,
+    pub zoom_hidden: bool,
+    /// Whether the automatic zoom pass has run for this recording. Persisted
+    /// on its own, apart from `zoom_clips`, so a user who rejected every
+    /// suggestion — or disabled generation — is not asked again on reopen.
+    pub zoom_suggestions_reviewed: bool,
+    /// Style the last zoom edit settled on, applied to new zooms. `None` until
+    /// the user edits a zoom.
+    pub last_edited_zoom_style: Option<ZoomStyle>,
+    /// Undo/redo steps for the zoom track. Runtime-only: not written to the
+    /// project, so a reopened recording starts with nothing to undo.
+    pub zoom_history: ZoomHistory,
+    /// The project this window last loaded or wrote. Runtime-only and
+    /// per-window: the autosave compares against it instead of the file on
+    /// disk, so a second editor on the same recording cannot mistake the
+    /// other window's save for a local change.
+    pub project_sync: ProjectSync,
+    /// Classic animation keeps a fixed focus point even when the clip is Auto.
+    pub zoom_classic: bool,
+    /// 0 = fit the whole clip, 100 = 8× time-axis zoom on the editor ruler.
+    pub timeline_scale: f64,
+    /// Seconds of empty timeline before the clip. Dragging the clip body
+    /// later on the ruler increases this; it is exported as leading black.
+    /// Not tied to the source duration — the ruler stays open on the right.
+    pub timeline_offset_seconds: f64,
+    /// Horizontal pan at fit zoom, in composition seconds. Does not change
+    /// pixels-per-second; the clip stays the same size and the track scrolls.
+    pub timeline_scroll_seconds: f64,
+    pub export_settings: crate::recording::editor::export_settings::ExportSettings,
+    pub export_progress:
+        Option<std::sync::Arc<crate::recording::editor::export_settings::ExportProgress>>,
+}
+
+pub(super) fn seed_project_media(metadata: &VideoMetadata) -> Vec<ProjectMedia> {
+    let name = metadata
+        .path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("Recording")
+        .to_string();
+    let mut items = vec![ProjectMedia {
+        path: metadata.path.clone(),
+        display_name: name.clone(),
+        kind: ProjectMediaKind::Video,
+        duration_seconds: Some(metadata.duration_seconds),
+    }];
+    if metadata.has_audio {
+        items.push(ProjectMedia {
+            path: metadata.path.clone(),
+            display_name: format!("{name} audio"),
+            kind: ProjectMediaKind::Audio,
+            duration_seconds: Some(metadata.duration_seconds),
+        });
+    }
+    items
+}

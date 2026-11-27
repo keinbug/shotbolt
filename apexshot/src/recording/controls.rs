@@ -1,0 +1,2840 @@
+use super::recording_manifest::RecordingManifest;
+use super::*;
+#[cfg(test)]
+use crate::capture_overlay::RecordingType;
+use crate::{
+    capture_overlay::RecordingRequest,
+    config::{save_config, AppConfig},
+    recording::editor::sidecar::{
+        delete_recording_outputs, CaptureRegion, ClickSample, CursorKind, PointerSample,
+        PointerSidecar, PressSample,
+    },
+};
+use std::path::{Path, PathBuf};
+use tokio::sync::{mpsc, oneshot};
+
+static HARVESTED_POINTER_TRACK: std::sync::Mutex<Option<crate::gnome_shell::PointerTrackResult>> =
+    std::sync::Mutex::new(None);
+
+fn preserve_first_pointer_track(
+    slot: &mut Option<crate::gnome_shell::PointerTrackResult>,
+    result: crate::gnome_shell::PointerTrackResult,
+) -> bool {
+    if slot.is_some() {
+        return false;
+    }
+    *slot = Some(result);
+    true
+}
+
+/// Stop pointer tracking as soon as capture ends so hotkeys work while
+/// the file is still being muxed. `finish_save` writes the stashed samples.
+pub(super) fn harvest_pointer_track_on_session_end() {
+    if !super::pointer_track::service_available() {
+        return;
+    }
+
+    // Capture end and outer recording cleanup can both emit session_ended.
+    // Stopping is destructive: the first call returns the recording,
+    // while a second returns an empty t0=0 payload. Never let that duplicate
+    // notification erase samples that are waiting for finish_save.
+    if HARVESTED_POINTER_TRACK
+        .lock()
+        .map(|guard| guard.is_some())
+        .unwrap_or(false)
+    {
+        return;
+    }
+
+    if let Ok(result) = super::pointer_track::stop() {
+        if let Ok(mut guard) = HARVESTED_POINTER_TRACK.lock() {
+            let _ = preserve_first_pointer_track(&mut guard, result);
+        }
+    }
+}
+
+fn take_harvested_pointer_track() -> Option<crate::gnome_shell::PointerTrackResult> {
+    HARVESTED_POINTER_TRACK
+        .lock()
+        .ok()
+        .and_then(|mut guard| guard.take())
+}
+
+struct PointerTrackSession {
+    started: bool,
+    region: CaptureRegion,
+    stream_cursor_metadata: bool,
+    /// What the sidecar this session writes was recorded from.
+    target: super::RecordingTarget,
+    /// What the manifest records beside the sidecar this session writes.
+    manifest: RecordingManifest,
+}
+
+/// The recorded video's pixels per logical pointer unit, and the region's
+/// size in video pixels when it can be derived.
+///
+/// Pointer samples arrive in GNOME Shell's logical stage coordinates, while the
+/// encoder receives the monitor's physical frames. The two spaces differ by the
+/// monitor's scale factor, which GNOME reports through Mutter's DisplayConfig
+/// (including fractional scaling such as 1.25). The Settings resolution cap can
+/// scale the encoded frame down again, so that cap is folded in as well.
+///
+/// Returns 1.0 with no size when the ratio cannot be determined: a capture
+/// whose samples are already video pixels (stream cursor metadata), a
+/// non-area region, an unresolved monitor, or a session that cannot query
+/// Mutter.
+fn recording_pixel_geometry(
+    config: &super::RecordingConfig,
+    region: CaptureRegion,
+    stream_cursor_metadata: bool,
+) -> (f64, Option<(u32, u32)>) {
+    if stream_cursor_metadata || !region.is_area() {
+        return (1.0, None);
+    }
+    let monitors = match crate::gnome_shell::query_mutter_monitor_configs() {
+        Ok(monitors) => monitors,
+        Err(err) => {
+            eprintln!(
+                "[recording] monitor scale unavailable ({err}); recording manifest device pixel ratio will be 1.0"
+            );
+            return (1.0, None);
+        }
+    };
+    let center_x = i64::from(region.x) + i64::from(region.w) / 2;
+    let center_y = i64::from(region.y) + i64::from(region.h) / 2;
+    let Some(monitor) = monitors.iter().find(|monitor| {
+        center_x >= i64::from(monitor.logical_x)
+            && center_x < i64::from(monitor.logical_x) + i64::from(monitor.logical_width)
+            && center_y >= i64::from(monitor.logical_y)
+            && center_y < i64::from(monitor.logical_y) + i64::from(monitor.logical_height)
+    }) else {
+        return (1.0, None);
+    };
+    if !monitor.scale.is_finite() || monitor.scale <= 0.0 {
+        return (1.0, None);
+    }
+    let physical_w = (region.w as f64 * monitor.scale).round().max(1.0) as u32;
+    let physical_h = (region.h as f64 * monitor.scale).round().max(1.0) as u32;
+    let (video_w, video_h) =
+        super::backend::fit_within_max_resolution(physical_w, physical_h, config.max_resolution);
+    let ratio = video_w as f64 / region.w as f64;
+    if ratio.is_finite() && ratio > 0.0 {
+        (ratio, Some((video_w, video_h)))
+    } else {
+        (1.0, None)
+    }
+}
+
+fn recording_target_name(target: super::RecordingTarget) -> &'static str {
+    match target {
+        super::RecordingTarget::Screen => "screen",
+        super::RecordingTarget::Area => "area",
+        super::RecordingTarget::Window => "window",
+    }
+}
+
+/// Write the manifest the shared sidecar reader takes the device pixel ratio
+/// from. The sidecar is already written; a manifest failure must not discard it.
+fn write_recording_manifest(sidecar_path: &Path, manifest: &RecordingManifest) {
+    match manifest.write_beside(sidecar_path) {
+        Ok(path) => eprintln!("[recording] wrote recording manifest {}", path.display()),
+        Err(err) => eprintln!(
+            "[recording] failed to write recording manifest for {}: {err}",
+            sidecar_path.display()
+        ),
+    }
+}
+
+fn pointer_capture_region(
+    config: &super::RecordingConfig,
+    fullscreen_monitor: Option<CaptureRegion>,
+) -> CaptureRegion {
+    let configured = CaptureRegion::from_capture(config.x, config.y, config.width, config.height);
+    if configured.is_area() {
+        return configured;
+    }
+
+    fullscreen_monitor.unwrap_or(configured)
+}
+
+fn window_clicks_from_shell_track(
+    result: &crate::gnome_shell::PointerTrackResult,
+    timeline: &super::timeline::RecordingTimeline,
+) -> Vec<ClickSample> {
+    const SHELL_SAMPLE_TOLERANCE_SECONDS: f64 = 0.05;
+
+    if result.t0_monotonic_us <= 0 {
+        return Vec::new();
+    }
+    result
+        .clicks
+        .iter()
+        .filter_map(|(t, x, y, button)| {
+            if !t.is_finite() {
+                return None;
+            }
+            let at_us = result
+                .t0_monotonic_us
+                .saturating_add((*t * 1_000_000.0).round() as i64);
+            timeline
+                .stream_cursor_positions_at(at_us)
+                .into_iter()
+                .filter_map(|(local_x, local_y, sampled_at_us)| {
+                    let sampled_t =
+                        sampled_at_us.saturating_sub(result.t0_monotonic_us) as f64 / 1_000_000.0;
+                    let sample_index = result
+                        .samples
+                        .partition_point(|sample| sample.0.is_finite() && sample.0 <= sampled_t);
+                    let before = sample_index
+                        .checked_sub(1)
+                        .filter(|&index| result.samples[index].0.is_finite());
+                    let after = (sample_index < result.samples.len())
+                        .then_some(sample_index)
+                        .filter(|&index| result.samples[index].0.is_finite());
+                    let matches_click = |index: usize| {
+                        let (_, sample_x, sample_y, _) = &result.samples[index];
+                        sample_x.abs_diff(*x) <= 2 && sample_y.abs_diff(*y) <= 2
+                    };
+                    let nearest_sample =
+                        [before, after]
+                            .into_iter()
+                            .flatten()
+                            .min_by(|&left, &right| {
+                                (result.samples[left].0 - sampled_t)
+                                    .abs()
+                                    .total_cmp(&(result.samples[right].0 - sampled_t).abs())
+                            });
+                    let nearest_matches = nearest_sample.is_some_and(|index| {
+                        (result.samples[index].0 - sampled_t).abs()
+                            <= SHELL_SAMPLE_TOLERANCE_SECONDS
+                            && matches_click(index)
+                    });
+                    let bracket_matches = before.zip(after).is_some_and(|(before, after)| {
+                        matches_click(before) && matches_click(after)
+                    });
+                    if !nearest_matches && !bracket_matches {
+                        return None;
+                    }
+                    Some((
+                        sampled_at_us.abs_diff(at_us),
+                        ClickSample {
+                            t: *t,
+                            x: local_x,
+                            y: local_y,
+                            button: *button,
+                            cursor_id: None,
+                        },
+                    ))
+                })
+                .min_by_key(|(distance, _)| *distance)
+                .map(|(_, click)| click)
+        })
+        .collect()
+}
+
+fn write_stream_cursor_sidecar(
+    output_path: &Path,
+    target: super::RecordingTarget,
+    timeline: &super::timeline::RecordingTimeline,
+    origin_us: i64,
+    clicks: Vec<ClickSample>,
+    presses: Vec<PressSample>,
+    base_manifest: &RecordingManifest,
+) -> bool {
+    let mut sidecar = PointerSidecar::new(
+        origin_us,
+        CaptureRegion::from_capture(None, None, None, None),
+    );
+    if !timeline.add_stream_cursor_to_sidecar(&mut sidecar, origin_us) {
+        PointerSidecar::delete_next_to_video(output_path);
+        return false;
+    }
+    sidecar.clicks = clicks;
+    sidecar.presses = presses;
+    if !timeline.rebase(&mut sidecar) {
+        eprintln!(
+            "[recording] No retained media clock; deleting unsynchronized stream cursor sidecar"
+        );
+        PointerSidecar::delete_next_to_video(output_path);
+        return false;
+    }
+    sidecar.subtract_region();
+    sidecar.compact_samples();
+    match sidecar.write_next_to_video(output_path) {
+        Ok(path) => {
+            eprintln!("[recording] wrote stream cursor sidecar {}", path.display());
+            // Metadata samples are already in the encoded frame's pixels, so
+            // the ratio is 1 and the sidecar's region is the frame size fed
+            // to the encoder.
+            let manifest = RecordingManifest {
+                target: Some(recording_target_name(target).into()),
+                width: Some(sidecar.region.w),
+                height: Some(sidecar.region.h),
+                ..base_manifest.clone()
+            };
+            write_recording_manifest(&path, &manifest);
+            true
+        }
+        Err(err) => {
+            eprintln!("[recording] failed to write stream cursor sidecar: {err}");
+            PointerSidecar::delete_next_to_video(output_path);
+            false
+        }
+    }
+}
+
+/// Write the pointer sidecar for a capture whose cursor positions came from
+/// SPA cursor metadata (window, screen, or area).
+///
+/// `clicks` and `presses` carry button events from a compositor-specific
+/// source; a session with no click source passes empty vectors and the editor
+/// places automatic zooms from where the cursor settles.
+pub(super) fn write_stream_cursor_metadata_sidecar(
+    output_path: &Path,
+    target: super::RecordingTarget,
+    timeline: &super::timeline::RecordingTimeline,
+    frame_rate: f64,
+    clicks: Vec<ClickSample>,
+    presses: Vec<PressSample>,
+) -> bool {
+    let Some(origin_us) = timeline.origin_us() else {
+        PointerSidecar::delete_next_to_video(output_path);
+        return false;
+    };
+    let manifest = RecordingManifest {
+        frame_rate: Some(frame_rate),
+        target: Some(recording_target_name(target).into()),
+        ..RecordingManifest::new(1.0)
+    };
+    write_stream_cursor_sidecar(
+        output_path,
+        target,
+        timeline,
+        origin_us,
+        clicks,
+        presses,
+        &manifest,
+    )
+}
+
+fn window_presses_from_shell_track(
+    result: &crate::gnome_shell::PointerTrackResult,
+    clicks: &[ClickSample],
+) -> Vec<PressSample> {
+    result
+        .presses
+        .iter()
+        .filter(|(down, _, button, _)| {
+            down.is_finite()
+                && clicks
+                    .iter()
+                    .any(|click| click.button == *button && (click.t - *down).abs() <= 0.05)
+        })
+        .map(|(down, up, button, dragged)| PressSample {
+            down: *down,
+            up: *up,
+            button: *button,
+            dragged: *dragged,
+        })
+        .collect()
+}
+
+fn shell_fullscreen_pointer_region(params: &RecordingControlsParams) -> Option<CaptureRegion> {
+    if !params.is_fullscreen || params.capture_w <= 0 || params.capture_h <= 0 {
+        return None;
+    }
+    let center_x = params.capture_x.saturating_add(params.capture_w / 2);
+    let center_y = params.capture_y.saturating_add(params.capture_h / 2);
+    crate::gnome_shell::get_monitor_geometry_at(center_x, center_y)
+        .map(|(x, y, w, h)| CaptureRegion { x, y, w, h })
+        .map_err(|err| {
+            eprintln!(
+                "[recording] GNOME monitor geometry unavailable; using legacy fullscreen pointer coordinates ({err})"
+            );
+            err
+        })
+        .ok()
+}
+
+impl PointerTrackSession {
+    fn start(
+        config: &super::RecordingConfig,
+        region: CaptureRegion,
+        stream_cursor_metadata: bool,
+    ) -> Self {
+        // Pointer tracking supplies the pointer-track sidecar and, for a
+        // window metadata capture, the clicks Auto Zoom uses. It comes from
+        // the shell on GNOME and from the X11 tracker elsewhere; screen and
+        // area metadata streams need no tracking, because their positions
+        // already arrive with the video frames.
+        let should_track = config.pointer_track_enabled()
+            || (config.target == super::RecordingTarget::Window
+                && stream_cursor_metadata
+                && !super::pointer_track::uses_x11_tracker());
+        let manifest = if super::pointer_track::uses_x11_tracker() {
+            // X11 samples are already in video pixels, so the ratio is 1; only
+            // an area capture folds the Settings cap into its recorded size.
+            let size = region.is_area().then(|| {
+                super::backend::fit_within_max_resolution(region.w, region.h, config.max_resolution)
+            });
+            RecordingManifest {
+                frame_rate: Some(f64::from(config.fps)),
+                target: Some(recording_target_name(config.target).into()),
+                width: size.map(|size| size.0),
+                height: size.map(|size| size.1),
+                ..RecordingManifest::new(1.0)
+            }
+        } else if should_track || stream_cursor_metadata {
+            let (device_pixel_ratio, recorded_size) =
+                recording_pixel_geometry(config, region, stream_cursor_metadata);
+            RecordingManifest {
+                frame_rate: Some(f64::from(config.fps)),
+                target: Some(recording_target_name(config.target).into()),
+                width: recorded_size.map(|size| size.0),
+                height: recorded_size.map(|size| size.1),
+                ..RecordingManifest::new(device_pixel_ratio)
+            }
+        } else {
+            RecordingManifest::new(1.0)
+        };
+        if !should_track {
+            if config.target == super::RecordingTarget::Window {
+                let _ = take_harvested_pointer_track();
+            }
+            return Self {
+                started: false,
+                region,
+                stream_cursor_metadata,
+                target: config.target,
+                manifest,
+            };
+        }
+        let _ = take_harvested_pointer_track();
+        match super::pointer_track::start(config.x11_window) {
+            Ok(()) => {
+                if config.target == super::RecordingTarget::Window && stream_cursor_metadata {
+                    eprintln!("[recording] window pointer and click tracking started");
+                } else {
+                    eprintln!("[recording] pointer track started (OS cursor hidden)");
+                }
+                Self {
+                    started: true,
+                    region,
+                    stream_cursor_metadata,
+                    target: config.target,
+                    manifest,
+                }
+            }
+            Err(err) => {
+                if stream_cursor_metadata {
+                    eprintln!("[recording] StartPointerTrack failed ({err}); stream cursor will remain editable without Auto Zoom click data");
+                } else if super::pointer_track::uses_x11_tracker() {
+                    eprintln!(
+                        "[recording] X11 pointer track failed ({err}); continuing without sidecar"
+                    );
+                } else {
+                    eprintln!(
+                        "[recording] StartPointerTrack failed ({err}); continuing without sidecar"
+                    );
+                    crate::utils::notify::desktop_notification(
+                        &crate::i18n::t("Pointer track unavailable"),
+                        &crate::i18n::t("Recording will continue with the OS cursor hidden. Enable the ApexShot GNOME extension for the editor."),
+                    );
+                }
+                Self {
+                    started: false,
+                    region,
+                    stream_cursor_metadata,
+                    target: config.target,
+                    manifest,
+                }
+            }
+        }
+    }
+
+    fn finish_save(
+        mut self,
+        output_path: &Path,
+        timeline: Option<&super::timeline::RecordingTimeline>,
+    ) -> bool {
+        let was_started = self.started;
+        self.started = false;
+        let result = match take_harvested_pointer_track() {
+            Some(result) => Ok(result),
+            None if !was_started && !self.stream_cursor_metadata => {
+                PointerSidecar::delete_next_to_video(output_path);
+                return false;
+            }
+            None if !was_started => {
+                let Some(timeline) = timeline else {
+                    PointerSidecar::delete_next_to_video(output_path);
+                    return false;
+                };
+                let Some(origin_us) = timeline.origin_us() else {
+                    PointerSidecar::delete_next_to_video(output_path);
+                    return false;
+                };
+                return write_stream_cursor_sidecar(
+                    output_path,
+                    self.target,
+                    timeline,
+                    origin_us,
+                    Vec::new(),
+                    Vec::new(),
+                    &self.manifest,
+                );
+            }
+            None => super::pointer_track::stop(),
+        };
+        match result {
+            Ok(result) => {
+                if self.stream_cursor_metadata {
+                    let Some(timeline) = timeline else {
+                        PointerSidecar::delete_next_to_video(output_path);
+                        return false;
+                    };
+                    if result.samples.is_empty() || result.t0_monotonic_us <= 0 {
+                        eprintln!("[recording] GNOME Shell returned no usable click clock; the stream cursor remains editable without Auto Zoom click data");
+                    }
+                    let origin_us = if result.t0_monotonic_us > 0 {
+                        result.t0_monotonic_us
+                    } else if let Some(origin_us) = timeline.origin_us() {
+                        origin_us
+                    } else {
+                        PointerSidecar::delete_next_to_video(output_path);
+                        return false;
+                    };
+                    let clicks = window_clicks_from_shell_track(&result, timeline);
+                    let presses = window_presses_from_shell_track(&result, &clicks);
+                    return write_stream_cursor_sidecar(
+                        output_path,
+                        self.target,
+                        timeline,
+                        origin_us,
+                        clicks,
+                        presses,
+                        &self.manifest,
+                    );
+                }
+                if result.samples.is_empty() {
+                    eprintln!("[recording] pointer track returned no pointer samples");
+                    crate::utils::notify::desktop_notification(
+                        &crate::i18n::t("Pointer track missing"),
+                        &crate::i18n::t("No cursor samples were captured. Zoom centers will use the frame center."),
+                    );
+                }
+                let mut sidecar = PointerSidecar::new(result.t0_monotonic_us, self.region);
+                sidecar.pointer = result
+                    .samples
+                    .into_iter()
+                    .map(|(t, x, y, kind)| PointerSample {
+                        t,
+                        x: x as f64,
+                        y: y as f64,
+                        kind: CursorKind::parse(&kind),
+                        cursor_id: None,
+                    })
+                    .collect();
+                sidecar.clicks = result
+                    .clicks
+                    .into_iter()
+                    .map(|(t, x, y, button)| ClickSample {
+                        t,
+                        x: x as f64,
+                        y: y as f64,
+                        button,
+                        cursor_id: None,
+                    })
+                    .collect();
+                sidecar.presses = result
+                    .presses
+                    .into_iter()
+                    .map(|(down, up, button, dragged)| PressSample {
+                        down,
+                        up,
+                        button,
+                        dragged,
+                    })
+                    .collect();
+                if let Some(timeline) = timeline {
+                    let pointer_origin_us = sidecar.t0_monotonic_us;
+                    if !timeline.rebase(&mut sidecar) {
+                        eprintln!("[recording] No retained media clock; deleting unsynchronized pointer sidecar");
+                        PointerSidecar::delete_next_to_video(output_path);
+                        return false;
+                    }
+                    eprintln!(
+                        "[recording] pointer origin monotonic_us={pointer_origin_us} media origin monotonic_us={}",
+                        sidecar.t0_monotonic_us
+                    );
+                }
+                sidecar.subtract_region();
+                sidecar.compact_samples();
+                match sidecar.write_next_to_video(output_path) {
+                    Ok(path) => {
+                        eprintln!("[recording] wrote pointer sidecar {}", path.display());
+                        write_recording_manifest(&path, &self.manifest);
+                        true
+                    }
+                    Err(err) => {
+                        eprintln!("[recording] failed to write pointer sidecar: {err}");
+                        PointerSidecar::delete_next_to_video(output_path);
+                        false
+                    }
+                }
+            }
+            Err(err) => {
+                eprintln!(
+                    "[recording] pointer track stop failed ({err}); deleting partial sidecar"
+                );
+                PointerSidecar::delete_next_to_video(output_path);
+                false
+            }
+        }
+    }
+
+    fn finish_discard(mut self, output_path: &Path) {
+        let was_started = self.started;
+        self.started = false;
+        if take_harvested_pointer_track().is_none() && was_started {
+            if let Err(err) = super::pointer_track::stop() {
+                eprintln!("[recording] pointer track stop on discard failed: {err}");
+            }
+        }
+        delete_recording_outputs(output_path);
+    }
+}
+
+impl Drop for PointerTrackSession {
+    fn drop(&mut self) {
+        if !self.started {
+            return;
+        }
+        self.started = false;
+        if take_harvested_pointer_track().is_some() {
+            return;
+        }
+        if let Err(err) = super::pointer_track::stop() {
+            eprintln!("[recording] pointer track stop during cleanup failed: {err}");
+        }
+    }
+}
+
+fn maybe_prompt_gnome_extension() {
+    if crate::gnome_shell::current_session_supports_gnome_shell_overlay()
+        && !crate::gnome_shell::is_shell_overlay_service_available()
+    {
+        crate::utils::notify::desktop_notification(
+            "Enable the ApexShot GNOME extension",
+            "Pointer tracking and area dim need the ApexShot GNOME extension.",
+        );
+    }
+}
+
+/// The user-facing body for a failed recording: the underlying cause without
+/// the internal context prefixes that only belong in the log.
+fn recording_failure_body(err: &anyhow::Error) -> String {
+    let mut body = err.to_string();
+    while let Some(rest) = body
+        .strip_prefix("failed to run recording controls: ")
+        .or_else(|| body.strip_prefix("Recording failed: "))
+    {
+        body = rest.to_string();
+    }
+    body
+}
+
+fn should_open_recording_editor(open_editor: bool) -> bool {
+    open_editor
+}
+
+fn validate_saved_recording(path: &Path) -> anyhow::Result<()> {
+    let metadata = std::fs::metadata(path).map_err(|err| {
+        anyhow::anyhow!(
+            "recording output was not created at {}: {err}",
+            path.display()
+        )
+    })?;
+    if !metadata.is_file() || metadata.len() == 0 {
+        anyhow::bail!("recording output is empty at {}", path.display());
+    }
+    // A non-empty file is not proof of a recording: a finalized container with
+    // zero streams is only a few hundred bytes (the audit's sample was 261).
+    // Structural check so "Recording saved" cannot fire on an unplayable file.
+    match probe_recording_structure(path) {
+        ProbeOutcome::Playable => Ok(()),
+        ProbeOutcome::Unplayable(reason) => {
+            anyhow::bail!(
+                "recording output is not playable ({reason}): {}",
+                path.display()
+            )
+        }
+        ProbeOutcome::Unavailable => {
+            // The probe already logged why it could not run.
+            Ok(())
+        }
+    }
+}
+
+enum ProbeOutcome {
+    Playable,
+    Unplayable(String),
+    /// ffprobe could not run at all — not a verdict on the file.
+    Unavailable,
+}
+
+/// Ask ffprobe whether the container actually holds something: at least one
+/// stream and a positive duration. Catches finalized-but-streamless outputs
+/// that a byte-count check (or a clean ffmpeg exit) lets through.
+fn probe_recording_structure(path: &Path) -> ProbeOutcome {
+    let output = match std::process::Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=index",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1",
+        ])
+        .arg(path)
+        .output()
+    {
+        Ok(output) => output,
+        Err(err) => {
+            eprintln!(
+                "[recording] ffprobe could not run ({err}); skipping structural validation for {}",
+                path.display()
+            );
+            return ProbeOutcome::Unavailable;
+        }
+    };
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr);
+        return ProbeOutcome::Unplayable(format!(
+            "ffprobe rejected the container: {}",
+            detail.trim()
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !stdout.lines().any(|line| line.starts_with("index=")) {
+        return ProbeOutcome::Unplayable("container has no streams".into());
+    }
+    let duration_ok = stdout.lines().any(|line| {
+        line.strip_prefix("duration=")
+            .and_then(|value| value.parse::<f64>().ok())
+            .is_some_and(|seconds| seconds > 0.0)
+    });
+    if !duration_ok {
+        return ProbeOutcome::Unplayable("container reports no positive duration".into());
+    }
+    ProbeOutcome::Playable
+}
+
+#[derive(Debug)]
+pub struct PreparedOverlayRecordingRequest {
+    pub updated_app_config: AppConfig,
+    pub output_path: PathBuf,
+    pub recording_config: super::RecordingConfig,
+    pub controls_params: Option<RecordingControlsParams>,
+    pub use_shell_mask: bool,
+    pub open_editor: bool,
+}
+
+enum PreparedShellRecording {
+    Video(super::backend::BuiltPipeline),
+}
+
+fn should_use_shell_mask_for_request(
+    request: &RecordingRequest,
+    shell_mask_available: bool,
+) -> bool {
+    shell_mask_available
+        && !request.window
+        && request.dim_screen
+        && !request.fullscreen
+        && request.width > 0
+        && request.height > 0
+}
+
+pub fn prepare_overlay_recording_request<Tz: chrono::TimeZone>(
+    mut app_config: AppConfig,
+    request: &RecordingRequest,
+    now: chrono::DateTime<Tz>,
+) -> PreparedOverlayRecordingRequest
+where
+    Tz::Offset: std::fmt::Display,
+{
+    let shell_overlay_available =
+        crate::gnome_shell::current_session_supports_gnome_shell_overlay();
+    let use_shell_mask = should_use_shell_mask_for_request(request, shell_overlay_available);
+    app_config.rec_controls = request.controls;
+    app_config.rec_hidpi = request.hidpi;
+    app_config.rec_notifications = request.notifications;
+    app_config.rec_cursor = true;
+    app_config.rec_remember_selection = request.remember_selection;
+    app_config.rec_dim_screen = request.dim_screen;
+    app_config.rec_countdown = request.countdown;
+    app_config.rec_mic = request.mic;
+    app_config.rec_speaker = request.speaker;
+    // The Quick Capture microphone menu owns the source choice. A request
+    // that carries one saves it for next time; one without keeps the saved
+    // value.
+    if !request.mic_device.trim().is_empty() {
+        app_config.rec_mic_device = request.mic_device.trim().to_string();
+    }
+    let mic_source = if !request.mic_device.trim().is_empty() {
+        Some(request.mic_device.trim().to_string())
+    } else if !app_config.rec_mic_device.is_empty() {
+        Some(app_config.rec_mic_device.clone())
+    } else {
+        None
+    };
+    // The Speaker menu chooses an app, never an output. An empty name means
+    // every app, which records the default output's monitor and clears the
+    // saved choice.
+    app_config.rec_speaker_app = request.speaker_app.trim().to_string();
+    let speaker_app = (!request.speaker_app.trim().is_empty()).then(|| super::SpeakerApp {
+        name: request.speaker_app.trim().to_string(),
+        pid: request.speaker_app_pid,
+    });
+    // `rec_video_max_res` is deliberately not taken from the request: neither
+    // quick access offers a resolution picker any more, so the request only
+    // echoes the value the overlay was launched with. Writing that echo back
+    // reverted a resolution the user saved in Settings after the overlay
+    // started.
+    app_config.rec_video_fps = request.video_fps;
+    app_config.rec_video_mono = request.record_mono;
+    app_config.rec_noise_suppression = request.noise_suppression;
+    app_config.rec_video_open_editor = request.open_editor;
+
+    if request.remember_selection && !request.window {
+        app_config.last_selection_x = Some(request.x);
+        app_config.last_selection_y = Some(request.y);
+        app_config.last_selection_w = Some(request.width);
+        app_config.last_selection_h = Some(request.height);
+    }
+
+    let output_path = super::recording_output_path(&app_config, "mp4", now);
+    super::ensure_recording_parent_dir(&output_path);
+
+    // Settings is the only place the cap can be chosen, so it comes from the
+    // config the caller loaded, never from the request (which only echoes the
+    // overlay's launch-time value).
+    let max_resolution = super::max_resolution_for_setting(app_config.rec_video_max_res);
+
+    let fps = match request.video_fps {
+        0 => 24,
+        1 => 30,
+        2 => 50,
+        3 => 60,
+        _ => 30,
+    };
+
+    let (capture_x, capture_y, capture_width, capture_height) =
+        if request.fullscreen || request.window {
+            (None, None, None, None)
+        } else {
+            (
+                Some(request.x),
+                Some(request.y),
+                Some(request.width as u32),
+                Some(request.height as u32),
+            )
+        };
+
+    let output = (request.fullscreen && !request.window && !request.output.trim().is_empty())
+        .then(|| request.output.trim().to_string());
+
+    let recording_config = super::RecordingConfig {
+        output_path: output_path.clone(),
+        target: if request.window {
+            super::RecordingTarget::Window
+        } else if request.fullscreen {
+            super::RecordingTarget::Screen
+        } else {
+            super::RecordingTarget::Area
+        },
+        output,
+        width: capture_width,
+        height: capture_height,
+        x: capture_x,
+        y: capture_y,
+        cursor: true,
+        pointer_track: !request.window && super::pointer_track::should_use(),
+        x11_window: None,
+        hidpi: request.hidpi,
+        max_resolution,
+        fps,
+        crf: super::crf_for_quality(app_config.rec_video_quality),
+        mono_audio: request.record_mono,
+        mic_enabled: request.mic,
+        speaker_enabled: request.speaker,
+        mic_source,
+        speaker_source: None,
+        speaker_app,
+        noise_suppression: request.noise_suppression,
+    };
+
+    let controls_params = Some(RecordingControlsParams {
+        capture_x: if request.window { 0 } else { request.x },
+        capture_y: if request.window { 0 } else { request.y },
+        capture_w: if request.window { 0 } else { request.width },
+        capture_h: if request.window { 0 } else { request.height },
+        is_fullscreen: request.fullscreen && !request.window,
+        show_timer: true,
+        use_shell_mask,
+        dim_screen: request.dim_screen,
+        countdown_enabled: request.countdown,
+        countdown_seconds: 3, // Default to 3s for now, or fetch from config
+        session_id: None,     // Will be set when controls are launched
+    });
+
+    PreparedOverlayRecordingRequest {
+        updated_app_config: app_config,
+        output_path,
+        recording_config,
+        controls_params,
+        use_shell_mask,
+        open_editor: request.open_editor,
+    }
+}
+
+pub async fn run_recording_with_controls(
+    config: super::RecordingConfig,
+    params: RecordingControlsParams,
+    show_controls: bool,
+) -> anyhow::Result<(PathBuf, StopAction)> {
+    let _busy = super::control_session::RecordingBusyGuard::acquire()?;
+    run_recording_with_controls_locked(config, params, show_controls).await
+}
+
+async fn run_recording_with_controls_locked(
+    config: super::RecordingConfig,
+    params: RecordingControlsParams,
+    show_controls: bool,
+) -> anyhow::Result<(PathBuf, StopAction)> {
+    // On GNOME the shell extension dims the area outside the capture rect.
+    if crate::gnome_shell::current_session_supports_gnome_shell_overlay() {
+        return run_recording_with_shell_mask(config, params).await;
+    }
+
+    // Fallback for non-GNOME (Fedora KDE, Hyprland, Sway, Niri, River, etc.).
+    // X11 desktops float the controls bar; Wayland ones keep shortcuts, tray,
+    // and desktop notifications.
+    eprintln!(
+        "[recording] GNOME Shell not detected; using native recording path (controls, shortcuts, notifications)."
+    );
+    run_recording_with_native_controls(config, params, show_controls).await
+}
+
+/// Standalone countdown window for entry points without a controls deck
+/// (e.g. CLI): shows the timer when Settings enables it. Returns false when
+/// the user cancels the countdown.
+pub async fn run_standalone_countdown() -> anyhow::Result<bool> {
+    run_recording_countdown_subprocess(RecordingControlsParams {
+        countdown_seconds: 3,
+        ..Default::default()
+    })
+    .await
+}
+
+async fn run_recording_countdown_subprocess(
+    params: RecordingControlsParams,
+) -> anyhow::Result<bool> {
+    let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("apexshot"));
+    let seconds = params.countdown_seconds;
+    let params_json = serde_json::to_string(&params)?;
+
+    let status = tokio::task::spawn_blocking(move || {
+        std::process::Command::new(&exe)
+            .arg("recording-countdown-internal")
+            .arg(params_json)
+            .arg(seconds.to_string())
+            .status()
+    })
+    .await??;
+
+    if status.success() {
+        Ok(true)
+    } else if status.code() == Some(2) {
+        Ok(false)
+    } else {
+        Err(anyhow::anyhow!(
+            "recording countdown exited with status {status}"
+        ))
+    }
+}
+
+async fn run_shell_recording_countdown(params: RecordingControlsParams) -> anyhow::Result<bool> {
+    let geometry = crate::gnome_shell::RecordingMaskGeometry {
+        x: params.capture_x,
+        y: params.capture_y,
+        width: params.capture_w,
+        height: params.capture_h,
+    };
+
+    match crate::gnome_shell::show_recording_countdown(geometry, params.countdown_seconds) {
+        Ok(countdown) if countdown.is_shown() => {
+            tokio::time::sleep(std::time::Duration::from_secs(
+                params.countdown_seconds.into(),
+            ))
+            .await;
+            drop(countdown);
+            Ok(true)
+        }
+        Ok(countdown) => {
+            drop(countdown);
+            eprintln!(
+                "[recording] GNOME Shell did not show the countdown; using fallback countdown."
+            );
+            run_recording_countdown_subprocess(params).await
+        }
+        Err(err) => {
+            eprintln!("[recording] Failed to show GNOME Shell countdown ({err}); using fallback countdown.");
+            run_recording_countdown_subprocess(params).await
+        }
+    }
+}
+
+async fn prepare_shell_recording(
+    config: super::RecordingConfig,
+) -> super::RecordResult<Option<PreparedShellRecording>> {
+    if super::wf_recorder::is_wlroots_session() && config.target != super::RecordingTarget::Window {
+        return Ok(None);
+    }
+
+    super::backend::prepare_recording_backend(config)
+        .await
+        .map(PreparedShellRecording::Video)
+        .map(Some)
+}
+
+async fn start_shell_recording(
+    config: super::RecordingConfig,
+    prepared: Option<PreparedShellRecording>,
+    command_rx: mpsc::UnboundedReceiver<RecordingControlCommand>,
+) -> super::RecordResult<super::RecordedSession> {
+    match prepared {
+        Some(PreparedShellRecording::Video(backend)) => {
+            super::backend::start_recording_with_prepared_backend(backend, Some(command_rx)).await
+        }
+        None => super::start_recording_with_commands(config, Some(command_rx)).await,
+    }
+}
+
+/// How long the X11 control bar gets to report its window before the
+/// recording starts without it, so a missing bar can never leak into frames.
+const X11_CONTROLS_START_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(1500);
+
+/// The control bar's stdin. The command forwarder shares it so a pause or
+/// resume started by a shortcut or the tray is mirrored on the bar.
+type X11ControlsStdin = std::sync::Arc<std::sync::Mutex<Option<std::process::ChildStdin>>>;
+
+fn clear_x11_controls_stdin(stdin: &X11ControlsStdin) {
+    if let Ok(mut guard) = stdin.lock() {
+        guard.take();
+    }
+}
+
+/// Owns the X11 control bar process for the length of one recording.
+struct X11ControlsBar {
+    child: std::process::Child,
+    xid: u32,
+    stdin: X11ControlsStdin,
+}
+
+impl Drop for X11ControlsBar {
+    fn drop(&mut self) {
+        // Let the Qt bar close its window before the process goes away.
+        if let Ok(mut guard) = self.stdin.lock() {
+            if let Some(mut stdin) = guard.take() {
+                use std::io::Write;
+                let _ = stdin.write_all(b"end\n");
+                let _ = stdin.flush();
+            }
+        }
+        super::x11_controls_mask::clear_controls_window_if(self.xid);
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+/// Turn the bar's stdout into mask updates and recording commands.
+///
+/// Every bar prints its X11 window id and the commands it issues on stdout.
+/// The commands go through the same recording control server the shortcuts and
+/// tray use, and the id lets the recording mask the bar out of the frames.
+fn read_x11_controls_stdout(
+    stdout: std::process::ChildStdout,
+    xid_tx: oneshot::Sender<u32>,
+) -> std::io::Result<()> {
+    std::thread::Builder::new()
+        .name("apexshot-x11-controls".into())
+        .spawn(move || {
+            use std::io::BufRead;
+            let mut xid_tx = Some(xid_tx);
+            let mut reported = 0u32;
+            let lines = std::io::BufReader::new(stdout)
+                .lines()
+                .map_while(|line| line.ok());
+            for line in lines {
+                if let Some(xid) = line.strip_prefix("xid ") {
+                    if let Ok(xid) = xid.trim().parse::<u32>() {
+                        if xid == 0 {
+                            super::x11_controls_mask::clear_controls_window_if(reported);
+                        } else {
+                            reported = xid;
+                            super::x11_controls_mask::set_controls_window(xid);
+                            if let Some(tx) = xid_tx.take() {
+                                let _ = tx.send(xid);
+                            }
+                        }
+                    }
+                    continue;
+                }
+                let command = match line.as_str() {
+                    "pause" => super::RecordingControlCommand::Pause,
+                    "resume" => super::RecordingControlCommand::Resume,
+                    "restart" => super::RecordingControlCommand::Restart,
+                    "stop" => super::RecordingControlCommand::StopSave,
+                    "discard" => super::RecordingControlCommand::StopDiscard,
+                    _ => continue,
+                };
+                let _ = super::send_active_recording_command(command);
+            }
+            super::x11_controls_mask::clear_controls_window_if(reported);
+            if let Some(tx) = xid_tx.take() {
+                let _ = tx.send(0);
+            }
+        })
+        .map(|_| ())
+}
+
+/// Run the shared Qt control bar in the capture helper.
+///
+/// The bar is the same painted widget the Windows shell uses, so both
+/// platforms show one design. The helper mirrors the Rust-owned recording:
+/// bar commands arrive on its stdout, pause and resume come back on stdin.
+fn spawn_x11_qt_controls_bar(
+    params: &RecordingControlsParams,
+    session_id: &str,
+    stdin: &X11ControlsStdin,
+) -> Option<(std::process::Child, oneshot::Receiver<u32>)> {
+    let helper = crate::capture_overlay::find_capture_binary()?;
+    let mut bar_params = params.clone();
+    bar_params.session_id = Some(session_id.to_string());
+    bar_params.dim_screen = false;
+    bar_params.use_shell_mask = false;
+    bar_params.countdown_enabled = false;
+    let params_json = serde_json::to_string(&bar_params).ok()?;
+    let mut child = match std::process::Command::new(&helper)
+        .arg("--recording-controls")
+        .arg(&params_json)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(err) => {
+            eprintln!(
+                "[recording] Qt controls bar failed to launch ({}): {err}",
+                helper.display()
+            );
+            return None;
+        }
+    };
+
+    let Some(child_stdin) = child.stdin.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return None;
+    };
+    match stdin.lock() {
+        Ok(mut guard) => *guard = Some(child_stdin),
+        Err(_) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+    }
+
+    let Some(stdout) = child.stdout.take() else {
+        clear_x11_controls_stdin(stdin);
+        let _ = child.kill();
+        let _ = child.wait();
+        return None;
+    };
+    let (xid_tx, xid_rx) = oneshot::channel();
+    if let Err(err) = read_x11_controls_stdout(stdout, xid_tx) {
+        eprintln!("[recording] X11 controls bar reader failed: {err}");
+        clear_x11_controls_stdin(stdin);
+        let _ = child.kill();
+        let _ = child.wait();
+        return None;
+    }
+    Some((child, xid_rx))
+}
+
+/// Run the GTK control bar in its own process.
+///
+/// The bar shares `recording-countdown-internal` because the main-binary
+/// dispatch lives in main.rs; a session id and zero seconds select the
+/// controls window instead of a countdown. This is the fallback used when the
+/// capture helper cannot run the shared bar.
+fn spawn_x11_gtk_controls_bar(
+    params: &RecordingControlsParams,
+    session_id: &str,
+) -> Option<(std::process::Child, oneshot::Receiver<u32>)> {
+    let exe = std::env::current_exe().ok()?;
+    let mut bar_params = params.clone();
+    bar_params.session_id = Some(session_id.to_string());
+    bar_params.dim_screen = false;
+    bar_params.use_shell_mask = false;
+    bar_params.countdown_enabled = false;
+    let params_json = serde_json::to_string(&bar_params).ok()?;
+    let mut child = std::process::Command::new(exe)
+        .arg("recording-countdown-internal")
+        .arg(params_json)
+        .arg("0")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()
+        .map_err(|err| eprintln!("[recording] X11 controls bar failed to launch: {err}"))
+        .ok()?;
+    let stdout = child.stdout.take()?;
+    let (xid_tx, xid_rx) = oneshot::channel();
+    if let Err(err) = read_x11_controls_stdout(stdout, xid_tx) {
+        eprintln!("[recording] X11 controls bar reader failed: {err}");
+        let _ = child.kill();
+        let _ = child.wait();
+        return None;
+    }
+    Some((child, xid_rx))
+}
+
+fn spawn_x11_controls_bar(
+    params: &RecordingControlsParams,
+    session_id: &str,
+    stdin: &X11ControlsStdin,
+) -> Option<(std::process::Child, oneshot::Receiver<u32>, bool)> {
+    if let Some((child, xid_rx)) = spawn_x11_qt_controls_bar(params, session_id, stdin) {
+        return Some((child, xid_rx, true));
+    }
+    spawn_x11_gtk_controls_bar(params, session_id).map(|(child, xid_rx)| (child, xid_rx, false))
+}
+
+async fn await_x11_controls_xid(
+    child: &mut std::process::Child,
+    xid_rx: oneshot::Receiver<u32>,
+) -> Option<u32> {
+    match tokio::time::timeout(X11_CONTROLS_START_TIMEOUT, xid_rx).await {
+        Ok(Ok(xid)) if xid != 0 => Some(xid),
+        _ => {
+            // A process that already exited could not open its window; the
+            // caller decides whether a fallback bar is worth starting.
+            if !matches!(child.try_wait(), Ok(Some(_))) {
+                eprintln!(
+                    "[recording] X11 controls bar did not report a window; recording without it"
+                );
+            }
+            None
+        }
+    }
+}
+
+async fn start_x11_controls_bar(
+    params: &RecordingControlsParams,
+    session_id: &str,
+    stdin: &X11ControlsStdin,
+) -> Option<X11ControlsBar> {
+    let (mut child, xid_rx, using_qt_bar) = spawn_x11_controls_bar(params, session_id, stdin)?;
+    if let Some(xid) = await_x11_controls_xid(&mut child, xid_rx).await {
+        return Some(X11ControlsBar {
+            child,
+            xid,
+            stdin: stdin.clone(),
+        });
+    }
+
+    let exited_early = matches!(child.try_wait(), Ok(Some(_)));
+    clear_x11_controls_stdin(stdin);
+    let _ = child.kill();
+    let _ = child.wait();
+
+    // The helper could not open its window, so the installed capture binary
+    // may predate this mode. Keep the GTK bar working as before.
+    if using_qt_bar && exited_early {
+        eprintln!("[recording] Qt controls bar exited early; using the GTK bar");
+        let (mut child, xid_rx) = spawn_x11_gtk_controls_bar(params, session_id)?;
+        if let Some(xid) = await_x11_controls_xid(&mut child, xid_rx).await {
+            return Some(X11ControlsBar {
+                child,
+                xid,
+                stdin: stdin.clone(),
+            });
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    None
+}
+
+/// Non-GNOME recording path (Fedora KDE, wlroots, etc.).
+///
+/// X11 desktops float the control bar outside the capture rectangle; Wayland
+/// ones keep the configured global shortcuts, the tray, and desktop
+/// notifications.
+pub async fn run_recording_with_native_controls(
+    config: super::RecordingConfig,
+    mut params: RecordingControlsParams,
+    show_controls: bool,
+) -> anyhow::Result<(PathBuf, StopAction)> {
+    // X11 desktops without a ScreenCast portal pick the window here, before the
+    // backend is prepared, so the crosshair appears before the countdown.
+    let output_path = config.output_path.clone();
+    let window_target = config.target == super::RecordingTarget::Window;
+    let config = match super::x11_window_target::resolve_x11_window_target(config).await {
+        Ok(Some(config)) => config,
+        Ok(None) => {
+            super::notify_recording_session_ended_best_effort();
+            return Ok((output_path, StopAction::Discard));
+        }
+        Err(err) => return Err(err.into()),
+    };
+    if window_target && config.target == super::RecordingTarget::Area {
+        // Window requests carry zeroed geometry until the picker resolves it.
+        params.capture_x = config.x.unwrap_or(0);
+        params.capture_y = config.y.unwrap_or(0);
+        params.capture_w = config.width.map_or(0, |w| i32::try_from(w).unwrap_or(0));
+        params.capture_h = config.height.map_or(0, |h| i32::try_from(h).unwrap_or(0));
+        params.is_fullscreen = false;
+    }
+
+    // Prepare the capture backend *before* countdown so any portal / permission
+    // UI appears first. Countdown then leads straight into recording without a
+    // second chooser after "3-2-1".
+    let prepared_backend = if super::wf_recorder::is_wlroots_session()
+        && config.target != super::RecordingTarget::Window
+    {
+        None
+    } else {
+        match super::backend::prepare_recording_backend(config.clone()).await {
+            Ok(prepared) => Some(prepared),
+            Err(err) => {
+                super::notify_recording_session_ended_best_effort();
+                return Err(err.into());
+            }
+        }
+    };
+
+    let session_id = format!(
+        "recording-{}-{}",
+        std::process::id(),
+        chrono::Utc::now().timestamp_millis()
+    );
+    let control_server = RecordingControlServer::start(session_id.clone()).await?;
+
+    // Optional pre-roll; the controls bar appears with the capture below.
+    if params.countdown_enabled {
+        match run_recording_countdown_subprocess(params.clone()).await {
+            Ok(true) => {}
+            Ok(false) => {
+                super::notify_recording_session_ended_best_effort();
+                return Ok((config.output_path.clone(), StopAction::Discard));
+            }
+            Err(err) => {
+                super::notify_recording_session_ended_best_effort();
+                return Err(err);
+            }
+        }
+    }
+
+    let (recording_command_tx, command_rx) = mpsc::unbounded_channel();
+    let (control_command_tx, mut control_command_rx) =
+        mpsc::unbounded_channel::<RecordingControlCommand>();
+
+    // Every command reaches the recorder through this forwarder, whether the
+    // bar, a shortcut, or the tray sent it, so it is also the one place that
+    // can keep the bar's pause state in step.
+    let controls_stdin: X11ControlsStdin = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let bar_stdin = controls_stdin.clone();
+    let dbus_tx = recording_command_tx.clone();
+    let dbus_forward = tokio::spawn(async move {
+        while let Some(cmd) = control_command_rx.recv().await {
+            let state_line: &[u8] = match cmd {
+                RecordingControlCommand::Pause => b"paused\n",
+                RecordingControlCommand::Resume => b"resumed\n",
+                _ => b"",
+            };
+            if !state_line.is_empty() {
+                if let Ok(mut guard) = bar_stdin.lock() {
+                    if let Some(stdin) = guard.as_mut() {
+                        use std::io::Write;
+                        let _ = stdin.write_all(state_line);
+                        let _ = stdin.flush();
+                    }
+                }
+            }
+            if dbus_tx.send(cmd).is_err() {
+                break;
+            }
+        }
+    });
+
+    control_server.set_command_sender(control_command_tx);
+    let mut controls_bar = if show_controls && crate::backend::is_x11_session() {
+        start_x11_controls_bar(&params, &session_id, &controls_stdin).await
+    } else {
+        None
+    };
+    let mut pointer_track = if config.pointer_track_enabled() {
+        let fullscreen_monitor = if params.is_fullscreen && super::pointer_track::uses_x11_tracker()
+        {
+            super::x11_pointer_track::screen_region()
+        } else {
+            None
+        };
+        Some(PointerTrackSession::start(
+            &config,
+            pointer_capture_region(&config, fullscreen_monitor),
+            false,
+        ))
+    } else {
+        None
+    };
+    super::notify_daemon_event("recording_session_started");
+    // The backend reports whether the portal actually granted CursorMode::
+    // Metadata. Screen and area streams then carry editable cursor positions
+    // just like a window stream does.
+    let stream_cursor_metadata = prepared_backend
+        .as_ref()
+        .is_some_and(|prepared| prepared.stream_cursor_metadata_enabled());
+    // KDE's compositor gives no global button stream. A temporary script
+    // effect supplies clicks for the sidecar this path writes; it stays `None`
+    // elsewhere and when the compositor refuses script effects.
+    let click_bridge = if config.target == super::RecordingTarget::Window || stream_cursor_metadata
+    {
+        tokio::task::spawn_blocking(super::kwin_clicks::KwinClickBridge::start)
+            .await
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+    let outcome = if let Some(prepared_backend) = prepared_backend {
+        super::backend::start_recording_with_prepared_backend(prepared_backend, Some(command_rx))
+            .await
+    } else {
+        super::start_recording_with_commands(config.clone(), Some(command_rx)).await
+    };
+    control_server.clear_command_sender();
+    dbus_forward.abort();
+
+    let outcome = match outcome {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            if let Some(pointer_track) = pointer_track.take() {
+                pointer_track.finish_discard(&config.output_path);
+            }
+            super::notify_recording_session_ended_best_effort();
+            return Err(err.into());
+        }
+    };
+    let raw_clicks = match click_bridge {
+        Some(bridge) => tokio::task::spawn_blocking(move || bridge.stop())
+            .await
+            .unwrap_or_default(),
+        None => Vec::new(),
+    };
+    // Capture has stopped, so the bar has done its job.
+    drop(controls_bar.take());
+
+    match outcome {
+        super::RecordedSession {
+            path,
+            action: super::RecordingTerminalAction::Restart,
+            ..
+        } => {
+            if let Some(event) =
+                super::daemon_event_for_terminal_action(super::RecordingTerminalAction::Restart)
+            {
+                super::notify_daemon_event(event);
+            }
+            if let Some(pointer_track) = pointer_track.take() {
+                pointer_track.finish_discard(&path);
+            }
+            delete_recording_outputs(&path);
+            Box::pin(run_recording_with_native_controls(
+                config,
+                params,
+                show_controls,
+            ))
+            .await
+        }
+        super::RecordedSession {
+            path,
+            action: super::RecordingTerminalAction::Save,
+            timeline,
+        } => {
+            if let Some(event) =
+                super::daemon_event_for_terminal_action(super::RecordingTerminalAction::Save)
+            {
+                super::notify_daemon_event(event);
+            }
+            if let Some(pointer_track) = pointer_track.take() {
+                pointer_track.finish_save(&path, timeline.as_ref());
+            }
+            if config.target == super::RecordingTarget::Window || stream_cursor_metadata {
+                if let Some(timeline) = timeline.as_ref() {
+                    let (clicks, presses) =
+                        super::kwin_clicks::clicks_and_presses(&raw_clicks, timeline);
+                    write_stream_cursor_metadata_sidecar(
+                        &path,
+                        config.target,
+                        timeline,
+                        f64::from(config.fps),
+                        clicks,
+                        presses,
+                    );
+                } else {
+                    PointerSidecar::delete_next_to_video(&path);
+                }
+            }
+            Ok((path, StopAction::Save))
+        }
+        super::RecordedSession {
+            path,
+            action: super::RecordingTerminalAction::Discard,
+            ..
+        } => {
+            if let Some(event) =
+                super::daemon_event_for_terminal_action(super::RecordingTerminalAction::Discard)
+            {
+                super::notify_daemon_event(event);
+            }
+            if let Some(pointer_track) = pointer_track.take() {
+                pointer_track.finish_discard(&path);
+            }
+            Ok((path, StopAction::Discard))
+        }
+    }
+}
+
+/// GNOME recording path: identical to the native path except the shell
+/// extension dims the area outside the capture rect while we record.
+async fn run_recording_with_shell_mask(
+    config: super::RecordingConfig,
+    params: RecordingControlsParams,
+) -> anyhow::Result<(PathBuf, StopAction)> {
+    let _chrome = crate::gnome_shell::RecordingChromeGuard::clear_on_drop();
+    // Same ordering as the native path: portal / backend first, then countdown.
+    let mut prepared_backend = match prepare_shell_recording(config.clone()).await {
+        Ok(prepared) => prepared,
+        Err(err) => {
+            super::notify_recording_session_ended_best_effort();
+            return Err(err.into());
+        }
+    };
+
+    let _shell_mask = if params.use_shell_mask {
+        match crate::gnome_shell::show_recording_mask(crate::gnome_shell::RecordingMaskGeometry {
+            x: params.capture_x,
+            y: params.capture_y,
+            width: params.capture_w,
+            height: params.capture_h,
+        }) {
+            Ok(handle) => Some(handle),
+            Err(err) => {
+                eprintln!("[recording] Failed to show GNOME shell recording mask ({err}); continuing without shell mask.");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    if params.countdown_enabled {
+        match run_shell_recording_countdown(params.clone()).await {
+            Ok(true) => {}
+            Ok(false) => {
+                super::notify_recording_session_ended_best_effort();
+                return Ok((config.output_path.clone(), StopAction::Discard));
+            }
+            Err(err) => {
+                super::notify_recording_session_ended_best_effort();
+                return Err(err);
+            }
+        }
+    }
+
+    let session_id = format!(
+        "recording-{}-{}",
+        std::process::id(),
+        chrono::Utc::now().timestamp_millis()
+    );
+    let control_server = RecordingControlServer::start(session_id).await?;
+
+    super::notify_daemon_event("recording_session_started");
+    let final_outcome = loop {
+        let fullscreen_monitor = if config.pointer_track_enabled() && params.is_fullscreen {
+            let monitor_params = params.clone();
+            match tokio::task::spawn_blocking(move || {
+                shell_fullscreen_pointer_region(&monitor_params)
+            })
+            .await
+            {
+                Ok(region) => region,
+                Err(err) => {
+                    eprintln!("[recording] GNOME monitor lookup failed: {err}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let pointer_region = pointer_capture_region(&config, fullscreen_monitor);
+        let stream_cursor_metadata =
+            prepared_backend
+                .as_ref()
+                .is_some_and(|prepared| match prepared {
+                    PreparedShellRecording::Video(backend) => {
+                        backend.stream_cursor_metadata_enabled()
+                    }
+                });
+        let pointer_track =
+            PointerTrackSession::start(&config, pointer_region, stream_cursor_metadata);
+        let (command_tx, command_rx) = mpsc::unbounded_channel();
+        control_server.set_command_sender(command_tx);
+        let outcome =
+            start_shell_recording(config.clone(), prepared_backend.take(), command_rx).await;
+        control_server.clear_command_sender();
+        let outcome = match outcome {
+            Ok(outcome) => outcome,
+            Err(err) => {
+                pointer_track.finish_discard(&config.output_path);
+                drop(control_server);
+                super::notify_recording_session_ended_best_effort();
+                return Err(err.into());
+            }
+        };
+
+        match outcome {
+            super::RecordedSession {
+                path,
+                action: action @ super::RecordingTerminalAction::Restart,
+                ..
+            } => {
+                if let Some(event) = super::daemon_event_for_terminal_action(action) {
+                    super::notify_daemon_event(event);
+                }
+                pointer_track.finish_discard(&path);
+                prepared_backend = prepare_shell_recording(config.clone()).await?;
+                continue;
+            }
+            super::RecordedSession {
+                path,
+                action: action @ super::RecordingTerminalAction::Save,
+                timeline,
+            } => {
+                if let Some(event) = super::daemon_event_for_terminal_action(action) {
+                    super::notify_daemon_event(event);
+                }
+                pointer_track.finish_save(&path, timeline.as_ref());
+                break (path, StopAction::Save);
+            }
+            super::RecordedSession {
+                path,
+                action: action @ super::RecordingTerminalAction::Discard,
+                ..
+            } => {
+                if let Some(event) = super::daemon_event_for_terminal_action(action) {
+                    super::notify_daemon_event(event);
+                }
+                pointer_track.finish_discard(&path);
+                break (path, StopAction::Discard);
+            }
+        }
+    };
+
+    drop(control_server);
+
+    Ok(final_outcome)
+}
+
+pub fn run_overlay_recording_request(request: RecordingRequest) -> anyhow::Result<PathBuf> {
+    run_overlay_recording_request_with_gtk(request, None)
+}
+
+pub fn persist_overlay_recording_request_state(request: &RecordingRequest) -> anyhow::Result<()> {
+    let prepared = prepare_overlay_recording_request(
+        crate::config::load_config(),
+        request,
+        chrono::Local::now(),
+    );
+    save_config(&prepared.updated_app_config)?;
+    Ok(())
+}
+
+pub fn run_overlay_recording_request_with_gtk(
+    request: RecordingRequest,
+    _gtk_tx: Option<std::sync::mpsc::Sender<crate::daemon::GtkWork>>,
+) -> anyhow::Result<PathBuf> {
+    maybe_prompt_gnome_extension();
+
+    let prepared = prepare_overlay_recording_request(
+        crate::config::load_config(),
+        &request,
+        chrono::Local::now(),
+    );
+
+    if let Some(parent) = prepared.output_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    save_config(&prepared.updated_app_config)?;
+
+    // Own admission before changing desktop state. Keep it until DND and audio
+    // exclusivity have both been restored so another take cannot overlap cleanup.
+    let busy = super::control_session::RecordingBusyGuard::acquire()?;
+
+    let dnd_guard = if request.notifications {
+        crate::recording::dnd::DndGuard::enable()
+    } else {
+        None
+    };
+
+    eprintln!("Starting recording to {:?}...", prepared.output_path);
+
+    crate::daemon::release_audio_monitors_for_recording();
+    struct EndExclusive;
+    impl Drop for EndExclusive {
+        fn drop(&mut self) {
+            crate::daemon::end_recording_audio_exclusive();
+        }
+    }
+    let end_exclusive = EndExclusive;
+    crate::gnome_shell::hide_recording_mask_best_effort();
+    let chrome = crate::gnome_shell::RecordingChromeGuard::clear_on_drop();
+    let open_editor = prepared.open_editor;
+    let recording_config = prepared.recording_config.clone();
+    let controls_params = prepared.controls_params.clone();
+    let show_controls = prepared.updated_app_config.rec_controls;
+    let outcome = match std::thread::spawn(move || -> anyhow::Result<(PathBuf, StopAction)> {
+        let runtime = tokio::runtime::Runtime::new()?;
+        if let Some(params) = controls_params {
+            runtime
+                .block_on(run_recording_with_controls_locked(
+                    recording_config,
+                    params,
+                    show_controls,
+                ))
+                .map_err(|err| {
+                    if err
+                        .downcast_ref::<super::RecordError>()
+                        .is_some_and(|e| matches!(e, super::RecordError::Cancelled))
+                    {
+                        err
+                    } else {
+                        anyhow::anyhow!("failed to run recording controls: {err}")
+                    }
+                })
+        } else {
+            runtime
+                .block_on(super::start_recording(recording_config))
+                .map(|path| (path, StopAction::Save))
+                .map_err(|err| {
+                    // Preserve the type so the outcome handler below can tell
+                    // a portal-dialog cancel apart from a real failure.
+                    if matches!(err, super::RecordError::Cancelled) {
+                        anyhow::Error::from(err)
+                    } else {
+                        anyhow::anyhow!("Recording failed: {err}")
+                    }
+                })
+        }
+    })
+    .join()
+    {
+        Ok(outcome) => outcome,
+        Err(_) => {
+            crate::gnome_shell::hide_recording_mask_best_effort();
+            super::notify_recording_session_ended_best_effort();
+            return Err(anyhow::anyhow!("recording worker panicked"));
+        }
+    };
+
+    // Restore desktop state before completion/error notifications and before
+    // allowing another recording to acquire the process-wide admission guard.
+    drop(chrome);
+    drop(end_exclusive);
+    drop(dnd_guard);
+    drop(busy);
+
+    match outcome {
+        Ok((path, StopAction::Discard)) => {
+            eprintln!("Recording discarded — deleting {:?}", path);
+            delete_recording_outputs(&path);
+            Ok(path)
+        }
+        Ok((path, StopAction::Save)) => {
+            eprintln!("Recording saved to {:?}", path);
+            let config = crate::config::load_config().sanitized();
+
+            if config.rec_after_capture_copy_to_clipboard {
+                if let Err(e) = crate::utils::clipboard::copy_uri_to_clipboard(&path) {
+                    eprintln!("[recording] Failed to copy recording to clipboard: {e}");
+                }
+            }
+
+            if !config.rec_after_capture_save {
+                delete_recording_outputs(&path);
+                eprintln!(
+                    "[recording] Recording discarded because Save is disabled in after-capture settings"
+                );
+                crate::utils::notify::desktop_notification(
+                    &crate::i18n::t("Recording not saved"),
+                    &crate::i18n::t("Save is disabled in After capture settings"),
+                );
+                return Ok(path);
+            }
+
+            validate_saved_recording(&path)?;
+
+            let file_name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("recording");
+            crate::utils::notify::desktop_notification(
+                &crate::i18n::t("Recording saved"),
+                file_name,
+            );
+
+            if should_open_recording_editor(open_editor) {
+                spawn_recording_editor_subprocess(path.clone());
+            }
+            Ok(path)
+        }
+        Err(err) => {
+            if err
+                .downcast_ref::<super::RecordError>()
+                .is_some_and(|e| matches!(e, super::RecordError::Cancelled))
+            {
+                eprintln!("[recording] Recording cancelled by user.");
+                return Err(err);
+            }
+            crate::gnome_shell::hide_recording_mask_best_effort();
+            super::notify_recording_session_ended_best_effort();
+            eprintln!("[recording] Recording failed: {err}");
+            let body = recording_failure_body(&err);
+            // A missing shell extension has its own, more helpful
+            // notification in the daemon; leave that case to it.
+            if !body.contains("GNOME Shell extension is not installed") {
+                crate::utils::notify::desktop_notification(
+                    &crate::i18n::t("Recording failed"),
+                    &body,
+                );
+            }
+            Err(anyhow::Error::new(super::RecordingFailureNotified(err)))
+        }
+    }
+}
+
+/// Spawn the recording editor as a **subprocess** so it gets its own GTK
+/// event loop and doesn't conflict with the recording worker thread.
+fn spawn_recording_editor_subprocess(path: std::path::PathBuf) {
+    let exe = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("apexshot"));
+    match std::process::Command::new(&exe)
+        .arg("video-editor")
+        .arg(&path)
+        .spawn()
+    {
+        Ok(mut child) => {
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+        }
+        Err(e) => eprintln!("[recording] Failed to spawn recording editor: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+    use pretty_assertions::assert_eq;
+
+    fn pointer_result(
+        t0_monotonic_us: i64,
+        sample_x: i32,
+    ) -> crate::gnome_shell::PointerTrackResult {
+        crate::gnome_shell::PointerTrackResult {
+            t0_monotonic_us,
+            samples: vec![(0.0, sample_x, 20, "default".into())],
+            clicks: Vec::new(),
+            presses: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn window_clicks_require_a_matching_shell_press_and_fresh_visible_local_cursor() {
+        let mut timeline = super::super::timeline::RecordingTimeline::default();
+        timeline.enable_stream_cursor(100, 80);
+        timeline.record_stream_cursor(1_000_000, Some((10.0, 15.0)));
+        timeline.record_stream_cursor(1_016_000, Some((12.0, 18.0)));
+        timeline.record_stream_cursor(1_032_000, None);
+        timeline.record_stream_cursor(2_000_000, Some((30.0, 40.0)));
+        let result = crate::gnome_shell::PointerTrackResult {
+            t0_monotonic_us: 1_000_000,
+            samples: vec![
+                (0.01, 100, 200, "default".into()),
+                (0.03, 100, 200, "default".into()),
+                (1.0, 400, 500, "default".into()),
+            ],
+            clicks: vec![
+                (0.02, 100, 200, 1),
+                (0.04, 100, 200, 1),
+                (0.5, 300, 400, 1),
+                (1.0, 400, 500, 1),
+                (1.0, 700, 800, 1),
+            ],
+            presses: Vec::new(),
+        };
+
+        assert_eq!(
+            window_clicks_from_shell_track(&result, &timeline),
+            vec![
+                ClickSample {
+                    t: 0.02,
+                    x: 12.0,
+                    y: 18.0,
+                    button: 1,
+                    cursor_id: None,
+                },
+                ClickSample {
+                    t: 1.0,
+                    x: 30.0,
+                    y: 40.0,
+                    button: 1,
+                    cursor_id: None,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn stationary_window_click_maps_from_its_confirmed_shell_anchor() {
+        let mut timeline = super::super::timeline::RecordingTimeline::default();
+        timeline.enable_stream_cursor(100, 80);
+        timeline.record_stream_cursor(1_000_000, Some((12.0, 18.0)));
+        timeline.record_stream_cursor(5_000_000, None);
+        let result = crate::gnome_shell::PointerTrackResult {
+            t0_monotonic_us: 1_000_000,
+            samples: vec![(0.0, 300, 400, "default".into())],
+            clicks: vec![(3.0, 300, 400, 1)],
+            presses: Vec::new(),
+        };
+
+        assert_eq!(
+            window_clicks_from_shell_track(&result, &timeline),
+            vec![ClickSample {
+                t: 3.0,
+                x: 12.0,
+                y: 18.0,
+                button: 1,
+                cursor_id: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn stationary_click_accepts_a_matching_shell_sample_bracket() {
+        let mut timeline = super::super::timeline::RecordingTimeline::default();
+        timeline.enable_stream_cursor(100, 80);
+        timeline.record_stream_cursor(1_056_000, Some((12.0, 18.0)));
+        timeline.record_stream_cursor(2_000_000, None);
+        let result = crate::gnome_shell::PointerTrackResult {
+            t0_monotonic_us: 1_000_000,
+            samples: vec![
+                (0.0, 300, 400, "default".into()),
+                (0.112, 300, 400, "default".into()),
+            ],
+            clicks: vec![(0.5, 300, 400, 1)],
+            presses: Vec::new(),
+        };
+
+        assert_eq!(
+            window_clicks_from_shell_track(&result, &timeline),
+            vec![ClickSample {
+                t: 0.5,
+                x: 12.0,
+                y: 18.0,
+                button: 1,
+                cursor_id: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn shell_bracket_with_mismatched_or_missing_endpoint_does_not_map_a_click() {
+        for samples in [
+            vec![
+                (0.0, 300, 400, "default".into()),
+                (0.112, 700, 800, "default".into()),
+            ],
+            vec![(0.112, 300, 400, "default".into())],
+            vec![(0.0, 300, 400, "default".into())],
+        ] {
+            let mut timeline = super::super::timeline::RecordingTimeline::default();
+            timeline.enable_stream_cursor(100, 80);
+            timeline.record_stream_cursor(1_056_000, Some((12.0, 18.0)));
+            timeline.record_stream_cursor(2_000_000, None);
+            let result = crate::gnome_shell::PointerTrackResult {
+                t0_monotonic_us: 1_000_000,
+                samples,
+                clicks: vec![(0.5, 300, 400, 1)],
+                presses: Vec::new(),
+            };
+
+            assert!(window_clicks_from_shell_track(&result, &timeline).is_empty());
+        }
+    }
+
+    #[test]
+    fn click_elsewhere_does_not_reuse_a_stale_stream_cursor_position() {
+        let mut timeline = super::super::timeline::RecordingTimeline::default();
+        timeline.enable_stream_cursor(100, 80);
+        timeline.record_stream_cursor(1_000_000, Some((12.0, 18.0)));
+        timeline.record_stream_cursor(4_000_000, None);
+        let result = crate::gnome_shell::PointerTrackResult {
+            t0_monotonic_us: 1_000_000,
+            samples: vec![
+                (0.0, 300, 400, "default".into()),
+                (3.0, 700, 800, "default".into()),
+            ],
+            clicks: vec![(3.0, 700, 800, 1)],
+            presses: Vec::new(),
+        };
+
+        assert!(window_clicks_from_shell_track(&result, &timeline).is_empty());
+    }
+
+    #[test]
+    fn click_outside_the_window_before_hidden_metadata_is_not_mapped() {
+        let mut timeline = super::super::timeline::RecordingTimeline::default();
+        timeline.enable_stream_cursor(100, 80);
+        timeline.record_stream_cursor(1_000_000, Some((12.0, 18.0)));
+        timeline.record_stream_cursor(1_050_000, None);
+        let result = crate::gnome_shell::PointerTrackResult {
+            t0_monotonic_us: 1_000_000,
+            samples: vec![
+                (0.0, 300, 400, "default".into()),
+                (0.020, 700, 800, "default".into()),
+            ],
+            clicks: vec![(0.020, 700, 800, 1)],
+            presses: Vec::new(),
+        };
+
+        assert!(window_clicks_from_shell_track(&result, &timeline).is_empty());
+    }
+
+    #[test]
+    fn stationary_window_click_survives_sidecar_rebase_into_auto_zoom() {
+        use crate::recording::editor::auto_zoom;
+
+        let mut timeline = super::super::timeline::RecordingTimeline::default();
+        timeline.enable_stream_cursor(100, 80);
+        timeline.frame_time_us(1_000_000);
+        timeline.record_stream_cursor(1_000_000, Some((12.0, 18.0)));
+        timeline.record_stream_cursor(4_500_000, None);
+        timeline.finish(6_000_000);
+        let result = crate::gnome_shell::PointerTrackResult {
+            t0_monotonic_us: 1_000_000,
+            samples: vec![(0.0, 300, 400, "default".into())],
+            clicks: vec![(3.0, 300, 400, 1)],
+            presses: Vec::new(),
+        };
+        let mut sidecar = PointerSidecar::new(
+            1_000_000,
+            CaptureRegion::from_capture(None, None, None, None),
+        );
+        let clicks = window_clicks_from_shell_track(&result, &timeline);
+        assert_eq!(clicks.len(), 1);
+        assert!(timeline.add_stream_cursor_to_sidecar(&mut sidecar, 1_000_000));
+        sidecar.clicks = clicks;
+        assert!(timeline.rebase(&mut sidecar));
+
+        let zooms = auto_zoom::automatic_zooms(
+            &auto_zoom::clicks_from_sidecar(&sidecar, 100.0, 80.0),
+            &auto_zoom::pointer_from_sidecar(&sidecar, 100.0, 80.0),
+            5.0,
+        );
+        assert_eq!(zooms.len(), 1);
+        assert_eq!(zooms[0].center_time, 3.0);
+        assert_eq!(zooms[0].center, (12.0, 18.0));
+    }
+
+    #[test]
+    fn moving_click_uses_a_nearby_window_sample_after_the_click() {
+        let mut timeline = super::super::timeline::RecordingTimeline::default();
+        timeline.enable_stream_cursor(100, 80);
+        timeline.record_stream_cursor(1_000_000, Some((10.0, 15.0)));
+        timeline.record_stream_cursor(1_016_000, Some((20.0, 25.0)));
+        timeline.record_stream_cursor(1_032_000, Some((30.0, 35.0)));
+        timeline.record_stream_cursor(2_000_000, None);
+        let result = crate::gnome_shell::PointerTrackResult {
+            t0_monotonic_us: 1_000_000,
+            samples: vec![
+                (0.016, 100, 200, "default".into()),
+                (0.032, 300, 400, "default".into()),
+            ],
+            clicks: vec![(0.020, 300, 400, 1)],
+            presses: Vec::new(),
+        };
+
+        assert_eq!(
+            window_clicks_from_shell_track(&result, &timeline),
+            vec![ClickSample {
+                t: 0.020,
+                x: 30.0,
+                y: 35.0,
+                button: 1,
+                cursor_id: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn duplicate_session_end_keeps_the_first_pointer_track() {
+        let mut slot = None;
+        assert!(preserve_first_pointer_track(
+            &mut slot,
+            pointer_result(123, 10)
+        ));
+        assert!(!preserve_first_pointer_track(
+            &mut slot,
+            pointer_result(0, 99)
+        ));
+
+        let saved = slot.expect("first pointer track should remain stashed");
+        assert_eq!(saved.t0_monotonic_us, 123);
+        assert_eq!(saved.samples[0].1, 10);
+    }
+
+    #[test]
+    fn recording_editor_launch_respects_the_open_editor_setting() {
+        assert!(should_open_recording_editor(true));
+        assert!(!should_open_recording_editor(false));
+    }
+
+    #[test]
+    fn saved_recording_must_exist_and_be_non_empty() {
+        let path = std::env::temp_dir().join(format!(
+            "apexshot-saved-recording-validation-{}.mp4",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+
+        assert!(validate_saved_recording(&path).is_err());
+        std::fs::write(&path, []).unwrap();
+        assert!(validate_saved_recording(&path).is_err());
+
+        std::fs::remove_file(path).unwrap();
+    }
+
+    fn tool_installed(tool: &str) -> bool {
+        std::process::Command::new(tool)
+            .arg("-version")
+            .output()
+            .is_ok()
+    }
+
+    #[test]
+    fn validate_saved_recording_probes_container_structure() {
+        if !tool_installed("ffmpeg") || !tool_installed("ffprobe") {
+            crate::test_support::skip_without_media("skipping: ffmpeg/ffprobe not available");
+            return;
+        }
+        let path = std::env::temp_dir().join(format!(
+            "apexshot-saved-recording-structure-{}.mp4",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+
+        // Non-empty but not a container: ffprobe must reject it (this is the
+        // byte-count-only hole the audit's 261-byte sample fell through).
+        std::fs::write(&path, b"video").unwrap();
+        assert!(validate_saved_recording(&path).is_err());
+
+        let status = std::process::Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=duration=0.2:size=64x64:rate=10",
+                "-c:v",
+                "mpeg4",
+            ])
+            .arg(&path)
+            .status()
+            .expect("ffmpeg should run");
+        assert!(status.success(), "ffmpeg must produce the probe fixture");
+
+        assert!(validate_saved_recording(&path).is_ok());
+
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn selected_area_pointer_region_takes_precedence_over_monitor_geometry() {
+        let config = super::RecordingConfig {
+            x: Some(250),
+            y: Some(-40),
+            width: Some(640),
+            height: Some(360),
+            ..Default::default()
+        };
+        let monitor = CaptureRegion {
+            x: 0,
+            y: -200,
+            w: 1920,
+            h: 1080,
+        };
+
+        assert_eq!(
+            pointer_capture_region(&config, Some(monitor)),
+            CaptureRegion {
+                x: 250,
+                y: -40,
+                w: 640,
+                h: 360,
+            }
+        );
+    }
+
+    #[test]
+    fn prepare_overlay_recording_request_maps_video_settings() {
+        let request = RecordingRequest {
+            x: 10,
+            y: 20,
+            width: 640,
+            height: 480,
+            record_type: RecordingType::Video,
+            controls: true,
+            mic: true,
+            speaker: false,
+            output: String::new(),
+            mic_device: String::new(),
+            speaker_app: String::new(),
+            speaker_app_pid: 0,
+            display_rec_time: true,
+            hidpi: true,
+            notifications: false,
+            cursor: false,
+            remember_selection: true,
+            dim_screen: false,
+            countdown: false,
+            video_format: 0,
+            video_max_res: 2,
+            video_fps: 3,
+            record_mono: true,
+            noise_suppression: true,
+            open_editor: true,
+            fullscreen: false,
+            window: false,
+        };
+
+        let prepared = prepare_overlay_recording_request(
+            AppConfig {
+                video_export_location: "/tmp/apexshot-recordings".into(),
+                // Settings holds 480p; the request below still asks for 720p
+                // because the overlay echoes whatever it was launched with.
+                rec_video_max_res: 5,
+                ..AppConfig::default()
+            },
+            &request,
+            chrono::Utc.with_ymd_and_hms(2026, 3, 25, 12, 0, 0).unwrap(),
+        );
+
+        assert_eq!(
+            prepared.output_path,
+            PathBuf::from("/tmp/apexshot-recordings/ApexShot Recording 2026-03-25 at 12-00-00.mp4")
+        );
+        assert_eq!(prepared.updated_app_config.rec_controls, true);
+        assert_eq!(prepared.updated_app_config.rec_hidpi, true);
+        assert_eq!(prepared.updated_app_config.rec_notifications, false);
+        assert_eq!(prepared.updated_app_config.rec_cursor, true);
+        assert_eq!(prepared.updated_app_config.rec_remember_selection, true);
+        assert_eq!(prepared.updated_app_config.last_selection_x, Some(10));
+        assert_eq!(prepared.updated_app_config.last_selection_y, Some(20));
+        assert_eq!(prepared.updated_app_config.last_selection_w, Some(640));
+        assert_eq!(prepared.updated_app_config.last_selection_h, Some(480));
+        // The stale request value must not overwrite what Settings saved.
+        assert_eq!(prepared.updated_app_config.rec_video_max_res, 5);
+        assert_eq!(prepared.updated_app_config.rec_video_fps, 3);
+        assert_eq!(prepared.updated_app_config.rec_video_mono, true);
+        assert_eq!(prepared.updated_app_config.rec_noise_suppression, true);
+        assert_eq!(prepared.updated_app_config.rec_video_open_editor, true);
+        assert_eq!(prepared.open_editor, true);
+        assert_eq!(prepared.recording_config.output_path, prepared.output_path);
+        assert_eq!(prepared.recording_config.width, Some(640));
+        assert_eq!(prepared.recording_config.height, Some(480));
+        assert_eq!(prepared.recording_config.x, Some(10));
+        assert_eq!(prepared.recording_config.y, Some(20));
+        assert_eq!(prepared.recording_config.cursor, true);
+        assert_eq!(
+            prepared.recording_config.pointer_track,
+            crate::recording::pointer_track::should_use()
+        );
+        assert_eq!(prepared.recording_config.hidpi, true);
+        assert_eq!(prepared.recording_config.max_resolution, Some((854, 480)));
+        assert_eq!(prepared.recording_config.fps, 60);
+        assert_eq!(prepared.recording_config.mono_audio, true);
+        assert_eq!(prepared.recording_config.noise_suppression, true);
+        assert_eq!(prepared.recording_config.mic_enabled, true);
+        assert_eq!(prepared.recording_config.speaker_enabled, false);
+        assert_eq!(
+            prepared.controls_params,
+            Some(RecordingControlsParams {
+                capture_x: 10,
+                capture_y: 20,
+                capture_w: 640,
+                capture_h: 480,
+                is_fullscreen: false,
+                show_timer: true,
+                use_shell_mask: false,
+                dim_screen: false,
+                countdown_enabled: false,
+                countdown_seconds: 3,
+                session_id: None,
+            })
+        );
+        assert_eq!(prepared.use_shell_mask, false);
+    }
+
+    #[test]
+    fn prepare_overlay_recording_request_sets_open_editor_for_video() {
+        let request = RecordingRequest {
+            record_type: RecordingType::Video,
+            open_editor: true,
+            ..RecordingRequest::default()
+        };
+
+        let prepared = prepare_overlay_recording_request(
+            AppConfig::default(),
+            &request,
+            chrono::Utc.with_ymd_and_hms(2026, 5, 8, 12, 0, 0).unwrap(),
+        );
+
+        assert!(prepared.open_editor);
+    }
+
+    #[test]
+    fn prepare_overlay_recording_request_maps_video_setting_variants() {
+        // (video_format, saved video_max_res, video_fps, expected cap, fps).
+        // Every option Settings offers must survive the trip, not just the
+        // first three, and the cap must come from the saved value.
+        let cases = [
+            (0_u8, 0_u8, 0_u8, None, 24_u32),
+            (1, 1, 1, Some((1920, 1080)), 30),
+            (0, 2, 2, Some((1280, 720)), 50),
+            (1, 0, 3, None, 60),
+            (1, 3, 1, Some((2560, 1440)), 30),
+            (1, 4, 1, Some((1600, 900)), 30),
+            (1, 5, 1, Some((854, 480)), 30),
+            (1, 6, 1, Some((3840, 2160)), 30),
+            // An unknown index falls back to Original, never to a bogus cap.
+            (1, 99, 1, None, 30),
+        ];
+
+        for (index, (video_format, video_max_res, video_fps, expected_max_res, expected_fps)) in
+            cases.into_iter().enumerate()
+        {
+            let request = RecordingRequest {
+                x: 5,
+                y: 10,
+                width: 800,
+                height: 600,
+                record_type: RecordingType::Video,
+                video_format,
+                // The overlay has no resolution picker; it always sends the
+                // value it was launched with. This stale echo must be ignored.
+                video_max_res: 0,
+                video_fps,
+                ..RecordingRequest::default()
+            };
+
+            let prepared = prepare_overlay_recording_request(
+                AppConfig {
+                    rec_video_max_res: video_max_res,
+                    ..AppConfig::default()
+                },
+                &request,
+                chrono::Utc
+                    .with_ymd_and_hms(2026, 4, 2, 10, 0, index as u32)
+                    .unwrap(),
+            );
+
+            assert_eq!(
+                prepared.recording_config.max_resolution, expected_max_res,
+                "saved resolution index {video_max_res} must keep its cap"
+            );
+            assert_eq!(prepared.recording_config.fps, expected_fps);
+            assert_eq!(
+                prepared.updated_app_config.rec_video_max_res, video_max_res,
+                "the saved resolution must survive the request untouched"
+            );
+            assert_eq!(
+                prepared
+                    .output_path
+                    .extension()
+                    .and_then(|ext| ext.to_str()),
+                Some("mp4")
+            );
+        }
+    }
+
+    #[test]
+    fn prepare_overlay_recording_request_uses_full_monitor_bounds_for_fullscreen_capture() {
+        let request = RecordingRequest {
+            x: -1920,
+            y: 32,
+            width: 1920,
+            height: 1048,
+            record_type: RecordingType::Video,
+            fullscreen: true,
+            ..RecordingRequest::default()
+        };
+
+        let prepared = prepare_overlay_recording_request(
+            AppConfig::default(),
+            &request,
+            chrono::Utc.with_ymd_and_hms(2026, 4, 2, 10, 0, 0).unwrap(),
+        );
+
+        assert_eq!(prepared.recording_config.x, None);
+        assert_eq!(prepared.recording_config.y, None);
+        assert_eq!(prepared.recording_config.width, None);
+        assert_eq!(prepared.recording_config.height, None);
+        assert_eq!(
+            prepared.recording_config.target,
+            super::super::RecordingTarget::Screen
+        );
+        assert_eq!(
+            prepared.controls_params,
+            Some(RecordingControlsParams {
+                capture_x: -1920,
+                capture_y: 32,
+                capture_w: 1920,
+                capture_h: 1048,
+                is_fullscreen: true,
+                show_timer: true,
+                use_shell_mask: false,
+                dim_screen: true,
+                countdown_enabled: true,
+                countdown_seconds: 3,
+                session_id: None,
+            })
+        );
+        let monitor = CaptureRegion {
+            x: -1920,
+            y: 0,
+            w: 1920,
+            h: 1080,
+        };
+        assert_eq!(
+            pointer_capture_region(&prepared.recording_config, Some(monitor)),
+            monitor
+        );
+    }
+
+    #[test]
+    fn prepare_overlay_recording_request_sets_shell_mask_for_gnome_wayland_area_recording() {
+        let request = RecordingRequest {
+            x: 10,
+            y: 20,
+            width: 640,
+            height: 480,
+            record_type: RecordingType::Video,
+            controls: true,
+            mic: false,
+            speaker: false,
+            display_rec_time: false,
+            hidpi: false,
+            notifications: true,
+            cursor: true,
+            remember_selection: false,
+            dim_screen: true,
+            countdown: false,
+            video_max_res: 0,
+            video_fps: 1,
+            record_mono: false,
+            open_editor: false,
+            fullscreen: false,
+            ..RecordingRequest::default()
+        };
+
+        let prepared = prepare_overlay_recording_request(
+            AppConfig::default(),
+            &request,
+            chrono::Utc.with_ymd_and_hms(2026, 3, 26, 1, 30, 0).unwrap(),
+        );
+
+        let shell_supported = crate::gnome_shell::current_session_supports_gnome_shell_overlay();
+        assert_eq!(
+            prepared.controls_params,
+            Some(RecordingControlsParams {
+                capture_x: 10,
+                capture_y: 20,
+                capture_w: 640,
+                capture_h: 480,
+                is_fullscreen: false,
+                show_timer: true,
+                use_shell_mask: shell_supported,
+                dim_screen: true,
+                countdown_enabled: false,
+                countdown_seconds: 3,
+                session_id: None,
+            })
+        );
+        assert_eq!(prepared.use_shell_mask, shell_supported);
+    }
+
+    #[test]
+    fn prepare_overlay_recording_request_skips_mask_for_gnome_wayland_fullscreen_recording() {
+        let request = RecordingRequest {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+            record_type: RecordingType::Video,
+            controls: true,
+            mic: false,
+            speaker: false,
+            display_rec_time: true,
+            hidpi: false,
+            notifications: true,
+            cursor: true,
+            remember_selection: false,
+            dim_screen: true,
+            countdown: false,
+            video_max_res: 0,
+            video_fps: 1,
+            record_mono: false,
+            open_editor: false,
+            fullscreen: true,
+            ..RecordingRequest::default()
+        };
+
+        let prepared = prepare_overlay_recording_request(
+            AppConfig::default(),
+            &request,
+            chrono::Utc.with_ymd_and_hms(2026, 3, 26, 1, 35, 0).unwrap(),
+        );
+
+        assert_eq!(prepared.use_shell_mask, false); // fullscreen never uses mask
+        assert_eq!(
+            prepared.controls_params,
+            Some(RecordingControlsParams {
+                capture_x: 0,
+                capture_y: 0,
+                capture_w: 1920,
+                capture_h: 1080,
+                is_fullscreen: true,
+                show_timer: true,
+                use_shell_mask: false, // fullscreen never uses mask
+                dim_screen: true,
+                countdown_enabled: false,
+                countdown_seconds: 3,
+                session_id: None,
+            })
+        );
+    }
+
+    #[test]
+    fn shell_mask_follows_gnome_wayland_support() {
+        let request = RecordingRequest {
+            x: 10,
+            y: 20,
+            width: 640,
+            height: 480,
+            record_type: RecordingType::Video,
+            controls: true,
+            mic: false,
+            speaker: false,
+            display_rec_time: false,
+            hidpi: false,
+            notifications: true,
+            cursor: true,
+            remember_selection: false,
+            dim_screen: true,
+            countdown: false,
+            video_max_res: 0,
+            video_fps: 1,
+            record_mono: false,
+            open_editor: false,
+            fullscreen: false,
+            ..RecordingRequest::default()
+        };
+
+        assert!(should_use_shell_mask_for_request(&request, true));
+        assert!(!should_use_shell_mask_for_request(&request, false));
+    }
+
+    #[test]
+    fn window_overlay_request_uses_window_target_without_screen_geometry() {
+        let request = RecordingRequest {
+            x: 400,
+            y: 250,
+            width: 800,
+            height: 600,
+            remember_selection: true,
+            window: true,
+            ..RecordingRequest::default()
+        };
+
+        let prepared = prepare_overlay_recording_request(
+            AppConfig::default(),
+            &request,
+            chrono::Utc.with_ymd_and_hms(2026, 4, 2, 10, 0, 0).unwrap(),
+        );
+
+        assert_eq!(
+            prepared.recording_config.target,
+            super::super::RecordingTarget::Window
+        );
+        assert_eq!(prepared.recording_config.x, None);
+        assert_eq!(prepared.recording_config.y, None);
+        assert_eq!(prepared.recording_config.width, None);
+        assert_eq!(prepared.recording_config.height, None);
+        assert!(!prepared.recording_config.pointer_track);
+        assert_eq!(prepared.updated_app_config.last_selection_x, None);
+        assert!(!prepared.use_shell_mask);
+        let controls_params = prepared.controls_params.unwrap();
+        assert_eq!(
+            (
+                controls_params.capture_x,
+                controls_params.capture_y,
+                controls_params.capture_w,
+                controls_params.capture_h,
+                controls_params.is_fullscreen,
+            ),
+            (0, 0, 0, 0, false),
+            "window geometry is unknown until the portal selects the target"
+        );
+    }
+
+    #[test]
+    fn window_overlay_keeps_saved_ultra_fps_and_original_resolution() {
+        let request = RecordingRequest {
+            window: true,
+            video_fps: 3,
+            video_max_res: 1,
+            ..RecordingRequest::default()
+        };
+        let prepared = prepare_overlay_recording_request(
+            AppConfig {
+                rec_video_quality: 2,
+                rec_video_max_res: 0,
+                rec_video_fps: 3,
+                ..AppConfig::default()
+            },
+            &request,
+            chrono::Utc.with_ymd_and_hms(2026, 4, 2, 10, 0, 0).unwrap(),
+        );
+
+        assert_eq!(
+            prepared.recording_config.target,
+            super::super::RecordingTarget::Window
+        );
+        assert_eq!(prepared.recording_config.crf, 16);
+        assert_eq!(prepared.recording_config.fps, 60);
+        assert_eq!(prepared.recording_config.max_resolution, None);
+        assert_eq!(prepared.updated_app_config.rec_video_quality, 2);
+        assert_eq!(prepared.updated_app_config.rec_video_max_res, 0);
+        assert_eq!(prepared.updated_app_config.rec_video_fps, 3);
+    }
+
+    #[test]
+    fn prepare_overlay_recording_request_carries_the_fullscreen_output_only() {
+        let at = chrono::Utc.with_ymd_and_hms(2026, 4, 2, 10, 0, 0).unwrap();
+        let fullscreen = RecordingRequest {
+            fullscreen: true,
+            output: "DP-2".into(),
+            ..RecordingRequest::default()
+        };
+        let prepared = prepare_overlay_recording_request(AppConfig::default(), &fullscreen, at);
+        assert_eq!(prepared.recording_config.output.as_deref(), Some("DP-2"));
+
+        let window = RecordingRequest {
+            window: true,
+            output: "DP-2".into(),
+            ..RecordingRequest::default()
+        };
+        let prepared = prepare_overlay_recording_request(AppConfig::default(), &window, at);
+        assert_eq!(prepared.recording_config.output, None);
+    }
+
+    #[test]
+    fn hidden_shell_countdown_uses_the_visible_subprocess_fallback() {
+        let source = include_str!("controls.rs");
+        let countdown = source
+            .split("async fn run_shell_recording_countdown")
+            .nth(1)
+            .unwrap()
+            .split("async fn prepare_shell_recording")
+            .next()
+            .unwrap();
+        assert!(countdown.contains("countdown.is_shown()"));
+        assert!(countdown.contains("run_recording_countdown_subprocess(params).await"));
+
+        let shell_path = source
+            .split("async fn run_recording_with_shell_mask")
+            .nth(1)
+            .unwrap()
+            .split("async fn ")
+            .next()
+            .unwrap();
+        assert!(
+            shell_path
+                .find("prepare_shell_recording(config.clone()).await")
+                .unwrap()
+                < shell_path
+                    .find("run_shell_recording_countdown(params.clone()).await")
+                    .unwrap()
+        );
+    }
+
+    #[test]
+    fn window_target_disables_pointer_tracking_even_when_requested() {
+        let config = super::super::RecordingConfig {
+            target: super::super::RecordingTarget::Window,
+            pointer_track: true,
+            ..super::super::RecordingConfig::default()
+        };
+
+        assert!(!config.pointer_track_enabled());
+    }
+
+    #[test]
+    fn prepare_overlay_recording_request_keeps_shortcut_controls_when_toggle_is_off() {
+        let request = RecordingRequest {
+            controls: false,
+            fullscreen: false,
+            x: 30,
+            y: 40,
+            width: 320,
+            height: 200,
+            ..RecordingRequest::default()
+        };
+
+        let prepared = prepare_overlay_recording_request(
+            AppConfig::default(),
+            &request,
+            chrono::Utc.with_ymd_and_hms(2026, 4, 2, 8, 0, 0).unwrap(),
+        );
+
+        assert!(prepared.controls_params.is_some());
+    }
+
+    #[test]
+    fn prepare_overlay_recording_request_prefers_request_device_then_saved() {
+        let at = chrono::Utc.with_ymd_and_hms(2026, 5, 8, 12, 0, 0).unwrap();
+        let saved = AppConfig {
+            rec_mic_device: "alsa_input.saved".into(),
+            rec_speaker_app: "Saved Player".into(),
+            ..AppConfig::default()
+        };
+
+        // A device and an app picked in the overlay win and are remembered.
+        let request = RecordingRequest {
+            mic: true,
+            speaker: true,
+            mic_device: "alsa_input.request".into(),
+            speaker_app: "Google Chrome".into(),
+            speaker_app_pid: 9707,
+            ..RecordingRequest::default()
+        };
+        let prepared = prepare_overlay_recording_request(saved.clone(), &request, at);
+        assert_eq!(
+            prepared.recording_config.mic_source.as_deref(),
+            Some("alsa_input.request")
+        );
+        // An app is not a source: every-app capture leaves the monitor unset.
+        assert_eq!(prepared.recording_config.speaker_source, None);
+        assert_eq!(
+            prepared.recording_config.speaker_app,
+            Some(super::super::SpeakerApp {
+                name: "Google Chrome".into(),
+                pid: 9707,
+            })
+        );
+        assert_eq!(
+            prepared.updated_app_config.rec_mic_device,
+            "alsa_input.request"
+        );
+        assert_eq!(prepared.updated_app_config.rec_speaker_app, "Google Chrome");
+        assert_eq!(
+            super::super::RecordingConfig::from_app_config_at(
+                &prepared.updated_app_config,
+                "mp4",
+                at
+            )
+            .mic_source
+            .as_deref(),
+            Some("alsa_input.request")
+        );
+
+        // Without a request device the saved microphone carries over, and an
+        // empty speaker choice means every app and clears the saved one.
+        let request = RecordingRequest {
+            mic: true,
+            speaker: true,
+            ..RecordingRequest::default()
+        };
+        let prepared = prepare_overlay_recording_request(saved, &request, at);
+        assert_eq!(
+            prepared.recording_config.mic_source.as_deref(),
+            Some("alsa_input.saved")
+        );
+        assert_eq!(prepared.recording_config.speaker_app, None);
+        assert_eq!(prepared.updated_app_config.rec_speaker_app, "");
+
+        // With neither, the server default is left unset.
+        let prepared = prepare_overlay_recording_request(AppConfig::default(), &request, at);
+        assert_eq!(prepared.recording_config.mic_source, None);
+        assert_eq!(prepared.recording_config.speaker_source, None);
+        assert_eq!(prepared.recording_config.speaker_app, None);
+    }
+
+    #[test]
+    fn recording_failure_body_drops_the_internal_prefixes() {
+        let controls =
+            anyhow::anyhow!("failed to run recording controls: Wayland portal error: monitor lost");
+        assert_eq!(
+            recording_failure_body(&controls),
+            "Wayland portal error: monitor lost"
+        );
+
+        let double = anyhow::anyhow!(
+            "Recording failed: failed to run recording controls: GStreamer error: no encoder"
+        );
+        assert_eq!(
+            recording_failure_body(&double),
+            "GStreamer error: no encoder"
+        );
+
+        let plain = anyhow::anyhow!("GStreamer error: no encoder");
+        assert_eq!(
+            recording_failure_body(&plain),
+            "GStreamer error: no encoder"
+        );
+    }
+}

@@ -1,0 +1,292 @@
+//! Editor right-inspector shell and tool-panel owners (PR 10.11).
+//!
+//! Child modules own per-tool panel assembly. This facade keeps the stack,
+//! tabs, and sidebar action chrome and remains the only setup-facing entry.
+
+mod number;
+mod obfuscate;
+mod select;
+mod shell;
+mod stroke;
+mod text;
+
+use gtk4::{
+    prelude::*, Box as GtkBox, Button, Image, Label, Orientation, PolicyType, ScrolledWindow,
+    Spinner, Stack,
+};
+
+use super::icon_names;
+use crate::i18n::t;
+
+use number::{build_number_inspector, NumberInspectorInputs};
+use obfuscate::{build_obfuscate_inspector, ObfuscateInspectorInputs};
+use select::{build_select_inspector, SelectInspectorInputs};
+use stroke::{
+    build_arrow_inspector, build_highlighter_inspector, build_line_inspector, build_pen_inspector,
+    ArrowInspectorInputs, HighlighterInspectorInputs, LineInspectorInputs, PenInspectorInputs,
+};
+use text::{build_text_inspector, TextInspectorInputs};
+
+const INSPECTOR_SIDEBAR_WIDTH: i32 = 320;
+
+pub(super) struct InspectorParts {
+    pub inspector_tabs: GtkBox,
+    pub motion_tabs: GtkBox,
+    pub motion_tab_btn: Button,
+    pub text_tab_btn: Button,
+    pub appearance_tab_btn: Button,
+    pub watermark_tab_btn: Button,
+    pub background_tab_btn: Button,
+    pub colors_tab_btn: Button,
+    pub inspector: GtkBox,
+    pub inspector_stack: Stack,
+}
+
+/// Prebuilt content widgets assembled into tool-specific inspector panels.
+///
+/// Kept as one setup-facing input bag so `setup_editor_window_full` stays a
+/// thin caller; child builders take narrower domain inputs internally.
+pub(super) struct InspectorContentInputs<'a> {
+    pub select_status_label: &'a Label,
+    pub select_detail_label: &'a Label,
+    pub select_geometry_label: &'a Label,
+    pub select_hint_label: &'a Label,
+    pub pen_inspector_list: &'a GtkBox,
+    pub arrow_style_list: &'a GtkBox,
+    pub arrow_thickness_list: &'a GtkBox,
+    pub arrow_behavior_group: &'a GtkBox,
+    pub line_inspector_list: &'a GtkBox,
+    pub text_size_list: &'a GtkBox,
+    pub font_family_list: &'a GtkBox,
+    pub obfuscate_method_list: &'a GtkBox,
+    pub number_options_list: &'a GtkBox,
+    pub number_start_row: &'a GtkBox,
+    pub number_size_list: &'a GtkBox,
+    pub highlighter_inspector_list: &'a GtkBox,
+    pub sidebar_utility_controls: &'a GtkBox,
+    pub background_inspector: &'a GtkBox,
+    pub colors_inspector: &'a GtkBox,
+    pub placeholder_inspector: &'a GtkBox,
+    pub motion_inspector: &'a GtkBox,
+    pub motion_appearance_inspector: &'a GtkBox,
+    pub motion_watermark_inspector: &'a GtkBox,
+    pub motion_text_inspector: &'a GtkBox,
+    pub copy_btn: &'a Button,
+    pub upload_btn: &'a Button,
+    pub save_btn: &'a Button,
+    pub save_spinner: &'a Spinner,
+}
+
+pub(super) fn build_tool_inspectors(input: InspectorContentInputs<'_>) -> InspectorParts {
+    let select_inspector = build_select_inspector(SelectInspectorInputs {
+        select_status_label: input.select_status_label,
+        select_detail_label: input.select_detail_label,
+        select_geometry_label: input.select_geometry_label,
+        select_hint_label: input.select_hint_label,
+    });
+
+    let pen_inspector = build_pen_inspector(PenInspectorInputs {
+        pen_inspector_list: input.pen_inspector_list,
+    });
+
+    let arrow_inspector = build_arrow_inspector(ArrowInspectorInputs {
+        arrow_style_list: input.arrow_style_list,
+        arrow_thickness_list: input.arrow_thickness_list,
+        arrow_behavior_group: input.arrow_behavior_group,
+    });
+
+    let line_inspector = build_line_inspector(LineInspectorInputs {
+        line_inspector_list: input.line_inspector_list,
+    });
+
+    let text_inspector = build_text_inspector(TextInspectorInputs {
+        text_size_list: input.text_size_list,
+        font_family_list: input.font_family_list,
+    });
+
+    let obfuscate_inspector = build_obfuscate_inspector(ObfuscateInspectorInputs {
+        obfuscate_method_list: input.obfuscate_method_list,
+    });
+
+    let number_inspector = build_number_inspector(NumberInspectorInputs {
+        number_options_list: input.number_options_list,
+        number_start_row: input.number_start_row,
+        number_size_list: input.number_size_list,
+    });
+
+    let highlighter_inspector = build_highlighter_inspector(HighlighterInspectorInputs {
+        highlighter_inspector_list: input.highlighter_inspector_list,
+    });
+
+    let inspector_tabs = GtkBox::new(Orientation::Horizontal, 8);
+    inspector_tabs.add_css_class("editor-inspector-tabs");
+    inspector_tabs.set_width_request(INSPECTOR_SIDEBAR_WIDTH);
+    inspector_tabs.set_hexpand(false);
+    inspector_tabs.set_halign(gtk4::Align::Fill);
+
+    let background_tab_btn = Button::with_label(&t("Background"));
+    background_tab_btn.set_has_frame(false);
+    background_tab_btn.add_css_class("editor-inspector-tab-button");
+
+    let colors_tab_btn = Button::with_label(&t("Colors"));
+    colors_tab_btn.set_has_frame(false);
+    colors_tab_btn.add_css_class("editor-inspector-tab-button");
+
+    inspector_tabs.append(&background_tab_btn);
+    inspector_tabs.append(&colors_tab_btn);
+
+    // Motion tools become a compact notch attached to the inspector edge. The
+    // preview overlay positions it midway between the window top and timeline.
+    let motion_tabs = GtkBox::new(Orientation::Vertical, 8);
+    motion_tabs.add_css_class("editor-motion-tool-notch");
+    motion_tabs.set_hexpand(false);
+    motion_tabs.set_can_target(true);
+    let motion_tab_btn = Button::new();
+    motion_tab_btn.set_has_frame(false);
+    motion_tab_btn.set_can_target(true);
+    motion_tab_btn.set_tooltip_text(Some(&t("Motion")));
+    let motion_icon = Image::from_icon_name(icon_names::custom::SPLINE_SYMBOLIC);
+    motion_icon.set_pixel_size(20);
+    motion_tab_btn.set_child(Some(&motion_icon));
+    motion_tab_btn.add_css_class("editor-tool-button");
+    motion_tab_btn.add_css_class("active-tool");
+    let notch_btn = |tooltip: &str, icon: &str| {
+        let btn = Button::new();
+        btn.set_has_frame(false);
+        btn.set_can_target(true);
+        btn.set_tooltip_text(Some(&t(tooltip)));
+        let image = Image::from_icon_name(icon);
+        image.set_pixel_size(20);
+        btn.set_child(Some(&image));
+        btn.add_css_class("editor-tool-button");
+        btn
+    };
+    let text_tab_btn = notch_btn("Text", icon_names::custom::TYPE_SYMBOLIC);
+    let appearance_tab_btn = notch_btn("Appearance", icon_names::custom::IMAGE_ALT_SYMBOLIC);
+    let watermark_tab_btn = notch_btn("Watermark", icon_names::IMAGE_REGULAR);
+    motion_tabs.append(&motion_tab_btn);
+    motion_tabs.append(&text_tab_btn);
+    motion_tabs.append(&appearance_tab_btn);
+    motion_tabs.append(&watermark_tab_btn);
+
+    let inspector = GtkBox::new(Orientation::Vertical, 0);
+    inspector.add_css_class("editor-right-inspector");
+    inspector.set_width_request(INSPECTOR_SIDEBAR_WIDTH);
+    inspector.set_hexpand(false);
+    inspector.set_vexpand(true);
+    inspector.append(input.sidebar_utility_controls);
+    inspector.append(&inspector_tabs);
+
+    let inspector_stack = Stack::new();
+    inspector_stack.set_hhomogeneous(false);
+    inspector_stack.set_vhomogeneous(false);
+    inspector_stack.set_width_request(INSPECTOR_SIDEBAR_WIDTH);
+    inspector_stack.set_hexpand(false);
+    inspector_stack.set_vexpand(false);
+    input.background_inspector.set_visible(true);
+    pen_inspector.set_visible(true);
+    arrow_inspector.set_visible(true);
+    line_inspector.set_visible(true);
+    text_inspector.set_visible(true);
+    highlighter_inspector.set_visible(true);
+    obfuscate_inspector.set_visible(true);
+    number_inspector.set_visible(true);
+    input.colors_inspector.set_visible(true);
+    input.placeholder_inspector.set_visible(true);
+    select_inspector.set_visible(true);
+    inspector_stack.add_named(input.background_inspector, Some("background"));
+    inspector_stack.add_named(&select_inspector, Some("select"));
+    inspector_stack.add_named(&pen_inspector, Some("pen"));
+    inspector_stack.add_named(&arrow_inspector, Some("arrow"));
+    inspector_stack.add_named(&line_inspector, Some("line"));
+    inspector_stack.add_named(&text_inspector, Some("text"));
+    inspector_stack.add_named(&highlighter_inspector, Some("highlighter"));
+    inspector_stack.add_named(&obfuscate_inspector, Some("obfuscate"));
+    inspector_stack.add_named(&number_inspector, Some("number"));
+    inspector_stack.add_named(input.colors_inspector, Some("colors"));
+    inspector_stack.add_named(input.placeholder_inspector, Some("placeholder"));
+    input.motion_inspector.set_visible(true);
+    inspector_stack.add_named(input.motion_inspector, Some("motion"));
+    input.motion_appearance_inspector.set_visible(true);
+    inspector_stack.add_named(input.motion_appearance_inspector, Some("motion-appearance"));
+    input.motion_watermark_inspector.set_visible(true);
+    inspector_stack.add_named(input.motion_watermark_inspector, Some("motion-watermark"));
+    input.motion_text_inspector.set_visible(true);
+    inspector_stack.add_named(input.motion_text_inspector, Some("motion-text"));
+    inspector_stack.set_visible_child_name("placeholder");
+
+    let scroll = ScrolledWindow::new();
+    scroll.add_css_class("editor-inspector-scroll");
+    scroll.add_css_class("recording-editor-zoom-scroll");
+    scroll.set_policy(PolicyType::Never, PolicyType::Automatic);
+    scroll.set_vexpand(true);
+    scroll.set_hexpand(true);
+    scroll.set_propagate_natural_height(false);
+    scroll.set_propagate_natural_width(false);
+    scroll.set_overlay_scrolling(true);
+    scroll.set_child(Some(&inspector_stack));
+    inspector.append(&scroll);
+
+    let sidebar_actions = GtkBox::new(Orientation::Horizontal, 8);
+    sidebar_actions.add_css_class("editor-sidebar-actions");
+    let sidebar_action_spacer = GtkBox::new(Orientation::Horizontal, 0);
+    sidebar_action_spacer.set_hexpand(true);
+    sidebar_actions.append(input.copy_btn);
+    sidebar_actions.append(input.upload_btn);
+    sidebar_actions.append(&sidebar_action_spacer);
+    sidebar_actions.append(input.save_spinner);
+    sidebar_actions.append(input.save_btn);
+    inspector.append(&sidebar_actions);
+
+    InspectorParts {
+        inspector_tabs,
+        motion_tabs,
+        motion_tab_btn,
+        text_tab_btn,
+        appearance_tab_btn,
+        watermark_tab_btn,
+        background_tab_btn,
+        colors_tab_btn,
+        inspector,
+        inspector_stack,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn inspector_children_own_tool_panel_builders() {
+        let shell = include_str!("mod.rs");
+        let select = include_str!("select.rs");
+        let stroke = include_str!("stroke.rs");
+        let number = include_str!("number.rs");
+        assert!(
+            shell.contains("mod select;")
+                && shell.contains("mod stroke;")
+                && shell.contains("mod number;")
+                && select.contains("fn build_select_inspector")
+                && stroke.contains("fn build_arrow_inspector")
+                && stroke.contains("fn build_pen_inspector")
+                && number.contains("fn build_number_inspector")
+                && shell.contains("build_select_inspector(SelectInspectorInputs"),
+            "inspector shell should dispatch to family-owned panel builders"
+        );
+    }
+
+    #[test]
+    fn inspector_body_scrolls_and_keeps_copy_cloud_done_pinned() {
+        let shell = include_str!("mod.rs");
+        let scroll_at = shell
+            .find("inspector.append(&scroll);")
+            .expect("inspector stack must live in a scroller");
+        let actions_at = shell
+            .find("inspector.append(&sidebar_actions);")
+            .expect("copy/cloud/done stay on the inspector, not in the scroller");
+        assert!(
+            shell.contains("scroll.set_child(Some(&inspector_stack));")
+                && shell.contains("set_propagate_natural_height(false)")
+                && scroll_at < actions_at,
+            "inspector content should scroll; copy, cloud, and Export stay pinned below"
+        );
+    }
+}

@@ -1,0 +1,958 @@
+#!/bin/bash
+# shellcheck shell=bash
+set -euo pipefail
+
+# ============================================================================
+# ApexShot Installer for Arch Linux
+# A stylish terminal UI for installing ApexShot on Arch-based systems.
+# Usage: curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/arch-install.sh | bash
+# ============================================================================
+
+REPO="apex-shot/apexshot"
+RELEASES_URL="https://github.com/${REPO}/releases"
+AUR_URL="https://aur.archlinux.org/packages/apexshot"
+EXT_UUID="apexshot-gnome-integration@apexshot.github.io"
+VERSION=""
+TMPDIR=""
+SUDO=""
+FORCE_REINSTALL=0
+INSTALL_PATH="/usr/bin/apexshot"
+SCRIPT_NAME="arch-install"
+TELEMETRY_CHANNEL="install"
+TELEMETRY_URL="${APEXSHOT_TELEMETRY_URL:-https://apexshot.org/api/download-telemetry}"
+MIRROR_URL="${APEXSHOT_MIRROR_URL-https://dl.apexshot.org}"
+INSTALL_ID=""
+
+SCRIPT_SOURCE="${BASH_SOURCE[0]:-}"
+SCRIPT_DIR=""
+if [[ -n "$SCRIPT_SOURCE" ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+fi
+
+handoff_if_wrong_distro() {
+    if ! command -v pacman >/dev/null 2>&1 && { command -v apt >/dev/null 2>&1 || command -v dpkg >/dev/null 2>&1; }; then
+        echo "Ubuntu/Debian detected; switching to the Ubuntu/Debian installer."
+        if [[ -n "$SCRIPT_DIR" && -f "${SCRIPT_DIR}/ubuntu-install.sh" ]]; then
+            exec bash "${SCRIPT_DIR}/ubuntu-install.sh" "$@"
+        fi
+        exec bash -c "$(curl -fsSL https://raw.githubusercontent.com/${REPO}/main/scripts/ubuntu-install.sh)"
+    fi
+}
+
+# SteamOS ships pacman and sets ID_LIKE=arch, but it is an immutable image.
+# Treating it as Arch walks first-time users through sudo/passwd, pacman-key,
+# and a non-interactive PGP y/n storm that ends with "nothing was updated".
+refuse_if_steamos() {
+    local id=""
+    if [[ -r /etc/os-release ]]; then
+        # shellcheck disable=SC1091
+        id="$(. /etc/os-release && printf '%s' "${ID:-}")"
+    fi
+    if [[ "${id}" != "steamos" ]] && [[ ! -e /etc/steamos-release ]] && ! command -v steamos-readonly >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo "SteamOS is not supported by the ApexShot installer." >&2
+    echo >&2
+    echo "SteamOS is Arch-based, so this script looks like it should work. It will not:" >&2
+    echo "the root filesystem is read-only, the desktop user has no sudo password until" >&2
+    echo "you set one, and pacman keys are not initialized. SteamOS updates also wipe" >&2
+    echo "anything pacman installs under /usr." >&2
+    echo >&2
+    echo "The flood of \"corrupted / missing PGP\" y/n prompts, and the final" >&2
+    echo "\"nothing was updated\" / \"no packages were upgraded\" message, are pacman" >&2
+    echo "hitting SteamOS's unsigned/stale package cache — not a broken ApexShot" >&2
+    echo "package. Unlocking the filesystem and fixing keys will not give you a" >&2
+    echo "lasting install." >&2
+    echo >&2
+    echo "If you want Steam Deck / SteamOS support, please open an issue:" >&2
+    echo "https://github.com/${REPO}/issues" >&2
+    exit 1
+}
+
+# --- ANSI colours & styles ---------------------------------------------------
+BOLD="\033[1m"
+DIM="\033[2m"
+RESET="\033[0m"
+RED="\033[31m"
+GREEN="\033[32m"
+YELLOW="\033[33m"
+BLUE="\033[34m"
+CYAN="\033[36m"
+MAGENTA="\033[35m"
+WHITE="\033[37m"
+
+# --- UI helpers --------------------------------------------------------------
+
+header() {
+    clear
+    echo -e "${CYAN}${BOLD}"
+    echo '    ___    ____  _______  _______ __  ______  ______'
+    echo '   /   |  / __ \/ ____/ |/ / ___// / / / __ \/_  __/'
+    echo '  / /| | / /_/ / __/  |   /\__ \/ /_/ / / / / / /   '
+    echo ' / ___ |/ ____/ /___ /   |___/ / __  / /_/ / / /    '
+    echo '/_/  |_/_/   /_____//_/|_/____/_/ /_/\____/ /_/     '
+    echo -e "${RESET}"
+    echo -e "${DIM}      Open-source Linux screen capture & recording tool${RESET}"
+    echo -e "${DIM}      Arch Linux Edition${RESET}\n"
+}
+
+step() {
+    echo -e "\n${BLUE}${BOLD}▶${RESET} ${BOLD}$1${RESET}"
+}
+
+ok() {
+    echo -e "  ${GREEN}✔${RESET}  $1"
+}
+
+warn() {
+    echo -e "  ${YELLOW}⚠${RESET}  $1"
+}
+
+err() {
+    echo -e "  ${RED}✖${RESET}  $1"
+}
+
+info() {
+    echo -e "  ${DIM}$1${RESET}"
+}
+
+spinner() {
+    local pid=$1
+    local msg=$2
+    local spin=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+    local i=0
+    while kill -0 "$pid" 2>/dev/null; do
+        printf "\r  ${CYAN}%s${RESET} %s" "${spin[$i]}" "$msg"
+        i=$(( (i + 1) % 10 ))
+        sleep 0.08
+    done
+    wait "$pid"
+    local rc=$?
+    if [[ $rc -eq 0 ]]; then
+        printf "\r  ${GREEN}✔${RESET} %s\n" "$msg"
+    else
+        printf "\r  ${RED}✖${RESET} %s\n" "$msg"
+    fi
+    return $rc
+}
+
+run_spinner() {
+    local msg=$1
+    shift
+    ("$@") &
+    spinner $! "$msg"
+}
+
+telemetry_enabled() {
+    case "${APEXSHOT_TELEMETRY:-1}" in
+        0|false|FALSE|no|NO|off|OFF) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+json_escape() {
+    local value=${1:-}
+    value=${value//\\/\\\\}
+    value=${value//\"/\\\"}
+    value=${value//$'\n'/ }
+    value=${value//$'\r'/ }
+    printf '%s' "$value"
+}
+
+telemetry_distro() {
+    if [[ -r /etc/os-release ]]; then
+        (
+            . /etc/os-release
+            printf '%s' "${ID:-linux}"
+            [[ -n "${VERSION_ID:-}" ]] && printf ':%s' "$VERSION_ID"
+        )
+    else
+        printf 'linux'
+    fi
+}
+
+current_desktop_id() {
+    local desktop="${XDG_CURRENT_DESKTOP:-${DESKTOP_SESSION:-}}"
+    printf '%s' "${desktop,,}"
+}
+
+arch_portal_backend_package() {
+    local desktop
+    desktop=$(current_desktop_id)
+
+    if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || [[ "$desktop" == *hyprland* ]]; then
+        printf '%s' "xdg-desktop-portal-hyprland"
+    elif [[ -n "${SWAYSOCK:-}" ]] || [[ "$desktop" == *sway* || "$desktop" == *river* || "$desktop" == *dwl* || "$desktop" == *wayfire* || "$desktop" == *labwc* || "$desktop" == *niri* ]]; then
+        printf '%s' "xdg-desktop-portal-wlr"
+    elif [[ "$desktop" == *kde* || "$desktop" == *plasma* ]]; then
+        printf '%s' "xdg-desktop-portal-kde"
+    elif [[ "$desktop" == *gnome* ]]; then
+        printf '%s' "xdg-desktop-portal-gnome"
+    elif [[ "$desktop" == *cosmic* ]]; then
+        printf '%s' "xdg-desktop-portal-cosmic"
+    else
+        printf '%s' "xdg-desktop-portal-gtk"
+    fi
+}
+
+ensure_install_id() {
+    [[ -n "${INSTALL_ID:-}" ]] && return 0
+    [[ -z "${HOME:-}" ]] && return 0
+
+    local id_dir="${HOME}/.config/apexshot"
+    local id_file="${id_dir}/install_id"
+
+    if [[ -r "$id_file" ]]; then
+        INSTALL_ID="$(cat "$id_file" 2>/dev/null || true)"
+        [[ -n "$INSTALL_ID" ]] && return 0
+    fi
+
+    if command -v uuidgen >/dev/null 2>&1; then
+        INSTALL_ID="$(uuidgen)"
+    elif [[ -r /proc/sys/kernel/random/uuid ]]; then
+        INSTALL_ID="$(cat /proc/sys/kernel/random/uuid)"
+    else
+        return 0
+    fi
+
+    mkdir -p "$id_dir" 2>/dev/null || true
+    printf '%s' "$INSTALL_ID" > "$id_file" 2>/dev/null || true
+}
+
+send_download_telemetry() {
+    telemetry_enabled || return 0
+    [[ -z "${INSTALL_ID:-}" ]] && ensure_install_id
+
+    local event=$1
+    local asset_type=$2
+    local status=${3:-}
+    local size_bytes=${4:-0}
+    local asset_name=${5:-}
+    local distro
+    distro=$(telemetry_distro)
+
+    local install_id_json="null"
+    [[ -n "$INSTALL_ID" ]] && install_id_json="\"$(json_escape "$INSTALL_ID")\""
+
+    local payload
+    payload=$(printf '{"event":"%s","script":"%s","distro":"%s","channel":"%s","version":"%s","asset_type":"%s","asset_name":"%s","status":"%s","size_bytes":%s,"install_id":%s}' \
+        "$(json_escape "$event")" \
+        "$(json_escape "$SCRIPT_NAME")" \
+        "$(json_escape "$distro")" \
+        "$(json_escape "$TELEMETRY_CHANNEL")" \
+        "$(json_escape "${VERSION:-unknown}")" \
+        "$(json_escape "$asset_type")" \
+        "$(json_escape "$asset_name")" \
+        "$(json_escape "$status")" \
+        "$size_bytes" \
+        "$install_id_json")
+
+    (curl -fsS -m 2 -H "Content-Type: application/json" -A "ApexShotDownloadTelemetry/${SCRIPT_NAME}" -d "$payload" "$TELEMETRY_URL" >/dev/null 2>&1 || true) &
+}
+
+# Release assets are mirrored to Cloudflare (dl.apexshot.org) within minutes of
+# a release. Download from the mirror when it has the file and from GitHub
+# otherwise. Set APEXSHOT_MIRROR_URL= (empty) to always use GitHub.
+release_mirror_url() {
+    local prefix="https://github.com/${REPO}/releases/download/"
+    if [[ -n "$MIRROR_URL" && "$1" == "$prefix"* ]]; then
+        printf '%s/%s' "$MIRROR_URL" "${1#"$prefix"}"
+    fi
+}
+
+download_file() {
+    local url=$1
+    local output=$2
+    local asset_type=${3:-package}
+    local asset_name=${output##*/}
+
+    local mirror_url
+    mirror_url=$(release_mirror_url "$url")
+    if [[ -n "$mirror_url" ]] && curl -fsSI -m 10 -o /dev/null "$mirror_url" 2>/dev/null; then
+        url=$mirror_url
+    fi
+
+    send_download_telemetry "download_started" "$asset_type" "started" 0 "$asset_name"
+
+    # Use -# for simple "#" progress bar that works across all terminals.
+    # Fall back to -sS (silent+show-errors) if stderr is not a TTY.
+    local curl_opts=(-fL)
+    if [[ -t 2 ]]; then
+        curl_opts+=(-#)
+    else
+        curl_opts+=(-sS)
+    fi
+
+    if curl "${curl_opts[@]}" -o "$output" "$url"; then
+        local size_bytes=0
+        size_bytes=$(stat -c%s "$output" 2>/dev/null || wc -c < "$output" 2>/dev/null || echo 0)
+        send_download_telemetry "download_completed" "$asset_type" "success" "$size_bytes" "$asset_name"
+    else
+        local rc=$?
+        send_download_telemetry "download_failed" "$asset_type" "curl_${rc}" 0 "$asset_name"
+        err "Download failed (curl exit code ${rc})"
+        err "URL: ${url}"
+        return "$rc"
+    fi
+}
+
+latest_release_tag() {
+    local effective tag
+    effective=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "${RELEASES_URL}/latest" || true)
+    tag="${effective##*/}"
+
+    if [[ -z "$tag" ]] || [[ "$tag" == "latest" ]]; then
+        printf '%s' "${VERSION}"
+    else
+        printf '%s' "$tag"
+    fi
+}
+
+resolve_latest_gnome_extension_url() {
+    local extension_version
+    extension_version=$(latest_release_tag)
+    if [[ -z "$extension_version" ]]; then
+        return 1
+    fi
+
+    local zip_path
+    zip_path=$(curl -fsSL "${RELEASES_URL}/expanded_assets/${extension_version}" |
+               grep -oE "/${REPO}/releases/download/${extension_version}/[^\"]*apexshot-gnome-integration\.zip" |
+               head -n 1 || true)
+
+    if [[ -z "$zip_path" ]]; then
+        return 1
+    fi
+
+    printf 'https://github.com%s' "$zip_path"
+}
+
+is_gnome_session() {
+    # GNOME_DESKTOP_SESSION_ID is the canonical signal set by gnome-session
+    # itself. XDG_CURRENT_DESKTOP / GDMSESSION / GNOME_SETUP_DISPLAY are
+    # fallbacks for edge cases (runnner wrappers, nested sessions, etc.).
+    [[ -n "${GNOME_DESKTOP_SESSION_ID:-}" ]] && return 0
+    [[ -n "${GNOME_SETUP_DISPLAY:-}" ]] && return 0
+
+    local desktop="${XDG_CURRENT_DESKTOP:-}:${XDG_SESSION_DESKTOP:-}:${DESKTOP_SESSION:-}:${GDMSESSION:-}"
+    [[ "${desktop,,}" == *gnome* ]]
+}
+
+should_skip_gnome_extension() {
+    case "${APEXSHOT_SKIP_GNOME_EXTENSION:-}" in
+        1|true|TRUE|yes|YES|on|ON) return 0 ;;
+    esac
+
+    ! is_gnome_session
+}
+
+# Prompt the user for their sudo password up front so the subsequent
+# commands inside a spinner don't have their prompt clobbered by the
+# spinner output. No-op when running as root.
+prime_sudo() {
+    if [[ -n "$SUDO" ]]; then
+        $SUDO -v
+    fi
+}
+
+fetch_version() {
+    step "Resolving latest release"
+
+    local effective
+    effective=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "${RELEASES_URL}/latest" || true)
+    VERSION="${effective##*/}"
+    if [[ -z "$VERSION" ]] || [[ "$VERSION" == "latest" ]]; then
+        err "Could not determine the latest release version."
+        err "Please check your internet connection or try again later."
+        exit 1
+    fi
+    ok "Latest version: ${BOLD}${VERSION}${RESET}"
+}
+
+# --- Prerequisites -----------------------------------------------------------
+
+check_prereqs() {
+    step "Checking prerequisites"
+
+    local arch
+    arch="$(uname -m)"
+    if [[ "$arch" != "x86_64" ]]; then
+        err "Prebuilt packages are x86_64 only (this machine: ${arch})."
+        exit 1
+    fi
+    ok "Architecture: x86_64"
+
+    # Arch-specific: Check for pacman
+    if command -v pacman >/dev/null 2>&1; then
+        ok "pacman package manager found"
+    else
+        err "This installer is designed for Arch Linux and pacman-based systems."
+        err "For other distributions, please use the appropriate installer."
+        exit 1
+    fi
+
+    # Resolve sudo or fall back to root
+    if [[ $EUID -eq 0 ]]; then
+        SUDO=""
+    elif command -v sudo >/dev/null 2>&1; then
+        SUDO="sudo"
+    else
+        err "Root or sudo access is required to install packages."
+        exit 1
+    fi
+
+    if command -v curl >/dev/null 2>&1; then
+        ok "curl found"
+    else
+        warn "curl not found — installing via pacman..."
+        prime_sudo
+        run_spinner "Installing curl..." bash -c "${SUDO} pacman -S --noconfirm curl"
+        ok "curl installed"
+    fi
+}
+
+# --- Installation method selection ------------------------------------------
+
+select_install_method() {
+    local choice="${APEXSHOT_ARCH_INSTALL_METHOD:-release}"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --method)
+                shift
+                choice="${1:-release}"
+                ;;
+            --method=*)
+                choice="${1#--method=}"
+                ;;
+            --source)
+                choice="source"
+                ;;
+            --aur)
+                choice="aur"
+                ;;
+            --release|--github-release)
+                choice="release"
+                ;;
+        esac
+        shift || true
+    done
+
+    step "Selecting installation method"
+
+    case $choice in
+        1|release|github|github-release)
+            ok "Using pre-built GitHub release package"
+            install_from_release
+            ;;
+        2|source|build)
+            ok "Building from source"
+            install_from_source
+            ;;
+        3|aur)
+            ok "Installing from AUR"
+            install_from_aur
+            ;;
+        *)
+            warn "Unknown method '${choice}' - using GitHub release package"
+            install_from_release
+            ;;
+    esac
+}
+
+# --- Install from AUR --------------------------------------------------------
+
+install_from_aur() {
+    step "Installing from AUR"
+
+    if pacman -Qq base-devel >/dev/null 2>&1; then
+        ok "base-devel group found"
+    else
+        warn "base-devel group not found - required for AUR builds"
+    fi
+    
+    info "Checking for AUR helper..."
+    
+    local aur_helper=""
+    for helper in yay paru trizen pikaur; do
+        if command -v "$helper" >/dev/null 2>&1; then
+            aur_helper="$helper"
+            ok "Found AUR helper: $helper"
+            break
+        fi
+    done
+    
+    if [[ -z "$aur_helper" ]]; then
+        warn "No AUR helper found. Installing yay..."
+        install_yay
+        aur_helper="yay"
+    fi
+    
+    info "Installing apexshot via $aur_helper..."
+    $aur_helper -S --noconfirm apexshot
+    
+    ok "ApexShot installed from AUR"
+}
+
+install_yay() {
+    step "Installing yay AUR helper"
+    
+    TMPDIR=$(mktemp -d -t yay-install.XXXXXX)
+    
+    prime_sudo
+    
+    run_spinner "Cloning yay repository..." \
+        bash -c "cd '$TMPDIR' && git clone https://aur.archlinux.org/yay.git"
+    
+    run_spinner "Building yay..." \
+        bash -c "cd '$TMPDIR/yay' && makepkg -si --noconfirm"
+    
+    rm -rf "$TMPDIR"
+    ok "yay installed"
+}
+
+# --- Install from release ----------------------------------------------------
+
+install_from_release() {
+    step "Installing from GitHub release"
+
+    fetch_version
+    TMPDIR=$(mktemp -d -t apexshot-arch-install.XXXXXX)
+
+    local pkg_path
+    pkg_path=$(curl -fsSL "${RELEASES_URL}/expanded_assets/${VERSION}" |
+               grep -oE "/${REPO}/releases/download/${VERSION}/[^\"]*x86_64\.pkg\.tar\.zst" |
+               head -n 1)
+    local pkg_url=""
+    [[ -n "$pkg_path" ]] && pkg_url="https://github.com${pkg_path}"
+
+    if [[ -z "$pkg_url" ]]; then
+        err "Could not find the Arch package download URL."
+        exit 1
+    fi
+
+    local pkg_file="${TMPDIR}/apexshot_${VERSION}_x86_64.pkg.tar.zst"
+    info "Downloading Arch package:"
+    if ! download_file "$pkg_url" "$pkg_file" "arch_package"; then
+        err "Could not download the Arch package. Check your internet connection."
+        exit 1
+    fi
+    ok "Package saved to ${pkg_file}"
+
+    info "Stopping any running ApexShot daemon..."
+    killall -9 apexshot 2>/dev/null || true
+
+    prime_sudo
+    info "Installing package with pacman:"
+    ${SUDO} pacman -U --noconfirm --overwrite 'usr/share/apexshot/sounds/*.ogg' "${pkg_file}"
+    INSTALL_PATH="/usr/bin/apexshot"
+
+    ok "ApexShot installed from GitHub release"
+}
+
+# --- Install from source -----------------------------------------------------
+
+install_from_source() {
+    step "Building from source"
+    
+    TMPDIR=$(mktemp -d -t apexshot-build.XXXXXX)
+
+    if pacman -Qq base-devel >/dev/null 2>&1; then
+        ok "base-devel group found"
+    else
+        warn "base-devel group not found - installing build dependencies may not be enough without it"
+    fi
+    
+    # Install build dependencies
+    prime_sudo
+    
+    local deps=(
+        rust
+        cargo
+        clippy
+        rustfmt
+        git
+        cmake
+        clang
+        pkgconf
+        gtk4
+        libadwaita
+        gtk4-layer-shell
+        gstreamer
+        gst-plugins-base
+        gst-plugins-good
+        gst-plugins-bad
+        gst-libav
+        gst-plugin-pipewire
+        gst-plugin-libcamera
+        libpipewire
+        pipewire-pulse
+        pipewire-libcamera
+        libcamera
+        libcamera-ipa
+        tesseract
+        tesseract-data-eng
+        leptonica
+        qt5-base
+        qt5-x11extras
+        qt5-wayland
+        libxtst
+        wl-clipboard
+        xclip
+        libnotify
+        xdg-utils
+        ffmpeg
+        xdg-desktop-portal
+    )
+
+    local desktop
+    desktop=$(current_desktop_id)
+
+    # wlroots compositors need wf-recorder for video recording.
+    if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || [[ "$desktop" == *hyprland* ]] || \
+       [[ -n "${SWAYSOCK:-}" ]] || [[ "$desktop" == *sway* || "$desktop" == *river* || "$desktop" == *dwl* || "$desktop" == *wayfire* || "$desktop" == *labwc* || "$desktop" == *niri* ]]; then
+        deps+=(wf-recorder)
+        info "wlroots compositor detected — adding wf-recorder for video recording"
+    fi
+
+    local portal_backend
+    portal_backend=$(arch_portal_backend_package)
+    deps+=("$portal_backend")
+    
+    info "Installing build dependencies..."
+    run_spinner "Installing dependencies..." \
+        bash -c "${SUDO} pacman -S --needed --noconfirm ${deps[*]}"
+
+    if command -v systemctl >/dev/null 2>&1; then
+        run_spinner "Restarting desktop portal services..." \
+            bash -c "systemctl --user restart xdg-desktop-portal '${portal_backend}.service' 2>/dev/null || systemctl --user restart xdg-desktop-portal 2>/dev/null || true"
+    fi
+    
+    ok "Dependencies installed"
+    
+    # Clone and build
+    step "Cloning repository"
+    run_spinner "Cloning..." \
+        bash -c "git clone --depth 1 'https://github.com/${REPO}.git' '$TMPDIR/apexshot'"
+    
+    step "Building"
+    run_spinner "Compiling (this may take several minutes)..." \
+        bash -c "cd '$TMPDIR/apexshot' && cargo build --release"
+    
+    step "Installing"
+    prime_sudo
+    run_spinner "Installing to /usr/local/bin..." bash -c "${SUDO} cp '$TMPDIR/apexshot/target/release/apexshot' /usr/local/bin/"
+    INSTALL_PATH="/usr/local/bin/apexshot"
+    
+    # Install bundled binaries if they exist
+    if [[ -f "$TMPDIR/apexshot/target/release/apexshot-capture" ]]; then
+        run_spinner "Installing capture overlay..." \
+            bash -c "${SUDO} cp '$TMPDIR/apexshot/target/release/apexshot-capture' /usr/local/bin/"
+    fi
+    
+    if [[ -f "$TMPDIR/apexshot/packaging/deb/apexshot-native-host" ]]; then
+        run_spinner "Installing native host..." \
+            bash -c "${SUDO} cp '$TMPDIR/apexshot/packaging/deb/apexshot-native-host' /usr/local/bin/"
+    fi
+    
+    rm -rf "$TMPDIR"
+    ok "Build complete"
+}
+
+# --- GNOME Shell extension ---------------------------------------------------
+
+run_gnome_extensions() {
+    if [[ $EUID -eq 0 ]] && [[ -n "${SUDO_USER:-}" ]] && [[ "${SUDO_USER}" != "root" ]]; then
+        local target_uid runtime_dir bus_address
+        target_uid=$(id -u "${SUDO_USER}" 2>/dev/null || true)
+        if [[ -n "$target_uid" ]]; then
+            runtime_dir="${XDG_RUNTIME_DIR:-/run/user/${target_uid}}"
+            bus_address="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${runtime_dir}/bus}"
+            if command -v sudo >/dev/null 2>&1; then
+                sudo -u "${SUDO_USER}" env XDG_RUNTIME_DIR="${runtime_dir}" DBUS_SESSION_BUS_ADDRESS="${bus_address}" gnome-extensions "$@"
+            else
+                runuser -u "${SUDO_USER}" -- env XDG_RUNTIME_DIR="${runtime_dir}" DBUS_SESSION_BUS_ADDRESS="${bus_address}" gnome-extensions "$@"
+            fi
+            return
+        fi
+    fi
+
+    gnome-extensions "$@"
+}
+
+install_gnome_extension_files() {
+    local zip_file=$1
+
+    if ! command -v unzip >/dev/null 2>&1; then
+        return 1
+    fi
+
+    local target_user="" target_home="${HOME:-}" target_uid="" target_gid=""
+    if [[ $EUID -eq 0 ]] && [[ -n "${SUDO_USER:-}" ]] && [[ "${SUDO_USER}" != "root" ]]; then
+        target_user="${SUDO_USER}"
+        target_home=$(getent passwd "${target_user}" 2>/dev/null | cut -d: -f6)
+        target_uid=$(id -u "${target_user}" 2>/dev/null || true)
+        target_gid=$(id -g "${target_user}" 2>/dev/null || true)
+    fi
+
+    if [[ -z "$target_home" ]]; then
+        return 1
+    fi
+
+    local ext_parent="${target_home}/.local/share/gnome-shell/extensions"
+    local ext_dir="${ext_parent}/${EXT_UUID}"
+    rm -rf "${ext_dir}"
+    mkdir -p "${ext_dir}"
+    unzip -q "${zip_file}" -d "${ext_dir}"
+
+    if [[ -n "$target_uid" ]] && [[ -n "$target_gid" ]]; then
+        chown -R "${target_uid}:${target_gid}" "${ext_dir}"
+    fi
+}
+
+install_gnome_extension() {
+    step "Installing GNOME Shell extension"
+
+    if should_skip_gnome_extension; then
+        info "Skipping GNOME extension install because this does not look like a GNOME session."
+        return
+    fi
+
+    local zip_url
+    if ! zip_url=$(resolve_latest_gnome_extension_url); then
+        warn "Latest GNOME extension zip not found in releases - package files were installed, but the user extension was not refreshed."
+        return
+    fi
+
+    if [[ -z "${TMPDIR:-}" ]] || [[ ! -d "$TMPDIR" ]]; then
+        TMPDIR=$(mktemp -d -t apexshot-arch-extension.XXXXXX)
+    fi
+
+    local zip_file="${TMPDIR}/apexshot-gnome-integration.zip"
+    info "Downloading GNOME extension:"
+    if ! download_file "$zip_url" "$zip_file" "gnome_extension"; then
+        warn "Could not download the GNOME extension. Skipping extension install."
+        return
+    fi
+
+    if ! command -v gnome-extensions >/dev/null 2>&1; then
+        warn "gnome-extensions CLI not found - installing extension files directly."
+        if install_gnome_extension_files "${zip_file}"; then
+            ok "GNOME extension files installed"
+            info "Log out and back in, then run: gnome-extensions enable ${EXT_UUID}"
+        else
+            warn "Could not install GNOME extension files automatically."
+        fi
+        return
+    fi
+
+    local was_enabled=0
+    if run_gnome_extensions list --enabled 2>/dev/null | grep -Fxq "${EXT_UUID}"; then
+        was_enabled=1
+    fi
+
+    run_gnome_extensions disable "${EXT_UUID}" >/dev/null 2>&1 || true
+    if ! run_gnome_extensions install --force "${zip_file}" >/dev/null 2>&1; then
+        warn "gnome-extensions install failed - replacing user extension files directly."
+        if ! install_gnome_extension_files "${zip_file}"; then
+            if [[ $was_enabled -eq 1 ]]; then
+                run_gnome_extensions enable "${EXT_UUID}" >/dev/null 2>&1 || true
+            fi
+            err "Could not install the GNOME extension."
+            err "Try logging out and back in, then run this installer again."
+            exit 1
+        fi
+    fi
+
+    if run_gnome_extensions enable "${EXT_UUID}" >/dev/null 2>&1; then
+        ok "GNOME extension installed and enabled"
+    else
+        warn "GNOME extension files were installed, but GNOME could not enable it in this session."
+        info "Log out and back in, then run: gnome-extensions enable ${EXT_UUID}"
+    fi
+}
+
+# --- Setup -------------------------------------------------------------------
+
+setup_browser_host() {
+    step "Browser integration"
+    
+    if [[ $EUID -ne 0 ]]; then
+        info "Skipping browser native host setup (requires root)."
+        info "Run with sudo if you need browser integration."
+        return
+    fi
+    
+    # Create directories for Chrome/Chromium
+    mkdir -p /etc/opt/chrome/NativeMessagingHosts
+    mkdir -p /etc/chromium/NativeMessagingHosts
+    
+    ok "Browser native messaging host directories prepared"
+}
+
+# --- Cleanup & summary -------------------------------------------------------
+
+cleanup() {
+    if [[ -n "${TMPDIR:-}" ]] && [[ -d "$TMPDIR" ]]; then
+        rm -rf "$TMPDIR"
+    fi
+}
+
+capture_backend_summary() {
+    if is_gnome_session; then
+        printf '%s' "GNOME Shell D-Bus API for screenshots; ScreenCast portal + PipeWire for recording."
+    else
+        printf '%s' "wlr-screencopy / Screenshot portal for screenshots; ScreenCast portal + PipeWire/wf-recorder for recording."
+    fi
+}
+
+installed_apexshot_version() {
+    if ! command -v apexshot >/dev/null 2>&1 && [[ ! -x /usr/bin/apexshot ]]; then
+        return 0
+    fi
+    local bin="apexshot"
+    [[ -x /usr/bin/apexshot ]] && bin="/usr/bin/apexshot"
+    "$bin" --version 2>/dev/null | awk '/^apexshot / { print $2; exit }'
+}
+
+run_as_desktop_user() {
+    if [[ $EUID -ne 0 ]]; then
+        "$@"
+        return $?
+    fi
+    local user="${SUDO_USER:-}"
+    if [[ -z "$user" || "$user" == "root" ]]; then
+        return 1
+    fi
+    local target_uid runtime_dir bus_address
+    target_uid=$(id -u "$user" 2>/dev/null || true)
+    runtime_dir="${XDG_RUNTIME_DIR:-/run/user/${target_uid}}"
+    bus_address="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${runtime_dir}/bus}"
+    if command -v sudo >/dev/null 2>&1; then
+        sudo -u "$user" \
+            env \
+            DISPLAY="${DISPLAY:-}" \
+            WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" \
+            XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-}" \
+            XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-}" \
+            XDG_RUNTIME_DIR="${runtime_dir}" \
+            DBUS_SESSION_BUS_ADDRESS="${bus_address}" \
+            "$@"
+    elif command -v runuser >/dev/null 2>&1; then
+        runuser -u "$user" -- \
+            env \
+            DISPLAY="${DISPLAY:-}" \
+            WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" \
+            XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-}" \
+            XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-}" \
+            XDG_RUNTIME_DIR="${runtime_dir}" \
+            DBUS_SESSION_BUS_ADDRESS="${bus_address}" \
+            "$@"
+    else
+        return 1
+    fi
+}
+
+post_install_launch() {
+    step "Starting ApexShot"
+
+    if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then
+        info "No graphical session detected. Open ApexShot from the app menu after login."
+        return 0
+    fi
+
+    local bin="${INSTALL_PATH}"
+    if [[ ! -x "$bin" ]]; then
+        if command -v apexshot >/dev/null 2>&1; then
+            bin="$(command -v apexshot)"
+        else
+            warn "apexshot binary not found; open it from the app menu after install."
+            return 0
+        fi
+    fi
+
+    if ! run_as_desktop_user bash -c "
+        '${bin}' daemon >/dev/null 2>&1 &
+        sleep 0.6
+        '${bin}' >/dev/null 2>&1 &
+        true
+    "; then
+        if [[ $EUID -ne 0 ]]; then
+            nohup "$bin" daemon >/dev/null 2>&1 &
+            disown 2>/dev/null || true
+            sleep 0.6
+            nohup "$bin" >/dev/null 2>&1 &
+            disown 2>/dev/null || true
+            ok "Opened ApexShot (tray daemon + setup window)"
+        else
+            info "Could not launch GUI as a desktop user. Open ApexShot from the app menu."
+        fi
+        return 0
+    fi
+
+    ok "Opened ApexShot (tray daemon + setup window)"
+    info "Look for the tray icon, or finish setup in the window that opened."
+}
+
+summary() {
+    echo -e "\n${GREEN}${BOLD}═══════════════════════════════════════════════════════${RESET}"
+    echo -e "${GREEN}${BOLD}  ApexShot is ready!${RESET}\n"
+    echo -e "  Binary:    ${BOLD}${INSTALL_PATH}${RESET}"
+    echo -e "  Capture:   ${BOLD}$(capture_backend_summary)${RESET}"
+    echo -e "  Website:   ${DIM}https://apexshot.org/${RESET}"
+    echo -e "  Issues:    ${DIM}https://github.com/${REPO}/issues${RESET}"
+    echo -e "\n  ${BOLD}How to use:${RESET}"
+    echo -e "    Open ${BOLD}ApexShot${RESET} from the app menu (Settings / first-run setup)"
+    echo -e "    Tray icon + hotkeys handle day-to-day capture (daemon starts with your session)"
+    echo -e "    apexshot capture area      # CLI area capture"
+    echo -e "\n  ${BOLD}Update later with:${RESET}"
+    echo -e "    ${DIM}curl -fsSL https://apexshot.org/update/arch | bash${RESET}"
+    echo -e "  ${DIM}Re-run this installer with --force to re-download the package.${RESET}"
+    echo -e "${GREEN}${BOLD}═══════════════════════════════════════════════════════${RESET}\n"
+}
+
+# --- Main --------------------------------------------------------------------
+
+main() {
+    trap cleanup EXIT
+
+    handoff_if_wrong_distro "$@"
+    refuse_if_steamos
+
+    local passthrough=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force)
+                FORCE_REINSTALL=1
+                ;;
+            *)
+                passthrough+=("$1")
+                ;;
+        esac
+        shift
+    done
+
+    header
+    check_prereqs
+    fetch_version
+
+    local latest_ver="${VERSION#v}"
+    local current_ver
+    current_ver="$(installed_apexshot_version || true)"
+    if [[ $FORCE_REINSTALL -eq 0 && -n "$current_ver" && "$current_ver" == "$latest_ver" ]]; then
+        ok "ApexShot ${BOLD}${current_ver}${RESET} is already installed"
+        info "Skipping re-download. Use --force to reinstall the package."
+        post_install_launch
+        summary
+        return 0
+    fi
+
+    select_install_method "${passthrough[@]+"${passthrough[@]}"}"
+    install_gnome_extension
+    setup_browser_host
+    post_install_launch
+    summary
+}
+
+main "$@"

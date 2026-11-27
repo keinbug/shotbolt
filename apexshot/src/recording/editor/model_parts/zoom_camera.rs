@@ -1,0 +1,1015 @@
+use std::hash::{Hash, Hasher};
+
+use crate::recording::editor::zoom_path::{ZoomPathCache, ZoomPathEvent};
+
+const ZOOM_CAMERA_STEP: f64 = 1.0 / 60.0;
+/// The exporter quantizes the camera window to an even pixel grid, so a camera
+/// that keeps creeping keeps re-quantizing and visibly pops the frame. Park
+/// once the remaining motion sits inside that grid, where the snap itself
+/// cannot be seen: 0.75 source px is under half of the grid's 2 px step.
+const ZOOM_CAMERA_SETTLE_PX: f64 = 0.75;
+/// Source pixels per second. At 60 fps this is a sixteenth of a pixel a frame,
+/// so the camera is already still to the eye when it parks.
+const ZOOM_CAMERA_SETTLE_VELOCITY: f64 = 4.0;
+/// Camera samples one motion-blur exposure composites. The preview and the
+/// exporter both read the count through [`VideoEditState::zoom_blur_sample_count`],
+/// so the two cannot drift apart.
+const ZOOM_BLUR_SAMPLES: usize = 8;
+/// A camera whose samples all sit inside this much travel has nothing to blur:
+/// a quarter of a source pixel of viewport movement and a 1e-4 scale change.
+const ZOOM_BLUR_STATIC_PX: f64 = 0.25;
+const ZOOM_BLUR_STATIC_SCALE: f64 = 1e-4;
+
+#[derive(Debug, Clone, Copy)]
+struct CameraMotion {
+    rect: [f64; 4],
+    velocity: [f64; 4],
+}
+
+impl CameraMotion {
+    fn parked(rect: [f64; 4]) -> Self {
+        Self {
+            rect,
+            velocity: [0.0; 4],
+        }
+    }
+
+    fn advance(self, target: [f64; 4], spring: CameraSpring, seconds: f64) -> Self {
+        let mut motion = self;
+        let step = (spring_adaptive_step_ms(spring) / 1000.0).min(ZOOM_CAMERA_STEP);
+        let steps = (seconds / step).ceil() as usize;
+        for index in 0..steps {
+            let dt = step.min((seconds - index as f64 * step).max(0.0));
+            for (axis, target) in target.iter().enumerate() {
+                (motion.rect[axis], motion.velocity[axis]) = spring_step(
+                    motion.rect[axis],
+                    motion.velocity[axis],
+                    *target,
+                    spring,
+                    dt,
+                );
+            }
+        }
+        for (axis, target) in target.iter().enumerate() {
+            if (motion.rect[axis] - target).abs() <= ZOOM_CAMERA_SETTLE_PX
+                && motion.velocity[axis].abs() <= ZOOM_CAMERA_SETTLE_VELOCITY
+            {
+                motion.rect[axis] = *target;
+                motion.velocity[axis] = 0.0;
+            }
+        }
+        motion
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CameraZoom {
+    clip: ZoomClip,
+    centers: Vec<(f64, (f64, f64))>,
+    holds_for_next: bool,
+    exit: Option<(CameraMotion, CameraMotion)>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CameraSegment {
+    composition_start: f64,
+    composition_end: f64,
+    source_start: f64,
+    source_end: f64,
+    speed: f64,
+}
+
+/// One stretch of recorded footage a zoom covers, in composition time. A zoom
+/// that spans a cut reads several of these; each carries the source range it
+/// shows and the rate composition time runs it at.
+#[derive(Debug, Clone, Copy)]
+struct CameraWindow {
+    start: f64,
+    source_start: f64,
+    source_end: f64,
+    speed: f64,
+}
+
+/// A shared screen-rectangle spring, integrated on a fixed composition-time grid.
+/// Standalone exits are fitted to their clip boundary with a Hermite residual
+/// correction, so the viewport reaches the full crop with zero velocity there.
+/// Close automatic zooms keep the actual viewport and velocity instead.
+#[derive(Debug)]
+struct ZoomCameraPlan {
+    crop: [f64; 4],
+    settings: ZoomCameraSettings,
+    zooms: Vec<CameraZoom>,
+    boundaries: Vec<f64>,
+    frames: Vec<CameraMotion>,
+}
+
+#[derive(Debug, Default)]
+pub(super) struct ZoomCameraCache {
+    signature: Option<u64>,
+    plan: Option<ZoomCameraPlan>,
+    /// The filtered pointer path the plan groups. Kept across plan rebuilds so
+    /// editing a clip does not re-filter the recording.
+    path: ZoomPathCache,
+}
+
+impl ZoomCameraPlan {
+    fn new(state: &VideoEditState, path: &[ZoomPathEvent]) -> Self {
+        let crop = state.crop_or_full();
+        let settings = state.zoom_camera.clamped();
+        // The studied stage is 1080 units tall at the output's aspect, and the
+        // source's logical size is the recorded region over the display's
+        // device pixel ratio. Without a recorded region, the source is the
+        // camera's own frame.
+        let (out_w, out_h) = state.output_dimensions();
+        let stage_aspect = f64::from(out_w) / f64::from(out_h.max(1));
+        let logical_source = state
+            .sidecar
+            .as_ref()
+            .map(|sidecar| {
+                let ratio = sidecar.device_pixel_ratio();
+                let ratio = if ratio.is_finite() && ratio > 0.0 {
+                    ratio
+                } else {
+                    1.0
+                };
+                let region = (f64::from(sidecar.region.w), f64::from(sidecar.region.h));
+                let size = if region.0 > 0.0 && region.1 > 0.0 {
+                    region
+                } else {
+                    (crop.2, crop.3)
+                };
+                (size.0 / ratio, size.1 / ratio)
+            })
+            .unwrap_or((crop.2, crop.3));
+        let segments: Vec<CameraSegment> = state
+            .segment_boundaries()
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| state.segments_kept.get(*index).copied().unwrap_or(true))
+            .map(|(index, &(start, end))| CameraSegment {
+                composition_start: state.segment_start(index),
+                composition_end: state.segment_start(index)
+                    + state.segment_timeline_duration(index),
+                source_start: start,
+                source_end: end,
+                speed: state.segment_speed(index),
+            })
+            .collect();
+        let mut clips: Vec<_> = state
+            .zoom_clips
+            .iter()
+            .filter(|clip| {
+                !clip.hidden
+                    && clip.start.is_finite()
+                    && clip.end.is_finite()
+                    && clip.end > clip.start
+                    && clip.scale.is_finite()
+            })
+            .cloned()
+            .collect();
+        clips.sort_by(|a, b| a.start.total_cmp(&b.start));
+        let zooms = clips
+            .iter()
+            .enumerate()
+            .map(|(index, clip)| {
+                let windows = clip_windows(&segments, clip);
+                let points = follow_points(path, &windows);
+                let centers = movement_group_centers(
+                    &points,
+                    movement_group_budget(
+                        (crop.2, crop.3),
+                        clip.scale,
+                        stage_aspect,
+                        logical_source,
+                    ),
+                );
+                let holds_for_next = !clip.instant
+                    && clip.mode == ZoomMode::Auto
+                    && clips.iter().enumerate().any(|(other, next)| {
+                        other != index
+                            && !next.instant
+                            && next.mode == ZoomMode::Auto
+                            && next.start >= clip.end
+                            && next.start - clip.end <= ZOOM_MORPH_GAP_SECONDS
+                    });
+                CameraZoom {
+                    clip: clip.clone(),
+                    centers,
+                    holds_for_next,
+                    exit: None,
+                }
+            })
+            .collect::<Vec<_>>();
+        let mut boundaries = vec![0.0];
+        for zoom in &zooms {
+            boundaries.extend([
+                (zoom.clip.start - settings.lead_in_seconds()).max(0.0),
+                zoom.clip.start,
+                Self::exit_start(&zoom.clip),
+                zoom.clip.end,
+                zoom.clip.end + 0.05,
+            ]);
+        }
+        boundaries.sort_by(f64::total_cmp);
+        boundaries.dedup();
+        Self {
+            crop: [crop.0, crop.1, crop.2, crop.3],
+            settings,
+            zooms,
+            boundaries,
+            frames: vec![CameraMotion::parked([0.0, 0.0, crop.2, crop.3])],
+        }
+    }
+
+    fn active_at(&self, t: f64) -> Option<usize> {
+        self.zooms
+            .iter()
+            .rposition(|zoom| t >= zoom.clip.start && t <= zoom.clip.end)
+    }
+
+    fn target_index_at(&self, t: f64) -> Option<usize> {
+        if let Some(index) = self.active_at(t) {
+            return Some(index);
+        }
+        if self.settings.start_early {
+            if let Some(index) = self.zooms.iter().position(|zoom| {
+                !zoom.clip.instant
+                    && t >= zoom.clip.start - self.settings.lead_in_seconds()
+                    && t < zoom.clip.start
+            }) {
+                return Some(index);
+            }
+        }
+        self.zooms
+            .iter()
+            .enumerate()
+            .filter(|(_, zoom)| {
+                zoom.holds_for_next
+                    && t > zoom.clip.end
+                    && t - zoom.clip.end <= ZOOM_MORPH_GAP_SECONDS
+            })
+            .max_by(|(_, a), (_, b)| a.clip.end.total_cmp(&b.clip.end))
+            .map(|(index, _)| index)
+    }
+
+    fn target_rect(&self, index: usize, timeline_t: f64) -> [f64; 4] {
+        let zoom = &self.zooms[index];
+        let center = if zoom.clip.mode == ZoomMode::Auto {
+            let t = if timeline_t < zoom.clip.start {
+                zoom.clip.start
+            } else {
+                timeline_t
+            };
+            movement_group_center_in(&zoom.centers, t).unwrap_or(zoom.clip.center)
+        } else {
+            zoom.clip.center
+        };
+        self.focus_rect(zoom.clip.scale, center)
+    }
+
+    fn focus_rect(&self, scale: f64, center: (f64, f64)) -> [f64; 4] {
+        let scale = scale.clamp(1.0, MAX_ZOOM_SCALE);
+        let width = self.crop[2] * scale;
+        let height = self.crop[3] * scale;
+        let x = if center.0.is_finite() {
+            self.crop[2] / 2.0 - (center.0 - self.crop[0]) * scale
+        } else {
+            0.0
+        };
+        let y = if center.1.is_finite() {
+            self.crop[3] / 2.0 - (center.1 - self.crop[1]) * scale
+        } else {
+            0.0
+        };
+        [
+            x.clamp(self.crop[2] - width, 0.0),
+            y.clamp(self.crop[3] - height, 0.0),
+            width,
+            height,
+        ]
+    }
+
+    fn full_rect(&self) -> [f64; 4] {
+        [0.0, 0.0, self.crop[2], self.crop[3]]
+    }
+
+    fn exit_start(clip: &ZoomClip) -> f64 {
+        clip.end - (clip.ease_ms as f64 / 1000.0).min(clip.duration() / 2.0)
+    }
+
+    fn snap_window(&self, t: f64) -> bool {
+        self.zooms
+            .iter()
+            .any(|zoom| zoom.clip.instant && t >= zoom.clip.start && t <= zoom.clip.end + 0.05)
+    }
+
+    fn advance(&mut self, mut motion: CameraMotion, mut from: f64, to: f64) -> CameraMotion {
+        let events: Vec<_> = self
+            .boundaries
+            .iter()
+            .copied()
+            .filter(|event| *event > from && *event < to)
+            .chain(std::iter::once(to))
+            .collect();
+        for end in events {
+            let sample_t = (from + end) / 2.0;
+            let active = self.active_at(sample_t);
+            let target_index = self.target_index_at(sample_t);
+            let target = target_index
+                .map(|index| self.target_rect(index, sample_t))
+                .unwrap_or_else(|| self.full_rect());
+            if self.snap_window(sample_t) {
+                motion = CameraMotion::parked(target);
+            } else if let Some(index) = active.filter(|&index| {
+                let zoom = &self.zooms[index];
+                !zoom.holds_for_next
+                    && zoom.clip.ease_ms > 0
+                    && sample_t >= Self::exit_start(&zoom.clip)
+            }) {
+                let exit_start = Self::exit_start(&self.zooms[index].clip);
+                let duration = self.zooms[index].clip.end - exit_start;
+                let spring = self.settings.spring();
+                let full = self.full_rect();
+                let (origin, terminal) = *self.zooms[index]
+                    .exit
+                    .get_or_insert_with(|| (motion, motion.advance(full, spring, duration)));
+                let elapsed = (end - exit_start).clamp(0.0, duration);
+                motion = origin.advance(full, spring, elapsed);
+                let u = (elapsed / duration).clamp(0.0, 1.0);
+                let position_weight = u * u * (3.0 - 2.0 * u);
+                let velocity_weight = u * u * (u - 1.0);
+                let position_rate = 6.0 * u * (1.0 - u) / duration;
+                let velocity_rate = 3.0 * u * u - 2.0 * u;
+                for (axis, target) in full.iter().enumerate() {
+                    let residual = terminal.rect[axis] - target;
+                    motion.rect[axis] -= position_weight * residual
+                        + velocity_weight * duration * terminal.velocity[axis];
+                    motion.velocity[axis] -=
+                        position_rate * residual + velocity_rate * terminal.velocity[axis];
+                }
+                if end >= self.zooms[index].clip.end {
+                    motion = CameraMotion::parked(full);
+                }
+            } else {
+                if let Some(index) = active.filter(|&index| self.zooms[index].clip.ease_ms == 0) {
+                    let clip = &self.zooms[index].clip;
+                    if from <= clip.start
+                        && !self.settings.start_early
+                        && !self.zooms.iter().any(|zoom| {
+                            zoom.holds_for_next
+                                && zoom.clip.end <= clip.start
+                                && clip.start - zoom.clip.end <= ZOOM_MORPH_GAP_SECONDS
+                        })
+                    {
+                        motion = CameraMotion::parked(self.focus_rect(clip.scale, clip.center));
+                    }
+                }
+                motion = motion.advance(target, self.settings.spring(), end - from);
+            }
+            from = end;
+        }
+        motion
+    }
+
+    fn evaluate(&mut self, timeline_t: f64) -> (f64, (f64, f64)) {
+        let t = timeline_t.max(0.0);
+        if self.snap_window(t) {
+            let target = self
+                .target_index_at(t)
+                .map(|index| self.target_rect(index, t))
+                .unwrap_or_else(|| self.full_rect());
+            return self.frame_for_rect(target);
+        }
+        if self.zooms.iter().all(|zoom| t > zoom.clip.end) {
+            return self.frame_for_rect(self.full_rect());
+        }
+        let frame = (t / ZOOM_CAMERA_STEP).floor() as usize;
+        while self.frames.len() <= frame {
+            let from = (self.frames.len() - 1) as f64 * ZOOM_CAMERA_STEP;
+            let motion = self.advance(*self.frames.last().unwrap(), from, from + ZOOM_CAMERA_STEP);
+            self.frames.push(motion);
+        }
+        let from = frame as f64 * ZOOM_CAMERA_STEP;
+        let motion = self.advance(self.frames[frame], from, t);
+        self.frame_for_rect(motion.rect)
+    }
+
+    fn frame_for_rect(&self, rect: [f64; 4]) -> (f64, (f64, f64)) {
+        let width = rect[2].clamp(self.crop[2], self.crop[2] * MAX_ZOOM_SCALE);
+        let height = width * self.crop[3] / self.crop[2];
+        let x = rect[0].clamp(self.crop[2] - width, 0.0);
+        let y = rect[1].clamp(self.crop[3] - height, 0.0);
+        let scale = width / self.crop[2];
+        (
+            scale,
+            (
+                self.crop[0] + (self.crop[2] / 2.0 - x) / scale,
+                self.crop[1] + (self.crop[3] / 2.0 - y) / scale,
+            ),
+        )
+    }
+}
+
+/// Every stretch of footage a zoom covers, in composition time. A zoom that
+/// spans a cut yields one window per kept segment it touches.
+fn clip_windows(segments: &[CameraSegment], clip: &ZoomClip) -> Vec<CameraWindow> {
+    segments
+        .iter()
+        .filter_map(|segment| {
+            let start = clip.start.max(segment.composition_start);
+            let end = clip.end.min(segment.composition_end);
+            if end <= start {
+                return None;
+            }
+            let source_start = (segment.source_start
+                + (start - segment.composition_start) * segment.speed)
+                .min(segment.source_end);
+            let source_end = (segment.source_start
+                + (end - segment.composition_start) * segment.speed)
+                .min(segment.source_end);
+            Some(CameraWindow {
+                start,
+                source_start,
+                source_end,
+                speed: segment.speed,
+            })
+        })
+        .collect()
+}
+
+/// The pointer sample the camera uses when a zoom's windows hold none of their
+/// own: the first sample at or after the window start within 500 ms, otherwise
+/// the nearest sample.
+fn nearest_follow_sample(path: &[ZoomPathEvent], start: f64) -> Option<(f64, f64, f64)> {
+    const LOOKAHEAD_SECONDS: f64 = 0.5;
+    path.iter()
+        .filter(|event| event.t >= start && event.t - start <= LOOKAHEAD_SECONDS)
+        .min_by(|left, right| left.t.total_cmp(&right.t))
+        .or_else(|| {
+            path.iter()
+                .min_by(|left, right| (left.t - start).abs().total_cmp(&(right.t - start).abs()))
+        })
+        .map(|event| (event.t, event.x, event.y))
+}
+
+/// The pointer samples one zoom's follow camera reads, as
+/// `(composition_time, x, y)`, taken from the already filtered path.
+///
+/// The last filtered sample at or before each footage window is carried in at
+/// the window's first instant, so the first movement group starts where the
+/// pointer already was — including across a cut, where the next window starts
+/// with a different stretch of footage. When a zoom has no sample before or
+/// inside any of its windows, the nearest-sample fallback keeps the camera
+/// following instead of freezing on the clip's stored centre.
+fn follow_points(path: &[ZoomPathEvent], windows: &[CameraWindow]) -> Vec<(f64, f64, f64)> {
+    let mut points: Vec<(f64, f64, f64)> = Vec::new();
+    let first_window = windows
+        .iter()
+        .min_by(|left, right| left.start.total_cmp(&right.start));
+    for window in windows {
+        let carried = path.partition_point(|event| event.t <= window.source_start);
+        if let Some(before) = carried.checked_sub(1).and_then(|index| path.get(index)) {
+            points.push((window.start - 0.001, before.x, before.y));
+        }
+        let index = path.partition_point(|event| event.t < window.source_start);
+        points.extend(
+            path[index..]
+                .iter()
+                .take_while(|event| event.t <= window.source_end)
+                .map(|event| {
+                    (
+                        window.start + (event.t - window.source_start) / window.speed,
+                        event.x,
+                        event.y,
+                    )
+                }),
+        );
+    }
+    if points.is_empty() {
+        if let Some(window) = first_window {
+            if let Some((time, x, y)) = nearest_follow_sample(path, window.source_start) {
+                points.push((
+                    window.start + (time - window.source_start) / window.speed,
+                    x,
+                    y,
+                ));
+            }
+        }
+    }
+    points.sort_by(|left, right| left.0.total_cmp(&right.0));
+    points
+}
+
+impl VideoEditState {
+    fn zoom_camera_signature(&self) -> u64 {
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        self.metadata.width.hash(&mut hash);
+        self.metadata.height.hash(&mut hash);
+        let crop = self.crop_or_full();
+        for value in [
+            crop.0,
+            crop.1,
+            crop.2,
+            crop.3,
+            self.trim_start_seconds,
+            self.trim_end_seconds,
+            self.timeline_offset_seconds,
+            self.freeze_tail,
+            self.zoom_camera.speed,
+            self.zoom_camera.smoothness,
+        ] {
+            value.to_bits().hash(&mut hash);
+        }
+        self.zoom_camera.start_early.hash(&mut hash);
+        self.frozen_segment.hash(&mut hash);
+        // The grouping budget reads the output's aspect and the project's
+        // shake threshold, and the camera path reads clicks and presses.
+        let (out_w, out_h) = self.output_dimensions();
+        (out_w, out_h).hash(&mut hash);
+        self.cursor.remove_shake_threshold.to_bits().hash(&mut hash);
+        self.zoom_clips.len().hash(&mut hash);
+        for clip in &self.zoom_clips {
+            for value in [
+                clip.start,
+                clip.end,
+                clip.scale,
+                clip.center.0,
+                clip.center.1,
+            ] {
+                value.to_bits().hash(&mut hash);
+            }
+            clip.ease_ms.hash(&mut hash);
+            (clip.mode == ZoomMode::Auto).hash(&mut hash);
+            clip.hidden.hash(&mut hash);
+            clip.instant.hash(&mut hash);
+        }
+        for values in [&self.cuts, &self.segment_starts, &self.segment_speeds] {
+            values.len().hash(&mut hash);
+            for value in values {
+                value.to_bits().hash(&mut hash);
+            }
+        }
+        self.segments_kept.hash(&mut hash);
+        self.segment_order.hash(&mut hash);
+        if let Some(sidecar) = &self.sidecar {
+            sidecar.pointer.len().hash(&mut hash);
+            sidecar.clicks.len().hash(&mut hash);
+            sidecar.presses.len().hash(&mut hash);
+            sidecar.device_pixel_ratio().to_bits().hash(&mut hash);
+            for value in [
+                sidecar.region.x as f64,
+                sidecar.region.y as f64,
+                sidecar.region.w as f64,
+                sidecar.region.h as f64,
+            ] {
+                value.to_bits().hash(&mut hash);
+            }
+            for sample in &sidecar.pointer {
+                for value in [sample.t, sample.x, sample.y] {
+                    value.to_bits().hash(&mut hash);
+                }
+            }
+            for click in &sidecar.clicks {
+                for value in [click.t, click.x, click.y] {
+                    value.to_bits().hash(&mut hash);
+                }
+            }
+            for press in &sidecar.presses {
+                for value in [press.down, press.up] {
+                    value.to_bits().hash(&mut hash);
+                }
+                press.button.hash(&mut hash);
+                press.dragged.hash(&mut hash);
+            }
+        }
+        hash.finish()
+    }
+
+    pub(super) fn eval_spring_zoom_at(&self, timeline_t: f64, _source_t: f64) -> (f64, (f64, f64)) {
+        let crop = self.crop_or_full();
+        if !timeline_t.is_finite()
+            || self.zoom_hidden
+            || self.zoom_clips.iter().all(|clip| clip.hidden)
+        {
+            return (1.0, (crop.0 + crop.2 / 2.0, crop.1 + crop.3 / 2.0));
+        }
+        let signature = self.zoom_camera_signature();
+        let mut cache = self
+            .zoom_camera_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if cache.signature != Some(signature) {
+            let path = cache.path.get_or_build(
+                self.sidecar.as_ref(),
+                self.metadata.width as f64,
+                self.metadata.height as f64,
+                self.cursor.remove_shake_threshold,
+            );
+            cache.plan = Some(ZoomCameraPlan::new(self, &path));
+            cache.signature = Some(signature);
+        }
+        cache.plan.as_mut().unwrap().evaluate(timeline_t)
+    }
+
+    /// Push the timeline's cut list into the pointer sidecar, so the cursor
+    /// plan stops at a cut in the preview and the export alike.
+    pub(crate) fn sync_sidecar_cuts(&mut self) {
+        if let Some(sidecar) = self.sidecar.as_mut() {
+            sidecar.set_cut_times(&self.cuts);
+        }
+    }
+
+    pub fn zoom_blur_sample_count(&self) -> usize {
+        if !self.zoom_hidden
+            && self.zoom_camera.clamped().motion_blur > 0.0
+            && self.zoom_clips.iter().any(|clip| !clip.hidden)
+        {
+            ZOOM_BLUR_SAMPLES
+        } else {
+            1
+        }
+    }
+
+    /// Shutter span the motion blur integrates over, in composition seconds.
+    ///
+    /// It is a half-frame shutter at the export frame rate, scaled by the
+    /// strength setting. The exporter's `sendcmd` schedule and the preview both
+    /// look back across this same span, so neither can expose more or less
+    /// motion than the other for the same frame.
+    pub fn zoom_blur_shutter_seconds(&self) -> f64 {
+        0.5 / self.metadata.export_frame_rate() * self.zoom_camera.clamped().motion_blur
+    }
+
+    /// Composition time of one motion-blur sample, newest first: index 0 is the
+    /// frame itself and the last index sits one shutter back. This is the only
+    /// place the sub-frame times are computed; the preview and the exporter both
+    /// take their samples through [`Self::eval_zoom_blur_sample_at`].
+    pub fn zoom_blur_sample_time(&self, timeline_t: f64, sample_index: usize) -> f64 {
+        let samples = self.zoom_blur_sample_count();
+        if samples <= 1 {
+            return timeline_t.max(0.0);
+        }
+        (timeline_t
+            - self.zoom_blur_shutter_seconds() * sample_index.min(samples - 1) as f64
+                / (samples - 1) as f64)
+            .max(0.0)
+    }
+
+    pub fn eval_zoom_blur_sample_at(
+        &self,
+        timeline_t: f64,
+        source_t: f64,
+        sample_index: usize,
+    ) -> (f64, (f64, f64)) {
+        let samples = self.zoom_blur_sample_count();
+        if samples == 1 || sample_index == 0 {
+            return self.eval_zoom_at(timeline_t, source_t);
+        }
+        let mut sample_t = self.zoom_blur_sample_time(timeline_t, sample_index);
+        for clip in self
+            .zoom_clips
+            .iter()
+            .filter(|clip| !clip.hidden && clip.instant)
+        {
+            if timeline_t >= clip.start && timeline_t <= clip.end + 0.05 {
+                return self.eval_zoom_at(timeline_t, source_t);
+            }
+            if sample_t < clip.end + 0.05 && timeline_t > clip.end + 0.05 {
+                sample_t = clip.end + 0.05;
+            }
+        }
+        self.eval_zoom_at(sample_t, self.timeline_to_source(sample_t))
+    }
+
+    /// Every camera sample the motion-blur exposure composites for one frame,
+    /// newest first. Sample 0 is the current view.
+    pub fn zoom_blur_samples_at(
+        &self,
+        timeline_t: f64,
+        source_t: f64,
+    ) -> Vec<(f64, (f64, f64))> {
+        (0..self.zoom_blur_sample_count())
+            .map(|index| self.eval_zoom_blur_sample_at(timeline_t, source_t, index))
+            .collect()
+    }
+
+    /// True when the camera holds still across the shutter: every sample's
+    /// viewport centre stays within [`ZOOM_BLUR_STATIC_PX`] of the current
+    /// frame's and its scale within [`ZOOM_BLUR_STATIC_SCALE`]. Such a frame
+    /// has no exposure to average.
+    pub fn zoom_blur_is_static(samples: &[(f64, (f64, f64))]) -> bool {
+        let Some(&(scale, center)) = samples.first() else {
+            return true;
+        };
+        samples.iter().all(|&(sample_scale, sample_center)| {
+            (sample_scale - scale).abs() <= ZOOM_BLUR_STATIC_SCALE
+                && (sample_center.0 - center.0).abs() <= ZOOM_BLUR_STATIC_PX
+                && (sample_center.1 - center.1).abs() <= ZOOM_BLUR_STATIC_PX
+        })
+    }
+
+    /// The camera samples both renderers actually composite. A static camera
+    /// collapses to its current view, so a still frame costs one sample and
+    /// stays sharp; this is the one place that decision is made.
+    pub fn zoom_blur_composited_samples_at(
+        &self,
+        timeline_t: f64,
+        source_t: f64,
+    ) -> Vec<(f64, (f64, f64))> {
+        let mut samples = self.zoom_blur_samples_at(timeline_t, source_t);
+        if samples.len() > 1 && Self::zoom_blur_is_static(&samples) {
+            samples.truncate(1);
+        }
+        samples
+    }
+}
+
+#[cfg(test)]
+mod zoom_camera_tests {
+    use super::*;
+    use crate::recording::editor::sidecar::{CaptureRegion, CursorKind, PointerSample};
+
+    fn state() -> VideoEditState {
+        VideoEditState::new(VideoMetadata {
+            path: PathBuf::from("/nonexistent/zoom-camera-fixture.mp4"),
+            duration_seconds: 10.0,
+            width: 1920,
+            height: 1080,
+            file_size_bytes: 0,
+            has_audio: false,
+            frame_rate: 30.0,
+        })
+    }
+
+    fn parked_pointer(state: &mut VideoEditState, x: f64, y: f64) {
+        let mut sidecar = PointerSidecar::new(
+            0,
+            CaptureRegion {
+                x: 0,
+                y: 0,
+                w: 1920,
+                h: 1080,
+            },
+        );
+        sidecar.pointer.push(PointerSample {
+            t: 0.0,
+            x,
+            y,
+            kind: CursorKind::Default,
+            cursor_id: None,
+        });
+        state.sidecar = Some(sidecar);
+    }
+
+    fn zoom(start: f64, end: f64) -> ZoomClip {
+        ZoomClip {
+            start,
+            end,
+            scale: 2.0,
+            center: (960.0, 540.0),
+            mode: ZoomMode::Auto,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn adjoining_zoom_keeps_the_evaluated_viewport_instead_of_restarting() {
+        let mut state = state();
+        parked_pointer(&mut state, 1300.0, 540.0);
+        state.zoom_clips = vec![zoom(0.5, 2.0), zoom(2.3, 4.0)];
+        let before = state.eval_zoom_at(2.299, 2.299);
+        let boundary = state.eval_zoom_at(2.3, 2.3);
+        let after = state.eval_zoom_at(2.301, 2.301);
+        assert!(
+            (boundary.1 .0 - before.1 .0).abs() < 1.0,
+            "{before:?} -> {boundary:?}"
+        );
+        assert!(
+            (after.1 .0 - boundary.1 .0).abs() < 1.0,
+            "{boundary:?} -> {after:?}"
+        );
+        assert!(
+            boundary.1 .0 > 1290.0,
+            "the followed endpoint must not reset to 960: {boundary:?}"
+        );
+        assert!((before.0 - boundary.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn zoom_size_and_position_share_the_same_spring_response() {
+        let mut state = state();
+        let mut clip = zoom(0.5, 3.0);
+        clip.mode = ZoomMode::Manual;
+        clip.center = (1300.0, 600.0);
+        state.zoom_clips.push(clip);
+        let (scale, center) = state.eval_zoom_at(0.65, 0.65);
+        let position_progress = (center.0 * scale - 960.0) / 1640.0;
+        let vertical_progress = (center.1 * scale - 540.0) / 660.0;
+        let size_progress = scale - 1.0;
+        assert!(size_progress > 0.0 && size_progress < 1.0);
+        assert!((position_progress - size_progress).abs() < 1e-9);
+        assert!((vertical_progress - size_progress).abs() < 1e-9);
+    }
+
+    #[test]
+    fn early_animation_precedes_the_block_but_never_precedes_an_instant_zoom() {
+        let mut state = state();
+        state.zoom_clips.push(zoom(1.0, 3.0));
+        assert_eq!(state.eval_zoom_at(0.9, 0.9).0, 1.0);
+        state.zoom_camera.start_early = true;
+        assert_eq!(state.eval_zoom_at(0.64, 0.64).0, 1.0);
+        assert!(state.eval_zoom_at(0.9, 0.9).0 > 1.1);
+        state.zoom_clips[0].instant = true;
+        assert_eq!(state.eval_zoom_at(0.9, 0.9).0, 1.0);
+        assert_eq!(state.eval_zoom_at(1.0, 1.0).0, 2.0);
+    }
+
+    #[test]
+    fn camera_pacing_uses_composition_time_when_the_video_speed_changes() {
+        let mut slow = state();
+        slow.zoom_clips.push(zoom(0.5, 2.0));
+        let mut fast = slow.clone();
+        fast.segment_speeds[0] = 2.0;
+        for t in [0.6, 0.8, 1.0] {
+            let normal = slow.eval_zoom_at(t, t);
+            let retimed = fast.eval_zoom_at(t, t * 2.0);
+            assert_eq!(normal, retimed);
+        }
+    }
+
+    #[test]
+    fn follow_targets_remap_when_a_zoom_crosses_reordered_footage() {
+        let mut state = state();
+        parked_pointer(&mut state, 400.0, 540.0);
+        state.sidecar.as_mut().unwrap().pointer.push(PointerSample {
+            t: 5.0,
+            x: 1500.0,
+            y: 540.0,
+            kind: CursorKind::Default,
+            cursor_id: None,
+        });
+        state.add_cut(5.0);
+        state.segment_order = vec![1, 0];
+        state.segment_starts = vec![5.0, 0.0];
+        state.zoom_clips.push(zoom(0.5, 9.0));
+        let first = state.eval_zoom_at(4.0, 9.0);
+        let second = state.eval_zoom_at(6.0, 1.0);
+        assert!(first.1 .0 > 1400.0, "later footage plays first: {first:?}");
+        assert!(
+            second.1 .0 < 700.0,
+            "the camera must follow earlier footage after the cut: {second:?}"
+        );
+        let before = state.eval_zoom_at(4.999, 9.999);
+        let after = state.eval_zoom_at(5.001, 0.001);
+        assert!(
+            (before.1 .0 - after.1 .0).abs() < 1.0,
+            "{before:?} -> {after:?}"
+        );
+    }
+
+    #[test]
+    fn cache_tracks_direct_clip_pointer_and_settings_edits() {
+        let mut state = state();
+        parked_pointer(&mut state, 1300.0, 540.0);
+        state.zoom_clips.push(zoom(0.5, 3.0));
+        let first = state.eval_zoom_at(1.0, 1.0);
+        state.sidecar.as_mut().unwrap().pointer[0].x = 600.0;
+        let moved = state.eval_zoom_at(1.0, 1.0);
+        assert!(moved.1 .0 < first.1 .0);
+        state.zoom_camera.speed = 0.25;
+        let slowed = state.eval_zoom_at(1.0, 1.0);
+        assert!(slowed.0 < moved.0);
+        state.zoom_clips[0].hidden = true;
+        assert_eq!(state.eval_zoom_at(1.0, 1.0).0, 1.0);
+    }
+
+    #[test]
+    fn random_subframe_seeks_match_a_fresh_trajectory() {
+        let mut state = state();
+        parked_pointer(&mut state, 1300.0, 600.0);
+        state.zoom_clips = vec![zoom(0.5, 2.0), zoom(2.3, 4.0)];
+        let times = [0.61, 1.51, 2.31, 3.91, 4.01];
+        let expected: Vec<_> = times.iter().map(|&t| state.eval_zoom_at(t, t)).collect();
+        for index in (0..times.len()).rev() {
+            let mut fresh = state.clone();
+            fresh.zoom_camera_cache = Default::default();
+            assert_eq!(
+                fresh.eval_zoom_at(times[index], times[index]),
+                expected[index]
+            );
+        }
+    }
+
+    #[test]
+    fn blur_exposure_is_bounded_and_never_smears_an_instant_cut() {
+        let mut state = state();
+        state.zoom_clips.push(zoom(0.5, 3.0));
+        assert_eq!(state.zoom_blur_sample_count(), 1);
+        state.zoom_camera.motion_blur = 1.0;
+        assert_eq!(state.zoom_blur_sample_count(), 8);
+        let current = state.eval_zoom_blur_sample_at(0.7, 0.7, 0);
+        let previous = state.eval_zoom_blur_sample_at(0.7, 0.7, 7);
+        assert!(previous.0 < current.0);
+        state.zoom_clips[0].instant = true;
+        for t in [0.5, 0.51, 3.0, 3.01] {
+            for index in 1..8 {
+                assert_eq!(
+                    state.eval_zoom_blur_sample_at(t, t, index),
+                    state.eval_zoom_blur_sample_at(t, t, 0)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn blur_sample_times_span_one_export_shutter_at_even_spacing() {
+        let mut state = state();
+        state.zoom_clips.push(zoom(0.5, 3.0));
+        state.zoom_camera.motion_blur = 1.0;
+        let timeline_t = 1.0;
+        let samples = state.zoom_blur_sample_count();
+        assert_eq!(samples, 8);
+        // The export's shutter is half a source frame; the preview reads the
+        // same span from the same function.
+        let shutter = state.zoom_blur_shutter_seconds();
+        assert!((shutter - 0.5 / state.metadata.export_frame_rate()).abs() < 1e-12);
+        assert!((shutter - 1.0 / 60.0).abs() < 1e-12);
+        let times: Vec<f64> = (0..samples)
+            .map(|index| state.zoom_blur_sample_time(timeline_t, index))
+            .collect();
+        assert!((times[0] - timeline_t).abs() < 1e-12);
+        assert!((times[samples - 1] - (timeline_t - shutter)).abs() < 1e-12);
+        for pair in times.windows(2) {
+            assert!((pair[0] - pair[1] - shutter / (samples - 1) as f64).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn still_camera_collapses_the_exposure_to_one_sample() {
+        let mut state = state();
+        state.zoom_camera.motion_blur = 1.0;
+        let mut instant = zoom(0.5, 3.0);
+        instant.instant = true;
+        state.zoom_clips.push(instant);
+        assert_eq!(state.zoom_blur_samples_at(1.0, 1.0).len(), 8);
+        assert_eq!(state.zoom_blur_composited_samples_at(1.0, 1.0).len(), 1);
+
+        let base = (2.0, (100.0, 100.0));
+        assert!(VideoEditState::zoom_blur_is_static(&[]));
+        assert!(VideoEditState::zoom_blur_is_static(&[base]));
+        assert!(VideoEditState::zoom_blur_is_static(&[
+            base,
+            (2.000_05, (100.2, 99.8)),
+        ]));
+        assert!(!VideoEditState::zoom_blur_is_static(&[
+            base,
+            (2.0, (100.26, 100.0)),
+        ]));
+        assert!(!VideoEditState::zoom_blur_is_static(&[
+            base,
+            (2.000_2, (100.0, 100.0)),
+        ]));
+    }
+
+    #[test]
+    fn moving_camera_keeps_every_sample() {
+        let mut state = state();
+        parked_pointer(&mut state, 1300.0, 540.0);
+        state.zoom_camera.motion_blur = 1.0;
+        state.zoom_clips.push(zoom(0.5, 3.0));
+        // Mid-ease the camera travels far more than a quarter pixel per shutter.
+        let samples = state.zoom_blur_composited_samples_at(0.6, 0.6);
+        assert_eq!(samples.len(), state.zoom_blur_sample_count());
+        assert!(!VideoEditState::zoom_blur_is_static(&samples));
+    }
+
+    #[test]
+    fn an_instant_zoom_owns_its_shared_start_boundary() {
+        let mut state = state();
+        let mut instant = zoom(2.0, 4.0);
+        instant.mode = ZoomMode::Manual;
+        instant.center = (1300.0, 540.0);
+        instant.scale = 3.0;
+        instant.instant = true;
+        state.zoom_clips = vec![zoom(0.5, 2.0), instant];
+        state.zoom_camera.start_early = true;
+        state.zoom_camera.motion_blur = 1.0;
+        assert_eq!(state.eval_zoom_at(2.0, 2.0), (3.0, (1300.0, 540.0)));
+        assert_eq!(
+            state.eval_zoom_blur_sample_at(2.0, 2.0, 7),
+            (3.0, (1300.0, 540.0))
+        );
+    }
+
+    #[test]
+    fn standalone_exit_reaches_the_full_crop_at_its_boundary() {
+        let mut state = state();
+        parked_pointer(&mut state, 1900.0, 900.0);
+        state.zoom_camera.speed = 0.25;
+        state.zoom_clips.push(zoom(0.5, 2.0));
+        let before = state.eval_zoom_at(1.999, 1.999);
+        let after = state.eval_zoom_at(2.001, 2.001);
+        assert!((before.0 - 1.0).abs() < 0.001);
+        assert_eq!(after, (1.0, (960.0, 540.0)));
+    }
+}

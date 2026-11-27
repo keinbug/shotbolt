@@ -1,0 +1,633 @@
+//! Serializable schema for annotation storage
+//!
+//! This module defines the JSON schema for persisting annotations.
+//! Annotations are stored in ~/.local/share/apexshot/annotations/
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+use crate::recording::editor::model::VideoGradient;
+
+/// Top-level annotation file structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnnotationFile {
+    /// Schema version for future migrations
+    pub version: String,
+    /// Original image path (for reference/recovery)
+    pub image_path: String,
+    /// SHA256 hash of the image when annotations were saved
+    pub image_hash: String,
+    /// Canvas size at time of save
+    pub canvas_size: CanvasSize,
+    /// Persisted background composition settings for non-destructive re-editing
+    #[serde(default)]
+    pub background: BackgroundSettings,
+    /// Still-image placement and perspective for this image.
+    #[serde(default)]
+    pub static_image_transform: crate::capture::editor::image_transform::StaticImageTransform,
+    /// All annotation objects
+    pub annotations: Vec<SerializableAnnotation>,
+    /// When annotations were first created
+    pub created_at: DateTime<Utc>,
+    /// When annotations were last modified
+    pub modified_at: DateTime<Utc>,
+}
+
+/// Canvas dimensions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CanvasSize {
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Persisted background composition settings
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BackgroundSettings {
+    #[serde(default)]
+    pub source_upscale: crate::capture::editor::upscale::SourceUpscale,
+    pub style: BackgroundStyle,
+    pub padding: f64,
+    /// Legacy single-strength drop shadow. New files still write a value
+    /// derived from `shadow_profile` so builds that predate the shared
+    /// controls keep showing a shadow; it is only read when the profile is
+    /// absent.
+    #[serde(default = "default_legacy_shadow")]
+    pub shadow: f64,
+    /// The card's drop shadow as the shared Appearance controls describe it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow_profile: Option<ShadowProfileSettings>,
+    /// The Cast light layer, stored in the same shape as the Motion sidecar so
+    /// both files describe one layer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cast_light: Option<crate::capture::editor::motion_project::MotionSceneShadowFile>,
+    pub insert: f64,
+    pub auto_balance: bool,
+    pub alignment: BackgroundAlignment,
+    pub corner_radius: f64,
+    pub aspect_ratio: CropAspectRatio,
+}
+
+fn default_legacy_shadow() -> f64 {
+    15.0
+}
+
+/// The card's drop shadow, in the units the shared Appearance panel uses.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ShadowProfileSettings {
+    pub opacity: f64,
+    pub blur: f64,
+    pub offset_x: f64,
+    pub offset_y: f64,
+}
+
+impl Default for ShadowProfileSettings {
+    fn default() -> Self {
+        // The shipped MotionAppearance shadow, so a file without a profile
+        // restores the shadow the panel itself starts from.
+        Self {
+            opacity: 0.0,
+            blur: 16.0,
+            offset_x: 0.0,
+            offset_y: 16.0,
+        }
+    }
+}
+
+impl BackgroundSettings {
+    /// The card shadow this file describes. A file written before the shared
+    /// controls has only the strength scalar, so its opacity is that scalar's
+    /// own 0-60 range mapped back to 0-1 and its blur and offset take the
+    /// shipped defaults. The scalar's shipped default of 15 means "never set":
+    /// the shared controls never rendered it, so restoring 0.5 from it would
+    /// add a shadow the file never showed.
+    pub fn effective_shadow_profile(&self) -> ShadowProfileSettings {
+        self.shadow_profile.unwrap_or_else(|| {
+            let untouched = (self.shadow - default_legacy_shadow()).abs() < f64::EPSILON;
+            ShadowProfileSettings {
+                opacity: if untouched {
+                    ShadowProfileSettings::default().opacity
+                } else {
+                    (self.shadow / 30.0).clamp(0.0, 1.0)
+                },
+                ..ShadowProfileSettings::default()
+            }
+        })
+    }
+}
+
+impl Default for BackgroundSettings {
+    fn default() -> Self {
+        Self {
+            source_upscale: Default::default(),
+            style: BackgroundStyle::None,
+            padding: 0.0,
+            shadow: 15.0,
+            shadow_profile: None,
+            cast_light: None,
+            insert: 0.0,
+            auto_balance: false,
+            alignment: BackgroundAlignment::Center,
+            corner_radius: 18.0,
+            aspect_ratio: CropAspectRatio::Original,
+        }
+    }
+}
+
+/// Serializable background style
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum BackgroundStyle {
+    None,
+    Gradient {
+        /// Preset index for files written before the fill became the shared
+        /// `VideoGradient` spec. New files carry `gradient` and write `0`.
+        index: usize,
+        /// The shared gradient spec. Absent in files written before it existed.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        gradient: Option<VideoGradient>,
+    },
+    Wallpaper {
+        path: String,
+    },
+    Blurred {
+        index: usize,
+    },
+    PlainColor {
+        color: Color,
+    },
+}
+
+/// Serializable background alignment
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackgroundAlignment {
+    TopLeft,
+    TopCenter,
+    TopRight,
+    CenterLeft,
+    Center,
+    CenterRight,
+    BottomLeft,
+    BottomCenter,
+    BottomRight,
+}
+
+/// Serializable crop aspect ratio
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CropAspectRatio {
+    Freeform,
+    Original,
+    Square,
+    FourThree,
+    SixteenNine,
+    TwentyOneNine,
+    ThreeTwo,
+    NineSixteen,
+    FiveFour,
+    FourFive,
+    ThreeFour,
+    TwoThree,
+    TenTwentyOne,
+    ThreeOne,
+}
+
+/// Serializable color (f64 -> u8 for JSON compactness)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Color {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: u8,
+}
+
+impl Color {
+    pub fn from_f64(r: f64, g: f64, b: f64, a: f64) -> Self {
+        Self {
+            r: (r.clamp(0.0, 1.0) * 255.0).round() as u8,
+            g: (g.clamp(0.0, 1.0) * 255.0).round() as u8,
+            b: (b.clamp(0.0, 1.0) * 255.0).round() as u8,
+            a: (a.clamp(0.0, 1.0) * 255.0).round() as u8,
+        }
+    }
+
+    pub fn to_f64(&self) -> (f64, f64, f64, f64) {
+        (
+            self.r as f64 / 255.0,
+            self.g as f64 / 255.0,
+            self.b as f64 / 255.0,
+            self.a as f64 / 255.0,
+        )
+    }
+}
+
+/// Serializable point
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Point {
+    pub x: f64,
+    pub y: f64,
+}
+
+impl Point {
+    pub fn from_editor(p: crate::capture::editor::types::Point) -> Self {
+        Self { x: p.x, y: p.y }
+    }
+
+    pub fn to_editor(&self) -> crate::capture::editor::types::Point {
+        crate::capture::editor::types::Point {
+            x: self.x,
+            y: self.y,
+        }
+    }
+}
+
+/// Serializable rect
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Rect {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+impl Rect {
+    pub fn from_editor(r: crate::capture::editor::types::Rect) -> Self {
+        Self {
+            x: r.x,
+            y: r.y,
+            width: r.width,
+            height: r.height,
+        }
+    }
+
+    pub fn to_editor(&self) -> crate::capture::editor::types::Rect {
+        crate::capture::editor::types::Rect {
+            x: self.x,
+            y: self.y,
+            width: self.width,
+            height: self.height,
+        }
+    }
+}
+
+/// Arrow style enum
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ArrowStyle {
+    Standard,
+    Fancy,
+    Curved,
+    Double,
+}
+
+/// Obfuscate method enum
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ObfuscateMethod {
+    Pixelate,
+    Blur,
+    Blackout,
+}
+
+/// Font style enum
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FontStyle {
+    Normal,
+    Bold,
+    Italic,
+    BoldItalic,
+}
+
+/// Text decoration enum
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TextDecoration {
+    None,
+    Underline,
+    Strikethrough,
+    Both,
+}
+
+/// Text alignment enum
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TextAlignment {
+    Left,
+    Center,
+    Right,
+}
+
+/// Font settings
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FontSettings {
+    pub family: String,
+    pub size: f64,
+    pub style: FontStyle,
+    pub decoration: TextDecoration,
+    pub alignment: TextAlignment,
+}
+
+/// Numbering style enum
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NumberingStyle {
+    Numeric,
+    Uppercase,
+    Lowercase,
+    Roman,
+}
+
+/// Number size enum
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NumberSize {
+    Small,
+    Medium,
+    Large,
+    ExtraLarge,
+}
+
+/// Serializable annotation - mirrors AnnotationAction but with serializable types
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum SerializableAnnotation {
+    Pen {
+        points: Vec<Point>,
+        color: Color,
+        stroke_size: f64,
+    },
+    Highlighter {
+        points: Vec<Point>,
+        color: Color,
+        stroke_size: f64,
+    },
+    Circle {
+        rect: Rect,
+        color: Color,
+        stroke_size: f64,
+        shadow: bool,
+    },
+    Line {
+        start: Point,
+        end: Point,
+        color: Color,
+        stroke_size: f64,
+        shadow: bool,
+    },
+    Arrow {
+        start: Point,
+        end: Point,
+        color: Color,
+        stroke_size: f64,
+        style: ArrowStyle,
+        control_points: Option<Vec<Point>>,
+        shadow: bool,
+        #[serde(default)]
+        reversed: bool,
+    },
+    Box {
+        rect: Rect,
+        color: Color,
+        stroke_size: f64,
+        shadow: bool,
+    },
+    Text {
+        position: Point,
+        text: String,
+        color: Color,
+        font: FontSettings,
+        max_width: Option<f64>,
+        shadow: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        background_color: Option<Color>,
+    },
+    Number {
+        position: Point,
+        number: u32,
+        color: Color,
+        style: NumberingStyle,
+        size: NumberSize,
+        shadow: bool,
+    },
+    Obfuscate {
+        rect: Rect,
+        method: ObfuscateMethod,
+        amount: f64,
+    },
+    Focus {
+        rect: Rect,
+        #[serde(default = "default_focus_intensity")]
+        intensity: f64,
+    },
+}
+
+fn default_focus_intensity() -> f64 {
+    58.0
+}
+
+impl AnnotationFile {
+    /// Create a new annotation file with current timestamp
+    pub fn new(image_path: &std::path::Path, image_hash: String, width: u32, height: u32) -> Self {
+        let now = Utc::now();
+        Self {
+            version: "1.1".to_string(),
+            image_path: image_path.to_string_lossy().to_string(),
+            image_hash,
+            canvas_size: CanvasSize { width, height },
+            background: BackgroundSettings::default(),
+            static_image_transform: Default::default(),
+            annotations: Vec::new(),
+            created_at: now,
+            modified_at: now,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn background_upscaling_round_trips_and_legacy_files_default_to_off() {
+        use crate::capture::editor::types::SourceUpscale;
+        let settings = super::BackgroundSettings {
+            source_upscale: SourceUpscale::Neural4x,
+            ..Default::default()
+        };
+        let mut value = serde_json::to_value(&settings).unwrap();
+        let restored: super::BackgroundSettings = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(restored, settings);
+        value.as_object_mut().unwrap().remove("source_upscale");
+        let legacy: super::BackgroundSettings = serde_json::from_value(value).unwrap();
+        assert_eq!(legacy.source_upscale, SourceUpscale::Off);
+    }
+
+    use super::*;
+
+    #[test]
+    fn color_roundtrip() {
+        let original = Color::from_f64(0.5, 0.25, 0.75, 1.0);
+        let (r, g, b, a) = original.to_f64();
+        assert!((r - 0.5).abs() < 0.01);
+        assert!((g - 0.25).abs() < 0.01);
+        assert!((b - 0.75).abs() < 0.01);
+        assert!((a - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn annotation_file_json_roundtrip() {
+        let file = AnnotationFile::new(
+            std::path::Path::new("/test/image.png"),
+            "sha256:abc123".to_string(),
+            1920,
+            1080,
+        );
+        let json = serde_json::to_string_pretty(&file).unwrap();
+        let parsed: AnnotationFile = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.version, "1.1");
+        assert_eq!(parsed.canvas_size.width, 1920);
+        assert_eq!(parsed.background, BackgroundSettings::default());
+        assert_eq!(
+            parsed.static_image_transform,
+            crate::capture::editor::image_transform::StaticImageTransform::default()
+        );
+    }
+
+    #[test]
+    fn older_annotation_files_default_to_identity_transforms() {
+        let json = r#"{
+            "version":"1.1",
+            "image_path":"/test/image.png",
+            "image_hash":"sha256:abc123",
+            "canvas_size":{"width":20,"height":10},
+            "annotations":[],
+            "created_at":"2026-01-01T00:00:00Z",
+            "modified_at":"2026-01-01T00:00:00Z"
+        }"#;
+        let parsed: AnnotationFile = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            parsed.static_image_transform,
+            crate::capture::editor::image_transform::StaticImageTransform::default()
+        );
+    }
+
+    #[test]
+    fn annotation_file_roundtrips_static_image_transform() {
+        let mut file = AnnotationFile::new(
+            std::path::Path::new("/test/image.png"),
+            "sha256:abc123".to_string(),
+            20,
+            10,
+        );
+        file.static_image_transform =
+            crate::capture::editor::image_transform::StaticImageTransform {
+                yaw: 12.0,
+                pitch: -8.0,
+                roll: 6.0,
+                perspective: 0.4,
+                pos_x: 0.2,
+                pos_y: -0.1,
+            };
+        let json = serde_json::to_string(&file).unwrap();
+        let parsed: AnnotationFile = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.static_image_transform, file.static_image_transform);
+    }
+
+    #[test]
+    fn annotation_file_preserves_background_settings() {
+        let mut file = AnnotationFile::new(
+            std::path::Path::new("/test/image.png"),
+            "sha256:def456".to_string(),
+            1280,
+            720,
+        );
+        file.background = BackgroundSettings {
+            style: BackgroundStyle::Gradient {
+                index: 4,
+                gradient: None,
+            },
+            padding: 42.0,
+            shadow: 28.0,
+            insert: 9.0,
+            auto_balance: true,
+            alignment: BackgroundAlignment::BottomRight,
+            corner_radius: 32.0,
+            aspect_ratio: CropAspectRatio::SixteenNine,
+            ..Default::default()
+        };
+
+        let json = serde_json::to_string_pretty(&file).unwrap();
+        let parsed: AnnotationFile = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.background, file.background);
+    }
+
+    /// The card shadow profile and the Cast light layer must survive the still's
+    /// own sidecar, so a reopened image does not depend on the Motion sidecar
+    /// for either.
+    #[test]
+    fn background_persists_the_shadow_profile_and_the_cast_light_layer() {
+        use crate::capture::editor::motion_project::MotionSceneShadowFile;
+        use crate::recording::editor::model::{MotionSceneShadow, MotionSceneShadowPreset};
+
+        let layer = MotionSceneShadow {
+            preset: MotionSceneShadowPreset::Hug,
+            opacity: 0.6,
+            light: (-0.4, 0.2),
+        };
+        let settings = BackgroundSettings {
+            shadow_profile: Some(ShadowProfileSettings {
+                opacity: 0.7,
+                blur: 22.0,
+                offset_x: 8.0,
+                offset_y: -4.0,
+            }),
+            cast_light: Some(MotionSceneShadowFile::from(&layer)),
+            ..Default::default()
+        };
+
+        let value = serde_json::to_value(&settings).unwrap();
+        let restored: BackgroundSettings = serde_json::from_value(value).unwrap();
+
+        assert_eq!(restored, settings);
+        assert_eq!(
+            restored.effective_shadow_profile(),
+            ShadowProfileSettings {
+                opacity: 0.7,
+                blur: 22.0,
+                offset_x: 8.0,
+                offset_y: -4.0,
+            }
+        );
+        let restored_layer = MotionSceneShadow::from(restored.cast_light.as_ref().unwrap());
+        assert_eq!(restored_layer, layer);
+    }
+
+    /// A sidecar written before the shared controls existed has only the
+    /// strength scalar: its opacity comes back from that scalar and the layer
+    /// is off, instead of the file failing to parse.
+    #[test]
+    fn a_legacy_background_derives_its_shadow_from_the_strength_scalar() {
+        let json = serde_json::json!({
+            "style": { "type": "none" },
+            "padding": 24.0,
+            "shadow": 30.0,
+            "insert": 0.0,
+            "auto_balance": false,
+            "alignment": "center",
+            "corner_radius": 18.0,
+            "aspect_ratio": "original"
+        });
+        let settings: BackgroundSettings = serde_json::from_value(json).unwrap();
+
+        assert!(settings.cast_light.is_none());
+        let profile = settings.effective_shadow_profile();
+        assert!((profile.opacity - 1.0).abs() < f64::EPSILON);
+        assert_eq!(profile.blur, ShadowProfileSettings::default().blur);
+        assert_eq!(profile.offset_y, ShadowProfileSettings::default().offset_y);
+
+        // The scalar's shipped default means "never set": it must not
+        // resurrect a shadow the file never showed.
+        let untouched = BackgroundSettings::default();
+        assert!((untouched.effective_shadow_profile().opacity).abs() < f64::EPSILON);
+    }
+}

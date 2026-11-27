@@ -1,0 +1,675 @@
+# Developer Guide
+
+This guide provides information for developers who want to contribute to ApexShot.
+
+## Prerequisites
+
+### System Requirements
+- Linux (Ubuntu or Arch GNOME Wayland recommended for the known-good path)
+  - X11 backend implementations exist in the codebase but have not been thoroughly tested
+- Rust toolchain (latest stable)
+- CMake 3.16 or later (required by `capture-overlay/CMakeLists.txt`)
+- Qt5 development libraries
+- GStreamer development libraries
+- GTK4 development libraries
+- Tesseract OCR
+
+### Install Dependencies
+
+**Ubuntu/Debian:**
+```bash
+sudo apt update
+sudo apt install -y \
+    build-essential \
+    cmake \
+    pkg-config \
+    libx11-dev \
+    libxext6 \
+    libxtst-dev \
+    qtbase5-dev \
+    libqt5widgets5 \
+    libqt5x11extras5-dev \
+    libgstreamer1.0-dev \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-ugly \
+    gstreamer1.0-libav \
+    libpipewire-0.3-dev \
+    tesseract-ocr \
+    libtesseract-dev \
+    libleptonica-dev \
+    libgtk-4-dev \
+    libadwaita-1-dev \
+    libgtk4-layer-shell-dev \
+    libxcb-shape0-dev \
+    libxcb-xfixes0-dev
+```
+
+**Fedora:**
+```bash
+sudo dnf install -y \
+    gcc-c++ \
+    cmake \
+    pkg-config \
+    libX11-devel \
+    libXext-devel \
+    libXtst-devel \
+    qt5-qtbase-devel \
+    qt5-qtx11extras-devel \
+    gstreamer1-devel \
+    gstreamer1-plugins-base-devel \
+    gstreamer1-plugins-base-tools \
+    gstreamer1-plugins-good \
+    gstreamer1-plugins-bad-free \
+    gstreamer1-plugins-bad-nonfree \
+    gstreamer1-plugins-ugly \
+    gstreamer1-libav \
+    pipewire-devel \
+    tesseract \
+    tesseract-devel \
+    leptonica-devel \
+    gtk4-devel \
+    libadwaita-devel \
+    gtk4-layer-shell-devel \
+    libxcb-devel
+```
+
+> **Note:** Fedora package names for GTK4 layer shell may vary by release. If a package is unavailable, consult your distribution's repositories or build the missing dependency from source.
+
+**Arch Linux:**
+```bash
+sudo pacman -S --needed \
+    base-devel \
+    rust \
+    cargo \
+    git \
+    cmake \
+    clang \
+    pkgconf \
+    gtk4 \
+    libadwaita \
+    gtk4-layer-shell \
+    gstreamer \
+    gst-plugins-base \
+    gst-plugins-good \
+    gst-plugins-bad \
+    gst-libav \
+    gst-plugin-pipewire \
+    pipewire \
+    pipewire-pulse \
+    libpipewire \
+    tesseract \
+    tesseract-data-eng \
+    qt5-base \
+    qt5-x11extras \
+    libxtst \
+    wl-clipboard \
+    xclip \
+    libnotify \
+    xdg-utils \
+    ffmpeg \
+    grim \
+    xdg-desktop-portal \
+    xdg-desktop-portal-gnome
+```
+
+## Building
+
+### Clone Repository
+```bash
+git clone https://github.com/apex-shot/apexshot.git
+cd apexshot
+```
+
+### Build the Entire Project
+The C++ Qt5 capture overlay is compiled automatically by `build.rs` during the Cargo build. No manual CMake step is required for normal development.
+
+```bash
+cargo build --release
+```
+
+> **Note:** `build.rs` will invoke `cmake` and `make` for the C++ overlay automatically. Ensure `cmake` is installed and available in your `PATH`.
+
+### Build Debian Package
+```bash
+cargo deb
+```
+
+The package will be created in `target/debian/`.
+
+### Manual C++ Overlay Build (if needed)
+If you need to build the C++ overlay independently (e.g., for debugging):
+```bash
+cd capture-overlay
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build . -- -j$(nproc)
+cd ../..
+```
+
+## Running
+
+### Run in Daemon Mode
+```bash
+cargo run --release -- daemon
+```
+
+### Run GUI Mode (Settings)
+```bash
+cargo run --release
+```
+
+### Run CLI Commands
+```bash
+# Screenshot capture modes
+cargo run --release -- capture screen
+cargo run --release -- capture area
+# Legacy direct window capture is disabled; use Quick Capture > Shot > Window instead.
+cargo run --release -- capture window
+cargo run --release -- capture crosshair
+
+# Recording modes
+cargo run --release -- record screen
+cargo run --release -- record screen
+cargo run --release -- record screen
+
+# OCR
+cargo run --release -- ocr /path/to/image.png
+
+# Annotation editor
+cargo run --release -- edit /path/to/image.png
+
+# Video editor
+cargo run --release -- video-editor
+cargo run --release -- video-editor /path/to/recording.mp4
+
+# Hotkey management
+cargo run --release -- hotkeys install
+cargo run --release -- hotkeys uninstall
+cargo run --release -- hotkeys reset
+
+# Cloud auth
+cargo run --release -- login
+cargo run --release -- logout
+```
+
+### Environment Variables for Development
+- `RUST_LOG=debug` — Enable debug logging
+- `GST_DEBUG=3` — Enable GStreamer debug output
+- `APEXSHOT_HOTKEY_DEBUG=1` — Enable hotkey debug logging in daemon
+- `APEXSHOT_HOTKEY_LOG=/path/to/log` — Redirect daemon logs to file
+- `APEXSHOT_REDUCED_TRANSPARENCY=1` — Disable transparent effects in overlays
+- `APEXSHOT_APP_ID=your.app.id` — Override default portal app ID
+- `APEXSHOT_CLOUD_BACKEND_URL` — Override ApexShot Cloud API base URL (see `.env.example`)
+- `APEXSHOT_XBACKBONE_URL` / `APEXSHOT_XBACKBONE_TOKEN` — Override XBackBone destination
+- `APEXSHOT_TELEMETRY=0` — Disable install-script download telemetry and app usage heartbeats
+- `APEXSHOT_USAGE_TELEMETRY_URL` — Override usage heartbeat endpoint (default `https://apexshot.org/api/usage-telemetry`)
+
+## Development Workflow
+
+### Code Style
+- Use `cargo fmt` for formatting
+- Use `cargo clippy` for linting (try to resolve all warnings)
+- Follow Rust best practices and idioms
+- Add doc comments (`///`) to all public functions and types
+- Keep functions focused and small
+
+### Running Tests
+```bash
+# Run all tests
+cargo test
+
+# Run specific test
+cargo test test_name
+
+# Run tests with output
+cargo test -- --nocapture
+
+# Run a specific module's inline tests
+cargo test --package apexshot --lib recording
+cargo test --package apexshot --lib backend
+cargo test --package apexshot --lib config
+
+# Run integration tests only
+cargo test --test wayland_backend_test
+cargo test --test x11_backend_test
+```
+
+## Project Structure
+
+```
+apexshot/
+├── src/                           # Rust source code
+│   ├── annotations/               # Annotation persistence
+│   ├── app_identity.rs            # App ID / desktop identity helpers
+│   ├── backend/                   # Display backend abstraction
+│   │   ├── mod.rs                 # DisplayBackend trait, CaptureData, PixelFormat
+│   │   ├── x11.rs                 # X11 backend (x11rb + MIT-SHM)
+│   │   ├── wayland.rs             # Wayland backend (tiered capture strategy)
+│   │   ├── kde_screenshot.rs      # KWin ScreenShot2 for KDE Plasma Wayland
+│   │   ├── screencopy.rs          # wlr-screencopy protocol
+│   │   └── portal_permissions.rs  # XDG portal permission persistence
+│   ├── capture/                   # Screen capture + annotation editor
+│   ├── capture_overlay.rs         # C++ Qt5 overlay launcher wrapper
+│   ├── cloud/                     # ApexShot Cloud + XBackBone uploads
+│   │   ├── apexshot.rs
+│   │   ├── auth.rs
+│   │   ├── destination.rs
+│   │   ├── upload.rs
+│   │   └── xbackbone.rs
+│   ├── compositor/                # Hyprland/Sway/Niri/River/COSMIC helpers
+│   ├── config.rs                  # YAML configuration, AppConfig
+│   ├── daemon/                    # Background daemon
+│   ├── distro/                    # Distro detection / packaging helpers
+│   ├── gnome_integration/         # GNOME extension installation helpers
+│   ├── gnome_shell.rs             # D-Bus proxy for GNOME Shell extension
+│   ├── hotkeys/                   # Global hotkey management
+│   ├── icons/                     # Icon resources
+│   ├── lib.rs                     # Library exports for tests/downstream
+│   ├── main.rs                    # CLI entry point, argument parsing
+│   ├── ocr/                       # OCR functionality (Tesseract + QR)
+│   ├── onboarding/                # First-time setup wizard
+│   │   ├── welcome.rs
+│   │   ├── extensions.rs
+│   │   ├── cloud.rs               # Cloud upload intro (configure in Settings)
+│   │   └── complete.rs
+│   ├── overlay.rs / overlay/      # GTK4 area/recording selection overlay
+│   ├── pipewire_engine.rs         # Native PipeWire capture engine
+│   ├── preview_launch.rs          # Preview launch helpers
+│   ├── qr/                        # QR code detection (rqrr)
+│   ├── recording/                 # PipeWire + ffmpeg recording + video editor
+│   ├── settings/                  # GTK4 settings window (includes cloud destination UI)
+│   ├── tray/                      # System tray (ksni)
+│   └── utils/                     # clipboard, desktop_env, notify
+├── capture-overlay/               # C++ Qt5 overlay (CMake ≥ 3.16)
+├── gnome-extension/               # GNOME Shell extension (JS/GJS, shell 46 and 48–50)
+│   ├── extension.js
+│   ├── shell-overlay.js
+│   ├── window-list.js
+│   ├── preview-stacking.js
+│   └── metadata.json
+├── web-scroll-extension/          # Chrome/Chromium full-page capture
+├── native-host/                   # Native messaging host manifest
+├── packaging/                     # Package assets
+ │   ├── io.github.codegoddy.apexshot.desktop / apexshot-daemon.desktop / apexshot.svg
+ │   │                                / apexshot-recording.svg (recording tray badge)
+│   ├── deb/ + debian/             # Debian packaging
+│   ├── arch/                      # PKGBUILD + AUR install script
+│   ├── fedora/                    # RPM spec
+│   └── opensuse/                  # RPM spec
+├── scripts/                       # installers, updaters, RPM helpers
+├── tests/                         # Integration tests (incl. xbackbone_*)
+├── docs/                          # Architecture, modules, developer guide, plans
+├── Cargo.toml
+├── build.rs                       # CMake C++ overlay + relm4-icons
+├── README.md
+├── CONTRIBUTING.md
+└── LICENSE
+```
+
+## Adding Features
+
+### 1. Add Configuration Option
+
+**Step 1:** Add field to `AppConfig` in `src/config.rs`:
+```rust
+pub struct AppConfig {
+    // ... existing fields
+    pub your_new_option: String,
+}
+```
+
+**Step 2:** Add default value:
+```rust
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            // ... existing defaults
+            your_new_option: "default_value".to_string(),
+        }
+    }
+}
+```
+
+**Step 3:** Add sanitization (if needed):
+```rust
+impl AppConfig {
+    pub fn sanitized(mut self) -> Self {
+        // ... existing sanitization
+        self.your_new_option = sanitize_your_option(self.your_new_option);
+        self
+    }
+}
+```
+
+**Step 4:** Add UI in the appropriate settings file (e.g., `src/settings/general.rs`).
+
+**Step 5:** Add the widget to `SaveInputs` in `src/settings/actions.rs`.
+
+**Step 6:** Add save logic in `src/settings/actions.rs`.
+
+### 2. Add New Recording Feature
+
+**Step 1:** Add config fields in `src/config.rs`.
+
+**Step 2:** Add UI in `src/settings/recording.rs`.
+
+**Step 3:** Update recording logic in `src/recording/mod.rs` (native PipeWire + ffmpeg).
+
+**Step 4:** If the feature needs runtime UI, add it to `src/recording/stop_overlay.rs` or `src/recording/countdown_overlay.rs`.
+
+**Step 5:** Add tests in the relevant recording submodule.
+
+### 3. Add New Annotation Tool
+
+**Step 1:** Add tool variant to `Tool` enum in `src/capture/editor/types.rs`.
+
+**Step 2:** Add rendering logic in `src/capture/editor/render.rs`.
+
+**Step 3:** Add hit-testing/selection logic in `src/capture/editor/selection.rs`.
+
+**Step 4:** Add toolbar UI in `src/capture/editor/window/` and `src/capture/editor/ui_support.rs`.
+
+**Step 5:** Add serialization support in `src/annotations/schema.rs`.
+
+**Step 6:** Add keyboard shortcuts in `src/capture/editor.rs`.
+
+## Debugging
+
+### Rust Debug Logging
+```bash
+RUST_LOG=debug cargo run --release -- daemon
+```
+
+### GStreamer Pipeline Debug
+```bash
+GST_DEBUG=3 cargo run --release -- record screen
+```
+
+### D-Bus Communication
+```bash
+# Monitor all session bus messages
+dbus-monitor --session
+
+# Monitor ApexShot-specific traffic
+busctl monitor --session org.apexshot.Daemon
+```
+
+### GNOME Extension Debug
+```bash
+# Watch GNOME Shell logs in real-time
+journalctl /usr/bin/gnome-shell -f | grep apexshot
+
+# Reload the extension after making changes
+gnome-extensions disable apexshot-gnome-integration@apexshot.github.io
+gnome-extensions enable apexshot-gnome-integration@apexshot.github.io
+```
+
+### Hotkey Debug
+```bash
+APEXSHOT_HOTKEY_DEBUG=1 cargo run --release -- daemon
+# Or redirect to file:
+APEXSHOT_HOTKEY_LOG=/tmp/apexshot-hotkeys.log cargo run --release -- daemon
+```
+
+### C++ Overlay Debug
+The overlay binary is built in `target/release/build/apexshot-*/out/capture-overlay-build/`.
+Run it directly with `--help` to see available options:
+```bash
+./target/release/build/apexshot-*/out/capture-overlay-build/apexshot-capture --help
+```
+
+## Testing
+
+### Unit Tests
+Write unit tests inline in the same file:
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_function() {
+        assert_eq!(result, expected);
+    }
+}
+```
+
+Good examples of inline tests exist in:
+- `src/backend/mod.rs` — Pixel format and capture data validation
+- `src/capture/editor.rs` — Tool shortcut mapping, constrained drag logic
+- `src/settings/after_capture.rs` — UI contract assertions
+
+### Integration Tests
+Add integration tests in `tests/` directory:
+```rust
+use apexshot::config::load_config;
+
+#[test]
+fn test_config_loading() {
+    let config = load_config();
+    assert!(!config.video_export_location.is_empty());
+}
+```
+
+### Manual Testing Checklist
+Before submitting a PR, manually verify on at least one known-good GNOME
+Wayland target. Currently confirmed: Ubuntu GNOME Wayland and Arch Linux GNOME
+Wayland. Hyprland Wayland is also personally tested for the non-GNOME wlroots
+path.
+- [ ] `cargo run --release -- capture area` works
+- [ ] `cargo run --release -- capture screen` works
+- [ ] `cargo run --release -- record screen` works (start + stop)
+  — **except on Fedora**, where recording must refuse with a notification
+- [ ] Annotation editor opens and all tools render correctly
+- [ ] Settings window opens and saves changes persist after restart
+- [ ] Daemon mode starts and tray icon appears
+- [ ] Global hotkeys trigger captures
+- [ ] GNOME extension keeps preview windows on top
+
+For distro/compositor expansion work, also verify the shared capture path on at
+least one non-GNOME portal backend:
+- [ ] Fedora GNOME Wayland — screenshots and recording (recording newly enabled)
+- [ ] Fedora or openSUSE KDE Plasma Wayland for `xdg-desktop-portal-kde` screenshots
+- [ ] On Fedora: `apexshot record screen` (or record hotkey) starts a session through the portal/PipeWire path
+- [ ] Sway Wayland for additional wlroots coverage beyond Hyprland
+- [ ] NixOS GNOME or KDE Wayland for non-FHS/runtime dependency coverage
+
+**Fedora:** screenshots and video recording are supported through the same
+portal/PipeWire/GStreamer path as other distros. Recording on Fedora was newly
+enabled; runtime validation is in progress. openSUSE and other RPM-family
+targets remain development-stage for full install/runtime coverage.
+
+See `CONTRIBUTING.md` for more detailed manual testing guidelines.
+
+## GNOME Extension Development
+
+### Build Extension
+```bash
+cd gnome-extension
+zip -r apexshot-gnome-integration.zip . -x "*.git*" "*screenshots*" "*tests*"
+```
+
+### Install Extension Locally
+```bash
+# Unzip into GNOME extensions directory
+mkdir -p ~/.local/share/gnome-shell/extensions/apexshot-gnome-integration@apexshot.github.io
+unzip apexshot-gnome-integration.zip -d ~/.local/share/gnome-shell/extensions/apexshot-gnome-integration@apexshot.github.io/
+
+# Enable extension
+gnome-extensions enable apexshot-gnome-integration@apexshot.github.io
+```
+
+### Test Extension
+```bash
+# Check extension status
+gnome-extensions list
+gnome-extensions info apexshot-gnome-integration@apexshot.github.io
+
+# View logs
+journalctl /usr/bin/gnome-shell -f | grep apexshot
+
+# Monitor D-Bus
+busctl monitor --session org.apexshot.ShellOverlay
+```
+
+### Extension File Guide
+- `extension.js` — Entry point; enables the three services and tears them down
+- `shell-overlay.js` — `org.apexshot.ShellOverlay`: recording mask (dimmed region outside the capture rect)
+- `window-list.js` — `org.apexshot.WindowList`: lists and focuses windows for the window picker
+- `preview-stacking.js` — Keeps ApexShot's own preview windows above other windows
+
+## Browser Extension Development
+
+### Load Unpacked Extension
+1. Open `chrome://extensions` or `chromium://extensions`
+2. Enable **Developer mode**
+3. Click **Load unpacked**
+4. Select `web-scroll-extension/`
+
+### Extension Architecture
+- `manifest.json` — Chrome Extension Manifest V3
+- `background.js` — Service worker handling scroll-stitch capture, native messaging
+- `popup.html/js` — Extension popup UI
+
+### Native Messaging Flow
+1. `background.js` opens a `chrome.runtime.connectNative()` port to `io.github.codegoddy.apexshot`
+2. Messages are JSON-encoded and sent over the native host's stdin/stdout
+3. The native host is the ApexShot binary itself (or a symlink to it)
+4. ApexShot daemon receives the message via `ImportWebScrollCapture` D-Bus action
+
+## Packaging
+
+### Create Debian Package
+```bash
+cargo deb
+```
+
+The package will be created in `target/debian/`.
+
+### Install Package
+```bash
+sudo dpkg -i target/debian/apexshot_*.deb
+sudo apt install -f  # Install missing dependencies if any
+```
+
+### Remove Package
+```bash
+sudo apt remove apexshot
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/your-feature`)
+3. Make your changes
+4. Add tests (unit and/or integration)
+5. Run `cargo fmt` and `cargo clippy -- -D warnings`
+6. Commit with a descriptive message (see `CONTRIBUTING.md` for conventional commit format)
+7. Push to your fork
+8. Create a pull request
+
+See `CONTRIBUTING.md` for detailed guidelines.
+
+## Common Issues
+
+### Build Errors
+
+**CMake not found:**
+```bash
+sudo apt install cmake
+```
+
+**Missing Qt5 headers:**
+```bash
+sudo apt install qtbase5-dev libqt5x11extras5-dev libqt5widgets5
+```
+
+**Missing GStreamer headers:**
+```bash
+sudo apt install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+```
+
+**Missing GTK4 layer shell:**
+```bash
+sudo apt install libgtk4-layer-shell-dev
+```
+
+### Runtime Errors
+
+**GStreamer pipeline error:**
+```bash
+sudo apt install gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
+```
+
+**Tesseract not found:**
+```bash
+sudo apt install tesseract-ocr libtesseract-dev libleptonica-dev
+```
+
+**PipeWire not available (audio monitoring fails):**
+```bash
+sudo apt install libpipewire-0.3-dev pipewire
+```
+
+### GNOME Extension Issues
+
+**Extension not loading:**
+- Check GNOME version compatibility (45–50) against `metadata.json`
+- Verify UUID matches directory name: `apexshot-gnome-integration@apexshot.github.io`
+- Check D-Bus signals with `busctl monitor --session`
+- Look for errors in `journalctl /usr/bin/gnome-shell -f`
+
+**Preview windows not staying on top:**
+- Ensure extension is enabled: `gnome-extensions list`
+- Check that ApexShot emits `TrackedWindowOpened` signals: `dbus-monitor --session`
+- Verify the window title matches what the extension expects
+
+### Hotkey Issues
+
+**Hotkeys not triggering:**
+- Ensure daemon is running: `busctl list | grep apexshot`
+- Run `cargo run --release -- hotkeys install` to reinstall bindings
+- Check GNOME custom keybindings: `gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings`
+- On non-GNOME desktops, verify `ashpd` portal GlobalShortcuts are available
+
+## Performance Tips
+
+### Recording Performance
+- Use appropriate FPS (24–30 for most use cases)
+- Consider resolution limits for lower-end systems (`max_resolution` config)
+- Reduce FPS or resolution limits for lower-end systems
+- Use hardware-accelerated codecs (H.264/VA-API if available)
+
+### Capture Performance
+- PNG is slowest; use JPEG or WebP for faster saves
+- Disable cursor compositing if not needed
+- The daemon keeps the GTK stack warm, avoiding cold-start delays
+
+### Annotation Editor Performance
+- Large images with many annotations may slow down Cairo rendering
+- Consider zooming out for bulk operations
+- The undo/redo stack is unbounded; very long sessions may grow memory usage
+
+## Security Considerations
+
+- Validate all user inputs (file paths, configuration values)
+- Sanitize file paths before writing
+- Use secure temporary directories (`std::env::temp_dir()`)
+- Handle D-Bus messages defensively (check sender, validate arguments)
+- Never execute shell commands with unsanitized user input
+- The native messaging host validates message origin before processing
+
+## Resources
+
+- [Rust Documentation](https://doc.rust-lang.org/)
+- [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/)
+- [GTK4 Documentation](https://docs.gtk.org/gtk4/)
+- [GTK4 Layer Shell](https://github.com/wmww/gtk4-layer-shell)
+- [GStreamer Documentation](https://gstreamer.freedesktop.org/documentation/)
+- [GNOME Shell Extension Documentation](https://gjs.guide/extensions/overview.html)
+- [ashpd (XDG Desktop Portal)](https://docs.rs/ashpd/)
+- [zbus (D-Bus)](https://docs.rs/zbus/)
+- [Tesseract Documentation](https://tesseract-ocr.github.io/)
+- [ocrs (Rust OCR)](https://github.com/robertknight/ocrs)

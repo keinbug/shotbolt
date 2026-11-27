@@ -1,0 +1,392 @@
+use std::cell::{Cell, RefCell};
+use std::path::PathBuf;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
+
+use gtk4::{
+    prelude::*, Align, ApplicationWindow, Box as GtkBox, Button, DrawingArea, Overlay, Revealer,
+    RevealerTransitionType, Stack,
+};
+
+use crate::capture::editor::state::EditorState;
+
+use super::chrome::WindowChrome;
+use super::motion_mode::{self, MotionModeChrome, MotionModeParts, MotionSession};
+
+pub(super) type MotionExport = Rc<
+    dyn Fn(
+        &std::path::Path,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<PathBuf, String>>>>,
+>;
+
+pub(super) struct MotionHost {
+    pub(super) parts: MotionModeParts,
+    session: Rc<MotionSession>,
+    last_inspector: Rc<RefCell<String>>,
+    in_motion: Rc<Cell<bool>>,
+    /// Currently installed Motion Appearance panel. Rebuilt on every entry
+    /// so sliders, swatches, and highlights match Static instead of
+    /// window-open state.
+    appearance_slot: Rc<RefCell<GtkBox>>,
+    watermark_slot: Rc<RefCell<GtkBox>>,
+}
+
+pub(super) struct MotionHostInstallInputs<'a> {
+    pub window: &'a ApplicationWindow,
+    pub root_overlay: &'a Overlay,
+    pub canvas_stack: &'a Stack,
+    pub window_chrome: WindowChrome,
+    pub inspector_tabs: &'a GtkBox,
+    pub motion_tabs: &'a GtkBox,
+    pub inspector_stack: &'a Stack,
+    pub motion_tab_btn: &'a Button,
+    pub text_tab_btn: &'a Button,
+    pub appearance_tab_btn: &'a Button,
+    pub watermark_tab_btn: &'a Button,
+    pub state: &'a Arc<Mutex<EditorState>>,
+    pub empty_drop_zone: bool,
+    pub static_preview: &'a DrawingArea,
+    pub static_appearance_slot: Rc<RefCell<GtkBox>>,
+    pub static_appearance_interact: Option<Rc<dyn Fn()>>,
+    pub static_transform_sync_slot: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+}
+
+impl MotionHost {
+    pub(super) fn new(
+        window: &ApplicationWindow,
+        prefers_dark: bool,
+        empty_drop_zone: bool,
+        background_padding: f64,
+    ) -> Self {
+        let (parts, session) =
+            motion_mode::build_motion_mode(window, prefers_dark, background_padding);
+        if empty_drop_zone {
+            parts.shell.motion_btn.set_sensitive(false);
+        }
+
+        let appearance_slot = Rc::new(RefCell::new(parts.panels.appearance_inspector.clone()));
+        let watermark_slot = Rc::new(RefCell::new(parts.panels.watermark_inspector.clone()));
+        Self {
+            parts,
+            session: Rc::new(session),
+            last_inspector: Rc::new(RefCell::new(String::from("placeholder"))),
+            in_motion: Rc::new(Cell::new(false)),
+            appearance_slot,
+            watermark_slot,
+        }
+    }
+
+    pub(super) fn last_inspector(&self) -> Rc<RefCell<String>> {
+        self.last_inspector.clone()
+    }
+
+    pub(super) fn session(&self) -> Rc<MotionSession> {
+        self.session.clone()
+    }
+
+    pub(super) fn in_motion(&self) -> Rc<Cell<bool>> {
+        self.in_motion.clone()
+    }
+
+    /// Motion's Export handler asks for a destination (Save chooser) and hands it
+    /// here, so the export writes where the user pointed instead of guessing
+    /// from the still's folder.
+    pub(super) fn export_callback(&self) -> MotionExport {
+        let session = self.session.clone();
+        Rc::new(move |destination: &std::path::Path| Box::pin(session.export_mp4(destination)))
+    }
+
+    pub(super) fn install(&self, input: MotionHostInstallInputs<'_>) {
+        let MotionHostInstallInputs {
+            window,
+            root_overlay,
+            canvas_stack,
+            window_chrome,
+            inspector_tabs,
+            motion_tabs,
+            inspector_stack,
+            motion_tab_btn,
+            text_tab_btn,
+            appearance_tab_btn,
+            watermark_tab_btn,
+            state,
+            empty_drop_zone,
+            static_preview,
+            static_appearance_slot,
+            static_appearance_interact,
+            static_transform_sync_slot,
+        } = input;
+        *self.session.source_state.borrow_mut() = Some(state.clone());
+
+        let motion_tabs_revealer = Revealer::new();
+        motion_tabs_revealer.set_transition_type(RevealerTransitionType::SlideLeft);
+        motion_tabs_revealer.set_transition_duration(180);
+        motion_tabs_revealer.set_reveal_child(false);
+        motion_tabs_revealer.set_halign(Align::End);
+        motion_tabs_revealer.set_valign(Align::Center);
+        motion_tabs_revealer.set_child(Some(motion_tabs));
+        self.parts
+            .shell
+            .preview_shell
+            .add_overlay(&motion_tabs_revealer);
+        self.parts
+            .shell
+            .preview_shell
+            .set_clip_overlay(&motion_tabs_revealer, true);
+        motion_mode::install_confirm_overlay(root_overlay, &self.parts.shell.confirm_overlay);
+
+        let motion_chrome = Rc::new(MotionModeChrome {
+            mode_stack: window_chrome.mode_stack,
+            canvas_stack: canvas_stack.clone(),
+            bottom_left_stack: window_chrome.bottom_left_stack,
+            motion_control: window_chrome.motion_control,
+            history_control: window_chrome.history_control,
+            inspector_tabs: inspector_tabs.clone(),
+            motion_tabs: motion_tabs.clone(),
+            motion_tabs_revealer,
+            inspector_stack: inspector_stack.clone(),
+            motion_tab_btn: motion_tab_btn.clone(),
+            text_tab_btn: text_tab_btn.clone(),
+            appearance_tab_btn: appearance_tab_btn.clone(),
+            watermark_tab_btn: watermark_tab_btn.clone(),
+        });
+        // One notch button per Motion tool; the table keeps the next
+        // tab (Cursor, Camera, Audio, Frame, …) to a one-line addition.
+        let tool_tabs: [(Button, &str); 4] = [
+            (motion_tab_btn.clone(), "motion"),
+            (text_tab_btn.clone(), "motion-text"),
+            (appearance_tab_btn.clone(), "motion-appearance"),
+            (watermark_tab_btn.clone(), "motion-watermark"),
+        ];
+        for (active_btn, page) in &tool_tabs {
+            let chrome = motion_chrome.clone();
+            let page = *page;
+            active_btn.connect_clicked(move |_| {
+                motion_mode::show_motion_tool_page(&chrome, page);
+            });
+        }
+        motion_mode::wire_motion_controls(
+            window,
+            &self.parts,
+            self.session.as_ref(),
+            motion_chrome.clone(),
+            self.last_inspector.clone(),
+            self.in_motion.clone(),
+            Rc::new({
+                let window = window.downgrade();
+                let inspector_stack = inspector_stack.clone();
+                let appearance_slot = self.appearance_slot.clone();
+                let watermark_slot = self.watermark_slot.clone();
+                let session = self.session.clone();
+                let preview = self.parts.shell.preview.clone();
+                move |before| {
+                    let Some(window) = window.upgrade() else {
+                        return;
+                    };
+                    let (appearance_changed, watermark_changed) = {
+                        let runtime = session.runtime.borrow();
+                        (
+                            before.appearance != runtime.motion.appearance
+                                || before.frame != runtime.motion.frame
+                                || before.scene_shadow != runtime.motion.scene_shadow,
+                            before.watermark != runtime.motion.watermark,
+                        )
+                    };
+                    let visible_page = inspector_stack.visible_child_name();
+                    if appearance_changed {
+                        let old_panel = appearance_slot.borrow().clone();
+                        let fresh = motion_mode::build_motion_appearance_panel(
+                            &window,
+                            session.as_ref(),
+                            &preview,
+                            None,
+                        );
+                        fresh.set_visible(true);
+                        inspector_stack.remove(&old_panel);
+                        inspector_stack.add_named(&fresh, Some("motion-appearance"));
+                        *appearance_slot.borrow_mut() = fresh;
+                    }
+                    if watermark_changed {
+                        let old_panel = watermark_slot.borrow().clone();
+                        let fresh = motion_mode::build_motion_watermark_panel(
+                            &window,
+                            session.as_ref(),
+                            &preview,
+                        );
+                        fresh.set_visible(true);
+                        inspector_stack.remove(&old_panel);
+                        inspector_stack.add_named(&fresh, Some("motion-watermark"));
+                        *watermark_slot.borrow_mut() = fresh;
+                    }
+                    if let Some(page) = visible_page {
+                        inspector_stack.set_visible_child_name(&page);
+                    }
+                }
+            }),
+        );
+
+        let enter_motion = {
+            let state = state.clone();
+            let session = self.session.clone();
+            let window_enter = window.clone();
+            let inspector_stack_enter = inspector_stack.clone();
+            let appearance_slot_enter = self.appearance_slot.clone();
+            let preview = self.parts.shell.preview.clone();
+            let ruler = self.parts.timeline.ruler.clone();
+            let motion_track = self.parts.timeline.motion_track.clone();
+            let text_track = self.parts.timeline.text_track.clone();
+            let playhead_overlay = self.parts.timeline.playhead_overlay.clone();
+            let motion_chrome = motion_chrome.clone();
+            let last_inspector = self.last_inspector.clone();
+            let in_motion = self.in_motion.clone();
+            let duration_slider = self.parts.shared.duration_slider.clone();
+            let duration_value = self.parts.shared.duration_value.clone();
+            let inspector_syncing = self.parts.shared.inspector_syncing.clone();
+            let static_interact_enter = static_appearance_interact.clone();
+            Rc::new(move || {
+                if let Some(interact) = static_interact_enter.as_ref() {
+                    interact();
+                }
+                session.capture_snapshot(&state.lock().unwrap());
+                // Fresh panel from the captured runtime: every control shows
+                // the Static values instead of window-open state.
+                {
+                    let old_panel = appearance_slot_enter.borrow().clone();
+                    let fresh = motion_mode::build_motion_appearance_panel(
+                        &window_enter,
+                        session.as_ref(),
+                        &preview,
+                        None,
+                    );
+                    fresh.set_visible(true);
+                    inspector_stack_enter.remove(&old_panel);
+                    inspector_stack_enter.add_named(&fresh, Some("motion-appearance"));
+                    *appearance_slot_enter.borrow_mut() = fresh;
+                }
+                let duration = session.duration();
+                inspector_syncing.set(true);
+                duration_slider.set_value(duration);
+                duration_value.set_label(&format!("{duration:.1}s"));
+                inspector_syncing.set(false);
+                motion_mode::apply_editor_mode(
+                    &motion_chrome,
+                    true,
+                    last_inspector.borrow().as_str(),
+                );
+                in_motion.set(true);
+                preview.queue_draw();
+                ruler.queue_draw();
+                motion_track.queue_draw();
+                text_track.queue_draw();
+                playhead_overlay.queue_draw();
+            }) as Rc<dyn Fn()>
+        };
+        let leave_motion = {
+            let session = self.session.clone();
+            let motion_chrome = motion_chrome.clone();
+            let last_inspector = self.last_inspector.clone();
+            let in_motion = self.in_motion.clone();
+            let window_leave = window.clone();
+            let inspector_stack_leave = inspector_stack.clone();
+            let static_preview_leave = static_preview.clone();
+            let static_slot_leave = static_appearance_slot.clone();
+            let static_interact_leave = static_appearance_interact.clone();
+            let state_leave = Arc::clone(state);
+            let static_transform_sync_leave = static_transform_sync_slot.clone();
+            Rc::new(move || {
+                // Fresh Static panel from the Motion runtime first, so it
+                // shows current values instead of window-open state.
+                {
+                    let old_panel = static_slot_leave.borrow().clone();
+                    let fresh = super::background_panel::build_shared_background_panel(
+                        &window_leave,
+                        session.as_ref(),
+                        &static_preview_leave,
+                        &state_leave,
+                        static_interact_leave.clone(),
+                        &static_transform_sync_leave,
+                    );
+                    fresh.set_visible(true);
+                    inspector_stack_leave.remove(&old_panel);
+                    inspector_stack_leave.add_named(&fresh, Some("background"));
+                    *static_slot_leave.borrow_mut() = fresh;
+                }
+                session.clear_snapshot();
+                motion_mode::apply_editor_mode(
+                    &motion_chrome,
+                    false,
+                    last_inspector.borrow().as_str(),
+                );
+                in_motion.set(false);
+            }) as Rc<dyn Fn()>
+        };
+
+        // Long screenshots, such as scrolling captures, stay in Static. The
+        // button stays clickable so it can explain why instead of going dead.
+        let sync_long_image_gate: Rc<dyn Fn()> = {
+            let motion_btn = self.parts.shell.motion_btn.clone();
+            let state = state.clone();
+            Rc::new(move || {
+                let long = {
+                    let guard = state.lock().unwrap();
+                    let (width, height) = guard.working_image.dimensions();
+                    motion_mode::is_long_image(width, height)
+                };
+                if long {
+                    motion_btn.add_css_class("editor-mode-unavailable");
+                    motion_btn.set_tooltip_text(Some(&motion_mode::long_image_motion_tooltip()));
+                } else {
+                    motion_btn.remove_css_class("editor-mode-unavailable");
+                    motion_btn.set_tooltip_text(Some(&crate::i18n::t("Switch to Motion")));
+                }
+            })
+        };
+        if !empty_drop_zone {
+            sync_long_image_gate();
+        }
+        // A crop can turn a long capture into a normal one (or back), so the
+        // hint follows the image whenever the pointer reaches the button.
+        {
+            let hover = gtk4::EventControllerMotion::new();
+            let sync = sync_long_image_gate.clone();
+            hover.connect_enter(move |_, _, _| {
+                if !empty_drop_zone {
+                    sync();
+                }
+            });
+            self.parts.shell.motion_btn.add_controller(hover);
+        }
+
+        self.parts.shell.motion_btn.connect_clicked({
+            let window = window.clone();
+            let confirm = self.parts.shell.confirm_overlay.clone();
+            let state = state.clone();
+            let session = self.session.clone();
+            let enter_motion = enter_motion.clone();
+            move |_| {
+                motion_mode::request_enter_motion(
+                    &window,
+                    &confirm,
+                    session.as_ref(),
+                    &state,
+                    empty_drop_zone,
+                    enter_motion.clone(),
+                );
+            }
+        });
+        self.parts.shell.static_btn.connect_clicked({
+            let window = window.clone();
+            let confirm = self.parts.shell.confirm_overlay.clone();
+            let session = self.session.clone();
+            let leave_motion = leave_motion.clone();
+            move |_| {
+                motion_mode::request_leave_motion(
+                    &window,
+                    &confirm,
+                    session.as_ref(),
+                    leave_motion.clone(),
+                );
+            }
+        });
+    }
+}

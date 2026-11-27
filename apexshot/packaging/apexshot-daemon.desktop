@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Name=ApexShot Daemon
+Comment=ApexShot screenshot daemon — tray icon and hotkey listener
+Exec=/usr/bin/apexshot daemon
+Icon=apexshot
+Categories=Utility;
+Keywords=screenshot;capture;record;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=2
+Hidden=false
+NoDisplay=true
+X-GNOME-Autostart-Phase=Application
+X-KDE-DBUS-Restricted-Interfaces=org.kde.KWin.ScreenShot2
+X-KDE-Wayland-Interfaces=zkde_screencast_unstable_v1

@@ -1,0 +1,1109 @@
+//! Preview playback for the video editor.
+//!
+//! This GTK bundle ships without GStreamer, so `GtkMediaFile` cannot decode
+//! anything. The preview instead asks the same ffmpeg the timeline already
+//! uses to emit raw RGBA frames on a pipe: one frame for a paused playhead and
+//! a realtime stream while the transport is playing.
+
+use crate::recording::editor::ffmpeg;
+use crate::recording::editor::ripple_preview::PreviewRipple;
+use gtk4::gdk;
+use gtk4::glib;
+use gtk4::prelude::*;
+use gtk4::Picture;
+use std::cell::{Cell, RefCell};
+use std::io::Read;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Stdio};
+use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
+
+/// Frames are decoded small enough that a raw RGBA frame crosses the pipe
+/// quickly, and the `Picture` scales them up into the stage. Either edge is
+/// capped, so a portrait recording keeps its height instead of shrinking to a
+/// sliver inside a landscape box.
+const MAX_FRAME_EDGE: u32 = 1280;
+/// While paused, decode again once the playhead has moved a frame's worth.
+const STILL_STEP: f64 = 1.0 / 30.0;
+/// How far the running stream may sit from the frame the playhead asks for
+/// before the decode is restarted there. A cut, a speed change or a moved
+/// piece moves the picture away from where the stream has decoded to, and
+/// past this much the difference is visible.
+const STREAM_DRIFT_SECONDS: f64 = 0.25;
+/// Two ticks asking for the same source frame while the playhead moves mean the
+/// composition is holding that frame: a gap between moved pieces, or the
+/// freeze tail.
+const HELD_STEP: f64 = 1e-6;
+
+struct Frame {
+    generation: u64,
+    width: u32,
+    height: u32,
+    pixels: Vec<u8>,
+}
+
+struct Job {
+    source: PathBuf,
+    seconds: f64,
+    width: u32,
+    height: u32,
+    generation: u64,
+    realtime: bool,
+    /// Source seconds per wall second for a realtime stream.
+    rate: f64,
+}
+
+/// The decode thread owns one ffmpeg at a time. The UI thread keeps the child
+/// handle too, so a new request can kill a stream that is blocked on a read
+/// instead of waiting for its next frame.
+#[derive(Default)]
+struct Shared {
+    slot: Mutex<Option<Job>>,
+    child: Mutex<Option<Child>>,
+}
+
+#[derive(Default)]
+struct State {
+    source: Option<PathBuf>,
+    width: u32,
+    height: u32,
+    playing: bool,
+    /// Source time of the last frame requested while paused.
+    still_at: Option<f64>,
+    /// Source time the running realtime stream was requested at.
+    stream_start: Option<f64>,
+    /// When the running stream's first frame reached the stage, which is where
+    /// its expected position is measured from.
+    stream_started: Option<Instant>,
+    /// The source time the previous tick asked for while playing.
+    last_requested: Option<f64>,
+    /// The playhead the previous tick asked for while playing, which keeps
+    /// moving over a held source frame and so tells a hold from an edit
+    /// republishing the same frame.
+    last_composition: Option<f64>,
+    /// The composition is holding one source frame, so a still shows instead
+    /// of the running stream.
+    holding: bool,
+    /// Source seconds per composition second the running stream decodes at:
+    /// 1 for a normal piece, the piece's speed for a sped-up one.
+    stream_rate: f64,
+}
+
+/// The latest decoded frame, retained so effect changes can repaint without decoding.
+struct RawFrame {
+    generation: u64,
+    width: u32,
+    height: u32,
+    pixels: Arc<Vec<u8>>,
+}
+
+type CameraTrail = (super::zoom::ViewRect, super::zoom::ViewRect, f64, f64);
+
+/// Where the zoomed card is this frame and the frame before, in stage pixels,
+/// for the blur that smears its edges over the background.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct CardLayer {
+    pub now: (f64, f64, f64, f64),
+    pub previous: (f64, f64, f64, f64),
+    /// The stage's size in the same units.
+    pub stage: (f64, f64),
+    /// The corner radius as a fraction of the card's width.
+    pub radius: f64,
+    pub fps: f64,
+    pub amount: f64,
+}
+
+/// The card layer is drawn at stage size, capped so playback keeps up.
+const MAX_LAYER_EDGE: f64 = 1600.0;
+
+fn card_layer_size(stage: (f64, f64)) -> (u32, u32) {
+    let scale = (MAX_LAYER_EDGE / stage.0.max(1.0))
+        .min(MAX_LAYER_EDGE / stage.1.max(1.0))
+        .min(1.0);
+    (
+        ((stage.0 * scale).round() as u32).max(2),
+        ((stage.1 * scale).round() as u32).max(2),
+    )
+}
+
+struct EffectJob {
+    generation: u64,
+    revision: u64,
+    size: (u32, u32),
+    pixels: Arc<Vec<u8>>,
+    ripple: Option<PreviewRipple>,
+    trail: Option<CameraTrail>,
+    card: Option<CardLayer>,
+    playing: bool,
+}
+
+struct EffectFrame {
+    generation: u64,
+    revision: u64,
+    size: (u32, u32),
+    pixels: Vec<u8>,
+    /// A stage-sized, premultiplied card layer rather than a screen frame.
+    layer: bool,
+}
+
+#[derive(Default)]
+struct EffectQueue {
+    job: Mutex<Option<EffectJob>>,
+    ready: Condvar,
+    stopped: AtomicBool,
+}
+
+/// The stage's decoder. `Picture` and the presentation tick live on the main
+/// thread; decoding happens on a worker thread and only raw pixels cross over.
+pub(super) struct Preview {
+    picture: Picture,
+    state: Rc<RefCell<State>>,
+    shared: Arc<Shared>,
+    frames: Receiver<Frame>,
+    effects: Arc<EffectQueue>,
+    effected_frames: Receiver<EffectFrame>,
+    effect_revision: Cell<u64>,
+    shown_revision: Cell<u64>,
+    generation: Rc<Cell<u64>>,
+    ripple: RefCell<Option<PreviewRipple>>,
+    ripple_dirty: Cell<bool>,
+    trail: Cell<Option<CameraTrail>>,
+    trail_dirty: Cell<bool>,
+    trail_playing: Cell<bool>,
+    card: Cell<Option<CardLayer>>,
+    /// The full-stage picture the card layer shows in, and the card it stands in for.
+    card_layer: RefCell<Option<(Picture, gtk4::Widget)>>,
+    raw: RefCell<Option<RawFrame>>,
+    /// The transport's clock, reported to when the first frame of a playback
+    /// reaches the stage so the playhead can start from the picture.
+    first_frame: RefCell<Option<Rc<Cell<Option<Instant>>>>>,
+}
+
+impl Preview {
+    pub fn new(picture: Picture) -> Rc<Self> {
+        let (sender, receiver) = mpsc::sync_channel(2);
+        let shared = Arc::new(Shared::default());
+        {
+            let shared = shared.clone();
+            std::thread::spawn(move || decode_loop(shared, sender));
+        }
+        let effects = Arc::new(EffectQueue::default());
+        let (effect_sender, effected_frames) = mpsc::sync_channel(1);
+        {
+            let effects = effects.clone();
+            std::thread::spawn(move || effect_loop(effects, effect_sender));
+        }
+        let preview = Rc::new(Self {
+            picture,
+            state: Rc::new(RefCell::new(State::default())),
+            shared,
+            frames: receiver,
+            effects,
+            effected_frames,
+            effect_revision: Cell::new(0),
+            shown_revision: Cell::new(0),
+            generation: Rc::new(Cell::new(0)),
+            ripple: RefCell::new(None),
+            ripple_dirty: Cell::new(false),
+            trail: Cell::new(None),
+            trail_dirty: Cell::new(false),
+            trail_playing: Cell::new(false),
+            card: Cell::new(None),
+            card_layer: RefCell::new(None),
+            raw: RefCell::new(None),
+            first_frame: RefCell::new(None),
+        });
+        glib::timeout_add_local(Duration::from_millis(16), {
+            let preview = Rc::downgrade(&preview);
+            move || {
+                if let Some(preview) = preview.upgrade() {
+                    preview.present();
+                    glib::ControlFlow::Continue
+                } else {
+                    glib::ControlFlow::Break
+                }
+            }
+        });
+        preview
+    }
+
+    /// Point the decoder at a recording. `width`/`height` are the source
+    /// frame's dimensions, read from the poster the timeline already caches.
+    pub fn set_document(&self, path: Option<&Path>, width: u32, height: u32) {
+        let mut state = self.state.borrow_mut();
+        state.source = path.filter(|path| path.is_file()).map(Path::to_path_buf);
+        let (width, height) = decode_size(width, height);
+        state.width = width;
+        state.height = height;
+        state.playing = false;
+        state.still_at = None;
+        state.stream_start = None;
+        state.stream_started = None;
+        state.last_requested = None;
+        state.last_composition = None;
+        state.holding = false;
+        state.stream_rate = 1.0;
+        drop(state);
+
+        // Anything already decoded belongs to the previous recording.
+        self.generation.set(self.generation.get() + 1);
+        self.cancel();
+        *self.ripple.borrow_mut() = None;
+        self.ripple_dirty.set(false);
+        self.trail.set(None);
+        self.trail_dirty.set(false);
+        self.card.set(None);
+        self.hide_card_layer();
+        *self.raw.borrow_mut() = None;
+    }
+
+    /// Set the ripple the current frame should warp. A change while the
+    /// transport is paused re-works the frame already on screen, so scrubbing
+    /// into a click's lifetime shows the wave without waiting for a decode.
+    pub fn set_ripple(&self, ripple: Option<PreviewRipple>) {
+        let mut slot = self.ripple.borrow_mut();
+        if *slot == ripple {
+            return;
+        }
+        *slot = ripple;
+        self.ripple_dirty.set(true);
+    }
+
+    pub fn set_trail(&self, trail: Option<CameraTrail>, card: Option<CardLayer>, playing: bool) {
+        let changed = self.trail.replace(trail) != trail;
+        let card_changed = self.card.replace(card) != card;
+        let mode_changed = self.trail_playing.replace(playing) != playing;
+        if changed || card_changed || mode_changed {
+            self.trail_dirty.set(true);
+        }
+    }
+
+    /// Give the preview the full-stage picture the moving card's blur shows in,
+    /// and the sharp card it hides while it does.
+    pub fn set_card_layer(&self, layer: Picture, card: gtk4::Widget) {
+        *self.card_layer.borrow_mut() = Some((layer, card));
+    }
+
+    fn hide_card_layer(&self) {
+        if let Some((layer, card)) = self.card_layer.borrow().as_ref() {
+            layer.set_visible(false);
+            card.set_opacity(1.0);
+        }
+    }
+
+    /// Give the preview the clock the transport holds the playhead with. The
+    /// preview reports the instant the first frame of a playback request
+    /// reached the stage, so the playhead can start from the picture rather
+    /// than from the press.
+    pub fn report_first_frame_to(&self, clock: Rc<Cell<Option<Instant>>>) {
+        *self.first_frame.borrow_mut() = Some(clock);
+    }
+
+    /// Show the frame at a source time. While playing, the stream is started
+    /// once and then runs at 1× from that frame, so it only matches the
+    /// composition while the edit keeps mapping to the same footage: a cut, a
+    /// speed change or a moved piece restarts the stream at the requested
+    /// frame, and a held frame (a gap or the freeze tail) shows a still instead
+    /// of running on into footage the edit no longer shows. `composition` is
+    /// the playhead itself, which keeps moving over a held frame; a repeat of
+    /// both times is only an edit republishing the same frame.
+    pub fn show_time(&self, seconds: f64, composition: f64, playing: bool) {
+        let mut state = self.state.borrow_mut();
+        let Some(source) = state.source.clone() else {
+            return;
+        };
+        if playing {
+            if !state.playing {
+                state.playing = true;
+                state.still_at = Some(seconds);
+                state.last_requested = Some(seconds);
+                state.last_composition = Some(composition);
+                state.stream_start = Some(seconds);
+                state.stream_started = None;
+                state.holding = false;
+                state.stream_rate = 1.0;
+                drop(state);
+                self.request(source, seconds, true);
+                return;
+            }
+            let observed_rate = match (state.last_requested, state.last_composition) {
+                (Some(last_source), Some(last_composition))
+                    if composition - last_composition > HELD_STEP =>
+                {
+                    Some((seconds - last_source) / (composition - last_composition))
+                }
+                _ => None,
+            };
+
+            let same_frame = state
+                .last_requested
+                .is_some_and(|last| (seconds - last).abs() <= HELD_STEP);
+            let playhead_moved = state
+                .last_composition
+                .is_some_and(|last| (composition - last).abs() > HELD_STEP);
+            state.last_requested = Some(seconds);
+            state.last_composition = Some(composition);
+            if state.holding {
+                if same_frame {
+                    return;
+                }
+                // The hold ended, so the stream runs again from the frame the
+                // playhead has moved on to.
+                state.holding = false;
+                state.stream_start = Some(seconds);
+                state.stream_started = None;
+                drop(state);
+                self.request(source, seconds, true);
+                return;
+            }
+            if same_frame && playhead_moved {
+                // The composition holds this source frame. A running stream
+                // would walk on past it into cut footage.
+                state.holding = true;
+                state.still_at = Some(seconds);
+                state.stream_start = None;
+                state.stream_started = None;
+                drop(state);
+                self.request(source, seconds, false);
+                return;
+            }
+            let expected = match (state.stream_start, state.stream_started) {
+                (Some(start), Some(started)) => {
+                    Some(start + started.elapsed().as_secs_f64() * state.stream_rate)
+                }
+                _ => None,
+            };
+            if expected.is_some_and(|expected| stream_drifted(expected, seconds)) {
+                state.stream_start = Some(seconds);
+                state.stream_started = None;
+                drop(state);
+                self.request(source, seconds, true);
+                return;
+            }
+            // Within one piece the source advances at the piece's speed. When
+            // that differs from the stream's, decode at the new rate instead
+            // of letting the stream fall behind and restart every few ticks.
+            if let Some(rate) = observed_rate.and_then(playback_rate_change(state.stream_rate)) {
+                state.stream_rate = rate;
+                state.stream_start = Some(seconds);
+                state.stream_started = None;
+                drop(state);
+                self.request(source, seconds, true);
+            }
+            return;
+        }
+
+        // Stopping the transport always repaints the exact frame, even when
+        // the playhead has not moved: the stream's last frame is behind it.
+        let was_playing = std::mem::replace(&mut state.playing, false);
+        state.holding = false;
+        state.last_requested = None;
+        state.last_composition = None;
+        state.stream_start = None;
+        state.stream_started = None;
+        let moved = was_playing
+            || state
+                .still_at
+                .is_none_or(|still| (still - seconds).abs() > STILL_STEP);
+        if !moved {
+            return;
+        }
+        state.still_at = Some(seconds);
+        drop(state);
+        self.request(source, seconds, false);
+    }
+
+    fn request(&self, source: PathBuf, seconds: f64, realtime: bool) {
+        self.generation.set(self.generation.get() + 1);
+        let (width, height, rate) = {
+            let state = self.state.borrow();
+            (state.width, state.height, state.stream_rate)
+        };
+        self.cancel();
+        *self.shared.slot.lock().unwrap() = Some(Job {
+            source,
+            seconds,
+            width,
+            height,
+            generation: self.generation.get(),
+            realtime,
+            rate,
+        });
+    }
+
+    fn cancel(&self) {
+        if let Some(mut child) = self.shared.child.lock().unwrap().take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+
+    /// Paint the newest frame for the current request. Frames from a request
+    /// that is already stale are dropped instead of flashing on screen.
+    fn present(&self) {
+        let newest = self.newest_frame();
+        let dirty = self.ripple_dirty.replace(false) | self.trail_dirty.replace(false);
+        let changed = newest.is_some() || dirty;
+        if let Some(frame) = newest {
+            *self.raw.borrow_mut() = Some(RawFrame {
+                generation: frame.generation,
+                width: frame.width,
+                height: frame.height,
+                pixels: Arc::new(frame.pixels),
+            });
+        }
+        if changed {
+            let revision = self.effect_revision.get().wrapping_add(1);
+            self.effect_revision.set(revision);
+            let raw = self.raw.borrow();
+            let job = raw
+                .as_ref()
+                .filter(|raw| raw.generation == self.generation.get())
+                .map(|raw| EffectJob {
+                    generation: raw.generation,
+                    revision,
+                    size: (raw.width, raw.height),
+                    pixels: raw.pixels.clone(),
+                    ripple: self.ripple.borrow().clone(),
+                    trail: self.trail.get(),
+                    card: self.card.get(),
+                    playing: self.trail_playing.get(),
+                });
+            if let Ok(mut slot) = self.effects.job.try_lock() {
+                *slot = job;
+                self.effects.ready.notify_one();
+            } else {
+                self.trail_dirty.set(true);
+            }
+        }
+        while let Ok(frame) = self.effected_frames.try_recv() {
+            let valid_revision = accepts_effect_frame(
+                self.state.borrow().playing,
+                frame.revision,
+                self.shown_revision.get(),
+                self.effect_revision.get(),
+            );
+            if frame.generation == self.generation.get() && valid_revision {
+                self.shown_revision.set(frame.revision);
+                self.show(frame.pixels, frame.size.0, frame.size.1, frame.layer);
+                self.note_presented();
+            }
+        }
+    }
+
+    /// Record that the picture for the running playback request reached the
+    /// stage. The first frame of a request is where its stream's position is
+    /// measured from, and the first frame of a playback starts the transport
+    /// clock, so the playhead and the sound run from the same instant as the
+    /// picture.
+    fn note_presented(&self) {
+        let mut state = self.state.borrow_mut();
+        if !state.playing {
+            return;
+        }
+        let now = Instant::now();
+        if state.stream_started.is_none() {
+            state.stream_started = Some(now);
+        }
+        if let Some(clock) = self.first_frame.borrow().as_ref() {
+            if clock.get().is_none() {
+                clock.set(Some(now));
+            }
+        }
+    }
+
+    fn newest_frame(&self) -> Option<Frame> {
+        let mut newest = None;
+        loop {
+            match self.frames.try_recv() {
+                Ok(frame) => newest = Some(frame),
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => return None,
+            }
+        }
+        newest.filter(|frame| frame.generation == self.generation.get())
+    }
+
+    fn show(&self, pixels: Vec<u8>, width: u32, height: u32, layer: bool) {
+        let bytes = glib::Bytes::from_owned(pixels);
+        let format = if layer {
+            gdk::MemoryFormat::R8g8b8a8Premultiplied
+        } else {
+            gdk::MemoryFormat::R8g8b8a8
+        };
+        let texture = gdk::MemoryTexture::new(
+            width as i32,
+            height as i32,
+            format,
+            &bytes,
+            width as usize * 4,
+        );
+        if layer {
+            // The moving card is drawn whole into the stage layer, edges and
+            // all, so the sharp card steps aside while it shows.
+            if let Some((picture, card)) = self.card_layer.borrow().as_ref() {
+                picture.set_paintable(Some(&texture));
+                picture.set_visible(true);
+                card.set_opacity(0.0);
+            }
+            return;
+        }
+        self.picture.set_paintable(Some(&texture));
+        self.picture.set_visible(true);
+        self.hide_card_layer();
+    }
+}
+
+fn accepts_effect_frame(playing: bool, revision: u64, shown: u64, latest: u64) -> bool {
+    if playing {
+        revision > shown
+    } else {
+        revision == latest
+    }
+}
+
+/// Whether the running stream has left the frame the playhead asks for by
+/// more than a viewer can miss, so the decode must restart at the requested
+/// time. A cut, a speed change, a moved piece and the end of a hold all move
+/// the picture away from the running decode.
+fn stream_drifted(expected: f64, requested: f64) -> bool {
+    (expected - requested).abs() > STREAM_DRIFT_SECONDS
+}
+
+/// The rate a stream should switch to, given the rate the source was observed
+/// to advance at over the last tick, or `None` to keep the current one. Small
+/// differences are timer jitter; a jump across a cut or a backwards step is
+/// not a playback rate.
+fn playback_rate_change(current: f64) -> impl Fn(f64) -> Option<f64> {
+    move |observed| {
+        if !(0.1..=16.0).contains(&observed) {
+            return None;
+        }
+        let rounded = (observed * 100.0).round() / 100.0;
+        ((rounded - current).abs() / current.max(0.1) > 0.05).then_some(rounded)
+    }
+}
+
+impl Drop for Preview {
+    fn drop(&mut self) {
+        let _slot = self.effects.job.lock().unwrap();
+        self.effects.stopped.store(true, Ordering::Relaxed);
+        self.effects.ready.notify_one();
+    }
+}
+
+fn effect_loop(queue: Arc<EffectQueue>, sender: mpsc::SyncSender<EffectFrame>) {
+    loop {
+        let job = {
+            let mut slot = queue.job.lock().unwrap();
+            while slot.is_none() && !queue.stopped.load(Ordering::Relaxed) {
+                slot = queue.ready.wait(slot).unwrap();
+            }
+            if queue.stopped.load(Ordering::Relaxed) {
+                return;
+            }
+            slot.take().unwrap()
+        };
+        let warped = job
+            .ripple
+            .as_ref()
+            .map(|ripple| warp_frame(ripple, &job.pixels, job.size));
+        let pixels = warped
+            .as_deref()
+            .filter(|pixels| !pixels.is_empty())
+            .unwrap_or(&job.pixels);
+        // A moving card is blurred whole over the stage, so its edges smear
+        // across the background too.
+        if let Some(card) = job.card {
+            let output_size = card_layer_size(card.stage);
+            if let Some(trail) = super::motion_blur::CardTrail::new(
+                card.now,
+                card.previous,
+                card.stage,
+                output_size,
+                card.fps,
+                card.amount,
+                card.radius,
+            )
+            .or_else(|| {
+                super::motion_blur::CardTrail::stationary(
+                    card.now,
+                    card.stage,
+                    output_size,
+                    card.radius,
+                )
+            }) {
+                let mut rendered = vec![0; output_size.0 as usize * output_size.1 as usize * 4];
+                let (quality, span, anisotropy) = if job.playing {
+                    (6, 16.0, 1)
+                } else {
+                    (16, 4.0, 4)
+                };
+                trail.render(
+                    pixels,
+                    job.size,
+                    output_size,
+                    &mut rendered,
+                    quality,
+                    span,
+                    anisotropy,
+                );
+                let result = EffectFrame {
+                    generation: job.generation,
+                    revision: job.revision,
+                    size: output_size,
+                    pixels: rendered,
+                    layer: true,
+                };
+                if sender.send(result).is_err() {
+                    return;
+                }
+                continue;
+            }
+        }
+        let trail = job.trail.and_then(|(now, before, fps, amount)| {
+            super::motion_blur::ScreenTrail::in_camera_coordinates(
+                now, before, job.size, fps, amount,
+            )
+        });
+        let pixels = if let Some(trail) = trail {
+            let mut rendered = vec![0; pixels.len()];
+            let (quality, span, anisotropy) = if job.playing {
+                (6, 16.0, 1)
+            } else {
+                (16, 4.0, 4)
+            };
+            trail.render(
+                pixels,
+                job.size,
+                job.size,
+                &mut rendered,
+                quality,
+                span,
+                anisotropy,
+            );
+            rendered
+        } else {
+            pixels.to_vec()
+        };
+        let result = EffectFrame {
+            generation: job.generation,
+            revision: job.revision,
+            size: job.size,
+            pixels,
+            layer: false,
+        };
+        if sender.send(result).is_err() {
+            return;
+        }
+    }
+}
+
+fn decode_loop(shared: Arc<Shared>, sender: mpsc::SyncSender<Frame>) {
+    loop {
+        let Some(job) = shared.slot.lock().unwrap().take() else {
+            std::thread::sleep(Duration::from_millis(8));
+            continue;
+        };
+        decode(&shared, &sender, job);
+    }
+}
+
+fn decode(shared: &Shared, sender: &mpsc::SyncSender<Frame>, job: Job) {
+    let frame_len = job.width as usize * job.height as usize * 4;
+    if frame_len == 0 {
+        return;
+    }
+    let mut command = ffmpeg::frame_command(
+        &job.source,
+        job.seconds,
+        job.width,
+        job.height,
+        job.realtime,
+        job.rate,
+    );
+    let Ok(mut child) = command.stdout(Stdio::piped()).stderr(Stdio::null()).spawn() else {
+        return;
+    };
+    let Some(mut stdout) = child.stdout.take() else {
+        let _ = child.wait();
+        return;
+    };
+    *shared.child.lock().unwrap() = Some(child);
+
+    let mut buffer = vec![0u8; frame_len];
+    loop {
+        if stdout.read_exact(&mut buffer).is_err() {
+            break;
+        }
+        let frame = Frame {
+            generation: job.generation,
+            width: job.width,
+            height: job.height,
+            pixels: buffer.clone(),
+        };
+        let sent = if job.realtime {
+            match sender.try_send(frame) {
+                Ok(()) | Err(mpsc::TrySendError::Full(_)) => true,
+                Err(mpsc::TrySendError::Disconnected(_)) => false,
+            }
+        } else {
+            sender.send(frame).is_ok()
+        };
+        if !sent {
+            break;
+        }
+        if !job.realtime {
+            break;
+        }
+        // A newer request supersedes this stream.
+        if shared.slot.lock().unwrap().is_some() {
+            break;
+        }
+    }
+
+    if let Some(mut child) = shared.child.lock().unwrap().take() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
+
+/// Warp one decoded frame. The texture holds the whole encoded frame, so the
+/// ripple's view is the full source: the picture's camera transform is applied
+/// afterwards and magnifies the wave together with the footage, which keeps it
+/// over the source pixel the click was on at any zoom.
+pub(super) fn warp_frame(ripple: &PreviewRipple, pixels: &[u8], size: (u32, u32)) -> Vec<u8> {
+    ripple.warp_pixels(
+        pixels,
+        size,
+        (0.0, 0.0, f64::from(size.0), f64::from(size.1)),
+        size,
+    )
+}
+
+/// Decode at the source's aspect ratio, no larger than the preview box, with
+/// even dimensions so the RGBA stride is never fractional.
+fn decode_size(source_width: u32, source_height: u32) -> (u32, u32) {
+    if source_width == 0 || source_height == 0 {
+        return (MAX_FRAME_EDGE, MAX_FRAME_EDGE);
+    }
+    let scale = (MAX_FRAME_EDGE as f64 / source_width as f64)
+        .min(MAX_FRAME_EDGE as f64 / source_height as f64)
+        .min(1.0);
+    let width = ((source_width as f64 * scale).round() as u32).max(2) & !1;
+    let height = ((source_height as f64 * scale).round() as u32).max(2) & !1;
+    (width, height)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{decode_size, warp_frame};
+    use crate::recording::editor::click_effect::{ripple_pull_px, RIPPLE_PULL_SIZE_01};
+    use crate::recording::editor::ripple_preview::{PreviewRipple, PreviewRippleClick};
+    use crate::video_editor::zoom;
+
+    #[test]
+    fn the_stream_follows_a_piece_speed_but_not_jitter_or_cuts() {
+        let from_normal = super::playback_rate_change(1.0);
+        assert_eq!(from_normal(2.0), Some(2.0));
+        assert_eq!(from_normal(1.02), None, "jitter keeps the stream");
+        assert_eq!(from_normal(40.0), None, "a jump over a cut is not a rate");
+        assert_eq!(from_normal(-1.0), None);
+        assert_eq!(super::playback_rate_change(2.0)(1.0), Some(1.0));
+    }
+
+    #[test]
+    fn the_stream_restarts_only_after_it_has_drifted_a_quarter_second() {
+        // Small differences are the stream's own pacing, and restarting for
+        // them would hiccup on every frame.
+        assert!(!super::stream_drifted(3.0, 3.1));
+        assert!(!super::stream_drifted(3.0, 3.25));
+        assert!(!super::stream_drifted(3.25, 3.0));
+        // A cut, a speed change or a hold moves the picture further than
+        // that, in either direction.
+        assert!(super::stream_drifted(3.0, 3.26));
+        assert!(super::stream_drifted(3.0, 2.74));
+        assert!(super::stream_drifted(12.0, 0.0));
+    }
+
+    #[test]
+    fn worker_repaints_and_terminates_after_a_blur_job() {
+        let queue = std::sync::Arc::new(super::EffectQueue::default());
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let worker_queue = queue.clone();
+        let worker = std::thread::spawn(move || super::effect_loop(worker_queue, sender));
+        let size = (32, 4);
+        let mut pixels = vec![0u8; size.0 as usize * size.1 as usize * 4];
+        for y in 0..4 {
+            for x in 0..32 {
+                let i = (y * 32 + x) * 4;
+                let value = if x >= 16 { 255 } else { 0 };
+                pixels[i..i + 4].copy_from_slice(&[value, value, value, 255]);
+            }
+        }
+        *queue.job.lock().unwrap() = Some(super::EffectJob {
+            generation: 7,
+            revision: 9,
+            size,
+            pixels: std::sync::Arc::new(pixels),
+            ripple: None,
+            trail: Some(((0.0, 0.0, 32.0, 4.0), (8.0, 0.0, 32.0, 4.0), 60.0, 1.0)),
+            card: None,
+            playing: false,
+        });
+        queue.ready.notify_one();
+        let frame = receiver
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        assert_eq!((frame.generation, frame.revision), (7, 9));
+        let pixel = frame.pixels[4 * 12];
+        assert!(
+            pixel > 0 && pixel < 255,
+            "expected an intermediate edge, got {pixel}"
+        );
+        {
+            let _slot = queue.job.lock().unwrap();
+            queue
+                .stopped
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            queue.ready.notify_one();
+        }
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn card_layer_stays_stage_sized_while_the_card_rests_or_nudges() {
+        let queue = std::sync::Arc::new(super::EffectQueue::default());
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let worker_queue = queue.clone();
+        let worker = std::thread::spawn(move || super::effect_loop(worker_queue, sender));
+        let source = (64, 32);
+        let pixels = std::sync::Arc::new(vec![255u8; 64 * 32 * 4]);
+        let rest = (16.0, 8.0, 64.0, 48.0);
+        let nudged = (16.4, 8.0, 64.0, 48.0);
+        let shifted = (8.0, 8.0, 64.0, 48.0);
+        let stage_card =
+            |now: (f64, f64, f64, f64), previous: (f64, f64, f64, f64)| super::CardLayer {
+                now,
+                previous,
+                stage: (128.0, 96.0),
+                radius: 0.0,
+                fps: 60.0,
+                amount: 1.0,
+            };
+        let cards = [
+            Some(stage_card(rest, shifted)),
+            Some(stage_card(rest, rest)),
+            Some(stage_card(nudged, rest)),
+            Some(stage_card(rest, shifted)),
+            None,
+        ];
+        let mut frames = Vec::new();
+        for (index, card) in cards.into_iter().enumerate() {
+            *queue.job.lock().unwrap() = Some(super::EffectJob {
+                generation: 3,
+                revision: index as u64 + 1,
+                size: source,
+                pixels: pixels.clone(),
+                ripple: None,
+                trail: None,
+                card,
+                playing: true,
+            });
+            queue.ready.notify_one();
+            frames.push(
+                receiver
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .ok(),
+            );
+        }
+        drop(receiver);
+        {
+            let _slot = queue.job.lock().unwrap();
+            queue
+                .stopped
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            queue.ready.notify_one();
+        }
+        worker.join().unwrap();
+        let expected = [
+            ((128, 96), true),
+            ((128, 96), true),
+            ((128, 96), true),
+            ((128, 96), true),
+            ((64, 32), false),
+        ];
+        for (index, (frame, (size, layer))) in frames.iter().zip(expected).enumerate() {
+            let Some(frame) = frame else {
+                panic!("job {} never completed", index + 1);
+            };
+            assert_eq!((frame.generation, frame.revision), (3, index as u64 + 1));
+            assert_eq!(frame.size, size, "job {}", index + 1);
+            assert_eq!(frame.layer, layer, "job {}", index + 1);
+            assert_eq!(frame.pixels.len(), size.0 as usize * size.1 as usize * 4);
+        }
+    }
+
+    #[test]
+    fn playback_presents_completed_frames_without_starving_and_pause_rejects_stale_frames() {
+        assert!(super::accepts_effect_frame(true, 4, 3, 10));
+        assert!(!super::accepts_effect_frame(true, 3, 3, 10));
+        assert!(!super::accepts_effect_frame(false, 4, 3, 10));
+        assert!(super::accepts_effect_frame(false, 10, 3, 10));
+    }
+
+    fn gradient(size: (u32, u32)) -> Vec<u8> {
+        let (width, height) = size;
+        let x_scale = 255.0 / (width - 1).max(1) as f64;
+        let y_scale = 255.0 / (height - 1).max(1) as f64;
+        (0..height)
+            .flat_map(|y| {
+                (0..width).flat_map(move |x| {
+                    [
+                        (x as f64 * x_scale).round() as u8,
+                        (y as f64 * y_scale).round() as u8,
+                        0,
+                        255,
+                    ]
+                })
+            })
+            .collect()
+    }
+
+    fn frame_ripple(source: (f64, f64), clicks: &[(f64, f64, f64)]) -> PreviewRipple {
+        PreviewRipple {
+            view: (0.0, 0.0, source.0, source.1),
+            source_width: source.0,
+            source_height: source.1,
+            clicks: clicks
+                .iter()
+                .map(|&(x, y, age_ms)| PreviewRippleClick { x, y, age_ms })
+                .collect(),
+        }
+    }
+
+    fn pixel_at(pixels: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
+        let offset = ((y * width + x) * 4) as usize;
+        pixels[offset..offset + 4].try_into().unwrap()
+    }
+
+    /// The source pixel a texture pixel shows, read out of the frame's
+    /// coordinate-encoding gradient. Bilinear sampling of a linear gradient
+    /// is exact apart from the 8-bit rounding.
+    fn texture_source(
+        pixels: &[u8],
+        image: (u32, u32),
+        source: (f64, f64),
+        point: (u32, u32),
+    ) -> (f64, f64) {
+        let [red, green, _, _] = pixel_at(pixels, image.0, point.0, point.1);
+        (
+            (f64::from(red) / 255.0 * f64::from(image.0 - 1) + 0.5) * source.0 / f64::from(image.0),
+            (f64::from(green) / 255.0 * f64::from(image.1 - 1) + 0.5) * source.1
+                / f64::from(image.1),
+        )
+    }
+
+    #[test]
+    fn a_click_displaces_the_texture_pixel_over_its_source_point() {
+        let source = (1920.0, 1080.0);
+        let image = (960, 540);
+        let pixels = gradient(image);
+        let click = (1000.0, 500.0, 400.0);
+        let warped = warp_frame(&frame_ripple(source, &[click]), &pixels, image);
+        assert_ne!(warped, pixels, "the wave must move footage");
+
+        let point = (500, 250);
+        let sampled = texture_source(&warped, image, source, point);
+        let source_point = (
+            (f64::from(point.0) + 0.5) * source.0 / f64::from(image.0),
+            (f64::from(point.1) + 0.5) * source.1 / f64::from(image.1),
+        );
+        let pull = ripple_pull_px(
+            source_point.0,
+            source_point.1,
+            click.0,
+            click.1,
+            click.2,
+            RIPPLE_PULL_SIZE_01,
+            source.0,
+        );
+        assert!(
+            (sampled.0 - (source_point.0 - pull.0)).abs() < 5.0,
+            "sampled {sampled:?} from {source_point:?} with pull {pull:?}"
+        );
+        assert!(
+            (sampled.1 - (source_point.1 - pull.1)).abs() < 5.0,
+            "sampled {sampled:?} from {source_point:?} with pull {pull:?}"
+        );
+        assert_eq!(
+            pixel_at(&warped, image.0, 10, 10),
+            pixel_at(&pixels, image.0, 10, 10),
+            "footage far from the wave is untouched"
+        );
+    }
+
+    #[test]
+    fn large_frames_fit_the_preview_box() {
+        assert_eq!(decode_size(1920, 1080), (1280, 720));
+        assert_eq!(decode_size(3840, 2160), (1280, 720));
+        assert_eq!(decode_size(3440, 1440), (1280, 536));
+    }
+
+    #[test]
+    fn portrait_frames_keep_their_aspect() {
+        assert_eq!(decode_size(1080, 1920), (720, 1280));
+    }
+
+    #[test]
+    fn small_frames_are_not_upscaled_and_stay_even() {
+        assert_eq!(decode_size(640, 480), (640, 480));
+        assert_eq!(decode_size(641, 481), (640, 480));
+        assert_eq!(decode_size(0, 0), (1280, 1280));
+    }
+
+    #[test]
+    fn a_smaller_decode_keeps_the_wave_on_the_same_source_pixel() {
+        let source = (1920.0, 1080.0);
+        let ripple = frame_ripple(source, &[(1000.0, 500.0, 400.0)]);
+        let large = warp_frame(&ripple, &gradient((960, 540)), (960, 540));
+        let small = warp_frame(&ripple, &gradient((480, 270)), (480, 270));
+        let from_large = texture_source(&large, (960, 540), source, (500, 250));
+        let from_small = texture_source(&small, (480, 270), source, (250, 125));
+        assert!(
+            (from_large.0 - from_small.0).abs() < 8.0 && (from_large.1 - from_small.1).abs() < 8.0,
+            "decodes disagree: {from_large:?} vs {from_small:?}"
+        );
+    }
+
+    #[test]
+    fn a_zoomed_camera_keeps_the_clicked_source_pixel_under_the_wave() {
+        let source = (1920.0, 1080.0);
+        let image = (960, 540);
+        let pixels = gradient(image);
+        let click = (1000.0, 500.0);
+        let ripple = frame_ripple(source, &[(click.0, click.1, 400.0)]);
+        assert_eq!(
+            ripple.view,
+            (0.0, 0.0, source.0, source.1),
+            "the texture spans the whole encoded frame; the camera crops later"
+        );
+        let warped = warp_frame(&ripple, &pixels, image);
+        let texture_pixel = (
+            (click.0 / source.0 * f64::from(image.0)) as u32,
+            (click.1 / source.1 * f64::from(image.1)) as u32,
+        );
+        let clicked_source = texture_source(&warped, image, source, texture_pixel);
+        let zoomed_view = zoom::view_rect(2.0, (960.0, 540.0), source);
+        let staged_pixel = zoom::source_to_stage(clicked_source, zoomed_view, 640.0, 480.0);
+        let staged_click = zoom::source_to_stage(click, zoomed_view, 640.0, 480.0);
+        assert!(
+            (staged_pixel.0 - staged_click.0).abs() < 2.5
+                && (staged_pixel.1 - staged_click.1).abs() < 2.5,
+            "texture pixel {texture_pixel:?} reaches {staged_pixel:?}, click reaches {staged_click:?}"
+        );
+    }
+}

@@ -1,0 +1,169 @@
+# Maintainer: codegoddy <codegoddy@gmail.com>
+pkgname=apexshot
+pkgver=0.3.2
+pkgrel=1
+pkgdesc="Open-source Linux screenshot, annotation, OCR, and screen recording tool"
+arch=('x86_64')
+url="https://github.com/apex-shot/apexshot"
+license=('GPL-3.0-or-later')
+options=('!lto')
+install=apexshot.install
+_APEXSHOT_STUDIO_VERIFY_KEY=''
+_APEXSHOT_STUDIO_RELEASE_TIMESTAMP=''
+depends=(
+    'gtk4-layer-shell'
+
+    # Core clipboard / notifications
+    'wl-clipboard'
+    'libnotify'
+    'xdg-utils'
+
+    # GStreamer stack (ScreenCast / PipeWire capture + encoding)
+    'gstreamer'
+    'gst-plugins-base'
+    'gst-plugins-good'
+    'gst-plugins-bad'
+    'gst-libav'
+    'gst-plugin-pipewire'
+    'gst-plugin-libcamera'
+
+    # PipeWire
+    'pipewire'
+    'pipewire-pulse'
+    'pipewire-libcamera'
+
+    # Camera stack
+    'libcamera'
+    'libcamera-ipa'
+
+    # OCR
+    'tesseract'
+    'tesseract-data-eng'
+    'leptonica'
+
+    # Qt5 (for bundled C++ capture overlay binary)
+    'qt5-base'
+    'qt5-x11extras'
+    'qt5-wayland'
+
+    # X11 libs (capture overlay input handling)
+    'libxtst'
+
+    # Desktop portal (base — required)
+    'xdg-desktop-portal'
+
+    # Media
+    'ffmpeg'
+
+    # In-app GNOME extension installer
+    'wget'
+    'curl'
+    'unzip'
+)
+optdepends=(
+    # Portal backends — install the one matching your desktop
+    'xdg-desktop-portal-gnome: for GNOME Wayland'
+    'xdg-desktop-portal-hyprland: for Hyprland'
+    'xdg-desktop-portal-wlr: for Sway / other wlroots compositors'
+    'xdg-desktop-portal-kde: for KDE Plasma'
+    'gnome-shell-extension-appindicator: system tray icon on GNOME'
+    'xclip: clipboard support on X11'
+    'wf-recorder: native recording for wlroots compositors (Hyprland/Sway)'
+    'grim: faster screenshot fallback on wlroots compositors'
+    'slurp: region selection helper for wlroots compositors'
+)
+makedepends=(
+    'rust'
+    'cargo'
+    'git'
+    'cmake'
+    'clang'
+    'pkgconf'
+    'gtk4'
+    'libadwaita'
+)
+source=("apexshot-0.3.2.tar.gz::https://github.com/apex-shot/apexshot/archive/v0.3.2.tar.gz")
+sha256sums=('SKIP')  # Update with actual checksum on release
+
+build() {
+    cd "$pkgname-$pkgver"
+    export APEXSHOT_STUDIO_VERIFY_KEY="${_APEXSHOT_STUDIO_VERIFY_KEY:-${APEXSHOT_STUDIO_VERIFY_KEY:-}}"
+    export APEXSHOT_STUDIO_RELEASE_TIMESTAMP="${_APEXSHOT_STUDIO_RELEASE_TIMESTAMP:-${APEXSHOT_STUDIO_RELEASE_TIMESTAMP:-}}"
+    cargo build --release
+}
+
+package() {
+    cd "$pkgname-$pkgver"
+
+    # ── Binaries ──────────────────────────────────────────────
+    install -Dm755 "target/release/apexshot"           "$pkgdir/usr/bin/apexshot"
+    install -Dm755 "target/release/apexshot-capture"   "$pkgdir/usr/bin/apexshot-capture"
+    install -Dm755 "packaging/deb/apexshot-native-host" "$pkgdir/usr/bin/apexshot-native-host"
+
+    # ── Desktop files ─────────────────────────────────────────
+    install -Dm644 "packaging/io.github.codegoddy.apexshot.desktop" \
+        "$pkgdir/usr/share/applications/io.github.codegoddy.apexshot.desktop"
+    install -Dm644 "packaging/io.github.codegoddy.apexshot.metainfo.xml" \
+        "$pkgdir/usr/share/metainfo/io.github.codegoddy.apexshot.metainfo.xml"
+    install -Dm644 "packaging/apexshot-daemon.desktop" \
+        "$pkgdir/etc/xdg/autostart/apexshot.desktop"
+
+    # ── Icons ─────────────────────────────────────────────────
+    install -Dm644 "packaging/apexshot.svg" \
+        "$pkgdir/usr/share/icons/hicolor/scalable/apps/apexshot.svg"
+    install -Dm644 "packaging/apexshot.svg" \
+        "$pkgdir/usr/share/icons/hicolor/scalable/apps/io.github.codegoddy.apexshot.svg"
+    install -Dm644 "packaging/apexshot-recording.svg" \
+        "$pkgdir/usr/share/icons/hicolor/scalable/apps/apexshot-recording.svg"
+    install -Dm644 "packaging/apexshot-recording.svg" \
+        "$pkgdir/usr/share/icons/hicolor/scalable/apps/io.github.codegoddy.apexshot-recording.svg"
+    install -Dm644 "packaging/apexshot.svg" \
+        "$pkgdir/usr/share/pixmaps/apexshot.svg"
+
+    # ── Browser native messaging manifests ────────────────────
+    install -Dm644 "native-host/io.github.codegoddy.apexshot.json" \
+        "$pkgdir/etc/opt/chrome/NativeMessagingHosts/io.github.codegoddy.apexshot.json"
+    install -Dm644 "native-host/io.github.codegoddy.apexshot.json" \
+        "$pkgdir/etc/chromium/NativeMessagingHosts/io.github.codegoddy.apexshot.json"
+
+    # ── GNOME Shell extension (system-wide) ───────────────────
+    local ext_uuid="apexshot-gnome-integration@apexshot.github.io"
+    local ext_dir="$pkgdir/usr/share/gnome-shell/extensions/$ext_uuid"
+    install -d "$ext_dir"
+    install -Dm644 "gnome-extension/metadata.json"  "$ext_dir/metadata.json"
+    install -Dm644 "gnome-extension/extension.js"    "$ext_dir/extension.js"
+    install -Dm644 "gnome-extension/cursor-classifier.js" "$ext_dir/cursor-classifier.js"
+    install -Dm644 "gnome-extension/press-tracker.js" "$ext_dir/press-tracker.js"
+    install -Dm644 "gnome-extension/shell-overlay.js" "$ext_dir/shell-overlay.js"
+    install -Dm644 "gnome-extension/window-list.js" "$ext_dir/window-list.js"
+    install -Dm644 "gnome-extension/preview-stacking.js" "$ext_dir/preview-stacking.js"
+    install -Dm644 "gnome-extension/daemon-ownership.js" "$ext_dir/daemon-ownership.js"
+    install -Dm644 "gnome-extension/capture-menu-placement.js" "$ext_dir/capture-menu-placement.js"
+
+    # ── Background images for editor ──────────────────────────
+    local bg_dir="$pkgdir/usr/share/apexshot/background-images"
+    install -d "$bg_dir"
+    for img in src/capture/editor/background-images/*.jpg; do
+        [ -f "$img" ] && install -Dm644 "$img" "$bg_dir/$(basename "$img")"
+    done
+
+    # ── Sound files for capture shutter ───────────────────────
+    local snd_dir="$pkgdir/usr/share/apexshot/sounds"
+    install -d "$snd_dir"
+    for snd in assets/sounds/*.ogg; do
+        [ -f "$snd" ] && install -Dm644 "$snd" "$snd_dir/$(basename "$snd")"
+    done
+
+    install -Dm644 assets/upscaling/LICENSE "$pkgdir/usr/share/licenses/$pkgname/upscaling.LICENSE"
+    install -Dm644 assets/upscaling/README.md "$pkgdir/usr/share/doc/$pkgname/upscaling.md"
+
+    if [[ -d target/locale ]]; then
+        for mo in target/locale/*/LC_MESSAGES/apexshot.mo; do
+            [[ -f "$mo" ]] || continue
+            lang=$(basename "$(dirname "$(dirname "$mo")")")
+            install -Dm644 "$mo" "$pkgdir/usr/share/locale/${lang}/LC_MESSAGES/apexshot.mo"
+        done
+    fi
+}
+
+# vim:set ts=2 sw=2 et:

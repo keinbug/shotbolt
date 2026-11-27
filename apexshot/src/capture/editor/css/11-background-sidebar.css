@@ -1,0 +1,43 @@
+            .editor-colors-panel {
+                min-width: 210px;
+                padding: 16px;
+            }
+
+            .editor-colors-panel-helper {
+                color: rgba(255, 255, 255, 0.62);
+                font-size: 11px;
+                line-height: 1.4;
+                margin-bottom: 2px;
+            }
+
+            .editor-colors-panel-section {
+                margin-top: 2px;
+            }
+
+            .editor-colors-panel-action-button {
+                min-height: 30px;
+                padding: 0 12px;
+                border-radius: 6px;
+                border: 1px solid rgba(255, 255, 255, 0.10);
+                background: rgba(255, 255, 255, 0.03);
+                color: rgba(245, 245, 247, 0.9);
+                box-shadow: none;
+            }
+
+            .editor-colors-panel-action-button:hover {
+                background: alpha(white, 0.06);
+                color: #ffffff;
+            }
+
+            .editor-background-section-title {
+                color: rgba(255, 255, 255, 0.46);
+                font-size: 10px;
+                font-weight: 600;
+                letter-spacing: 0.6px;
+                text-transform: uppercase;
+                margin-top: 4px;
+            }
+
+            .editor-toolbar-size-slider {
+                margin: 0 4px;
+            }

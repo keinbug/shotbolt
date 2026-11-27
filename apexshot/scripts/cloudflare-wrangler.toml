@@ -1,0 +1,52 @@
+# ApexShot installer Worker — wrangler config.
+#
+# Deploy from the repository root:
+#
+#   cd /path/to/apexshot
+#   npx wrangler deploy --config scripts/cloudflare-wrangler.toml
+#
+# `main` is resolved relative to THIS file, so no path juggling is needed.
+#
+# TOML ORDERING MATTERS: all top-level keys (name, main, compatibility_date,
+# routes, workers_dev) MUST appear before the first table header. A key placed
+# after `[[r2_buckets]]` becomes a field of that table and is silently dropped
+# with a warning like:
+#   "Unexpected fields found in r2_buckets[0] field: routes"
+
+name = "apexshot-install"
+main = "cloudflare-worker.js"
+compatibility_date = "2025-01-01"
+
+# Intercept only these paths on the existing apexshot.org zone. `/install*`
+# also covers /install/ubuntu, /install/arch and /install/fedora; `/update*`
+# covers the matching updaters. A route pattern is more specific than the zone
+# default, so these paths are handled here and everything else on apexshot.org
+# keeps serving from its existing origin untouched.
+routes = [
+  { pattern = "apexshot.org/install*", zone_name = "apexshot.org" },
+  { pattern = "apexshot.org/update*", zone_name = "apexshot.org" },
+  # Exact path, no wildcard, so any other /download page on the site is left
+  # to the origin. The Worker answers with a redirect to the latest release's
+  # Windows installer, on the R2 mirror when it has it, else on GitHub.
+  { pattern = "apexshot.org/download/windows", zone_name = "apexshot.org" },
+]
+
+# Keep the workers.dev URL alive so the Worker can be tested directly, without
+# depending on route registration or DNS.
+workers_dev = true
+
+# Mirror the latest GitHub release into R2 every fifteen minutes and prune
+# older releases (see `syncMirror` in the Worker). A run that finds the
+# release already mirrored only reads object metadata.
+[triggers]
+crons = ["*/15 * * * *"]
+
+# The release mirror, served publicly by its custom domain dl.apexshot.org.
+# The Worker also reads installer scripts from the `scripts/` prefix when
+# they are present there.
+[[r2_buckets]]
+binding = "RELEASES"
+bucket_name = "apexshot-releases"
+
+[observability]
+enabled = true

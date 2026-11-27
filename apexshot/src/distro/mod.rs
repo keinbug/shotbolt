@@ -1,0 +1,705 @@
+//! Distribution and desktop support metadata.
+//!
+//! Capture support is intentionally distro-light: on Wayland ApexShot uses the
+//! XDG ScreenCast portal plus PipeWire as the primary "share screen" capture
+//! path. Distro-specific code here is for detection, dependency guidance,
+//! packaging, and small integration differences.
+
+pub mod arch;
+
+use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
+
+/// Information about the current Linux distribution
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DistroInfo {
+    pub id: String,
+    pub id_like: Vec<String>,
+    pub name: String,
+    pub version_id: Option<String>,
+}
+
+impl DistroInfo {
+    /// Detect the current Linux distribution from the host's os-release file.
+    pub fn detect() -> Option<Self> {
+        Self::detect_with_paths(
+            crate::app_identity::portal_only(),
+            Path::new("/run/host/os-release"),
+            Path::new("/etc/os-release"),
+            Path::new("/usr/lib/os-release"),
+        )
+    }
+
+    fn detect_with_paths(
+        portal_only: bool,
+        host: &Path,
+        primary: &Path,
+        fallback: &Path,
+    ) -> Option<Self> {
+        if portal_only {
+            Self::detect_from_path(host)
+        } else {
+            Self::detect_with_fallback(primary, fallback)
+        }
+    }
+
+    fn detect_with_fallback(primary: &Path, fallback: &Path) -> Option<Self> {
+        match fs::read_to_string(primary) {
+            Ok(raw) => Self::parse_os_release(&raw),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                Self::detect_from_path(fallback)
+            }
+            Err(_) => None,
+        }
+    }
+
+    /// Detect a distribution from an os-release file.
+    pub fn detect_from_path(path: impl AsRef<Path>) -> Option<Self> {
+        let raw = fs::read_to_string(path).ok()?;
+        Self::parse_os_release(&raw)
+    }
+
+    fn parse_os_release(raw: &str) -> Option<Self> {
+        let fields = parse_os_release_fields(raw);
+        let id = normalize_id(fields.get("ID")?)?;
+        let id_like = fields
+            .get("ID_LIKE")
+            .map(|value| {
+                value
+                    .split_whitespace()
+                    .filter_map(normalize_id)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let name = fields.get("NAME").cloned().unwrap_or_else(|| id.clone());
+        let version_id = fields.get("VERSION_ID").cloned();
+
+        Some(Self {
+            id,
+            id_like,
+            name,
+            version_id,
+        })
+    }
+
+    /// Check if this is an Arch-based distribution
+    pub fn is_arch(&self) -> bool {
+        self.family() == DistroFamily::Arch
+    }
+
+    /// Check if this is a Debian/Ubuntu-based distribution
+    pub fn is_debian(&self) -> bool {
+        self.family() == DistroFamily::Debian
+    }
+
+    /// Check if this is a Fedora/RHEL-based distribution
+    pub fn is_fedora(&self) -> bool {
+        self.family() == DistroFamily::Fedora
+    }
+
+    /// Check if this is openSUSE
+    pub fn is_opensuse(&self) -> bool {
+        self.family() == DistroFamily::OpenSuse
+    }
+
+    /// Check if this is NixOS
+    pub fn is_nixos(&self) -> bool {
+        self.family() == DistroFamily::Nixos
+    }
+
+    /// Check if this is Alpine Linux.
+    pub fn is_alpine(&self) -> bool {
+        self.family() == DistroFamily::Alpine
+    }
+
+    /// Check if this is Gentoo.
+    pub fn is_gentoo(&self) -> bool {
+        self.family() == DistroFamily::Gentoo
+    }
+
+    /// Check if this is Void Linux.
+    pub fn is_void(&self) -> bool {
+        self.family() == DistroFamily::Void
+    }
+
+    /// Group this distribution into a support family.
+    pub fn family(&self) -> DistroFamily {
+        std::iter::once(&self.id)
+            .chain(&self.id_like)
+            .find_map(|id| match id.as_str() {
+                "ubuntu" | "debian" | "linuxmint" | "pop" | "elementary" => {
+                    Some(DistroFamily::Debian)
+                }
+                "arch" | "manjaro" => Some(DistroFamily::Arch),
+                "fedora" | "rhel" | "centos" | "almalinux" | "rocky" => Some(DistroFamily::Fedora),
+                "opensuse-tumbleweed" | "opensuse-leap" | "opensuse" | "suse" | "sles" => {
+                    Some(DistroFamily::OpenSuse)
+                }
+                "nixos" => Some(DistroFamily::Nixos),
+                "alpine" => Some(DistroFamily::Alpine),
+                "gentoo" => Some(DistroFamily::Gentoo),
+                "void" => Some(DistroFamily::Void),
+                _ => None,
+            })
+            .unwrap_or(DistroFamily::Unknown)
+    }
+
+    /// Runtime and packaging guidance for this distribution family.
+    pub fn support_profile(&self) -> DistroSupport {
+        DistroSupport::for_family(self.family())
+    }
+
+    /// Summary of how screenshots are captured on this distribution.
+    pub fn screenshot_capture_summary(&self) -> &'static str {
+        "Permission-first ScreenCast portal + PipeWire / native wlr-screencopy / X11"
+    }
+}
+
+/// Supported distro families. These are package-manager families, not capture
+/// backends; the Wayland capture backend remains ScreenCast portal + PipeWire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DistroFamily {
+    Debian,
+    Arch,
+    Fedora,
+    OpenSuse,
+    Nixos,
+    Alpine,
+    Gentoo,
+    Void,
+    Unknown,
+}
+
+/// How much confidence we have before distro-specific manual testing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SupportTier {
+    Tested,
+    ImplementedNeedsTesting,
+    CommunityPackaging,
+    Unknown,
+}
+
+/// Distro-family support metadata used by installers, diagnostics, and docs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DistroSupport {
+    pub family: DistroFamily,
+    pub tier: SupportTier,
+    pub package_manager: &'static str,
+    pub install_command: &'static str,
+    pub wayland_capture_method: &'static str,
+    pub required_runtime_packages: &'static [&'static str],
+    pub recommended_portal_backends: &'static [&'static str],
+}
+
+impl DistroSupport {
+    pub fn for_family(family: DistroFamily) -> Self {
+        match family {
+            DistroFamily::Debian => Self {
+                family,
+                tier: SupportTier::Tested,
+                package_manager: "apt/dpkg",
+                install_command: "scripts/ubuntu-install.sh",
+                wayland_capture_method: "XDG ScreenCast portal + PipeWire",
+                required_runtime_packages: &[
+                    "xdg-desktop-portal",
+                    "pipewire",
+                    "pipewire-pulse",
+                    "gstreamer1.0-pipewire",
+                    "wl-clipboard",
+                    "tesseract-ocr",
+                    "ffmpeg",
+                ],
+                recommended_portal_backends: &[
+                    "xdg-desktop-portal-gnome",
+                    "xdg-desktop-portal-kde",
+                    "xdg-desktop-portal-wlr",
+                ],
+            },
+            DistroFamily::Arch => Self {
+                family,
+                tier: SupportTier::Tested,
+                package_manager: "pacman",
+                install_command: "scripts/arch-install.sh",
+                wayland_capture_method: "XDG ScreenCast portal + PipeWire",
+                required_runtime_packages: &[
+                    "xdg-desktop-portal",
+                    "pipewire",
+                    "pipewire-pulse",
+                    "gst-plugin-pipewire",
+                    "wl-clipboard",
+                    "tesseract",
+                    "ffmpeg",
+                ],
+                recommended_portal_backends: &[
+                    "xdg-desktop-portal-gnome",
+                    "xdg-desktop-portal-kde",
+                    "xdg-desktop-portal-wlr",
+                    "xdg-desktop-portal-hyprland",
+                ],
+            },
+            DistroFamily::Fedora => Self {
+                family,
+                tier: SupportTier::ImplementedNeedsTesting,
+                package_manager: "dnf/rpm",
+                install_command: "development: pending Fedora/RHEL packaging and runtime validation",
+                wayland_capture_method: "XDG ScreenCast portal + PipeWire",
+                required_runtime_packages: &[
+                    "xdg-desktop-portal",
+                    "pipewire",
+                    "pipewire-pulseaudio",
+                    "gstreamer1-plugin-pipewire",
+                    "wl-clipboard",
+                    "tesseract",
+                    "ffmpeg-free",
+                ],
+                recommended_portal_backends: &[
+                    "xdg-desktop-portal-gnome",
+                    "xdg-desktop-portal-kde",
+                    "xdg-desktop-portal-wlr",
+                ],
+            },
+            DistroFamily::OpenSuse => Self {
+                family,
+                tier: SupportTier::ImplementedNeedsTesting,
+                package_manager: "zypper/rpm",
+                install_command: "development: scripts/opensuse-install.sh or packaging/opensuse/apexshot.spec; runtime validation pending",
+                wayland_capture_method: "XDG ScreenCast portal + PipeWire",
+                required_runtime_packages: &[
+                    "xdg-desktop-portal",
+                    "pipewire",
+                    "pipewire-pulseaudio",
+                    "gstreamer-plugin-pipewire",
+                    "wl-clipboard",
+                    "tesseract-ocr",
+                    "ffmpeg",
+                ],
+                recommended_portal_backends: &[
+                    "xdg-desktop-portal-gnome",
+                    "xdg-desktop-portal-kde",
+                    "xdg-desktop-portal-wlr",
+                ],
+            },
+            DistroFamily::Nixos => Self {
+                family,
+                tier: SupportTier::ImplementedNeedsTesting,
+                package_manager: "nix",
+                install_command: "nix build .#apexshot (see packaging/nix/README.md for NixOS configuration)",
+                wayland_capture_method: "XDG ScreenCast portal + PipeWire",
+                required_runtime_packages: &[
+                    "xdg-desktop-portal",
+                    "pipewire",
+                    "gst_all_1.gst-plugins-base",
+                    "gst_all_1.gst-plugins-good",
+                    "gst_all_1.gst-plugins-bad",
+                    "gst_all_1.gst-libav",
+                    "wl-clipboard",
+                    "tesseract",
+                    "ffmpeg",
+                ],
+                recommended_portal_backends: &[
+                    "xdg-desktop-portal-gnome",
+                    "xdg-desktop-portal-kde",
+                    "xdg-desktop-portal-wlr",
+                    "xdg-desktop-portal-hyprland",
+                ],
+            },
+            DistroFamily::Alpine => Self {
+                family,
+                tier: SupportTier::CommunityPackaging,
+                package_manager: "apk",
+                install_command: "pending: alpine packaging",
+                wayland_capture_method: "XDG ScreenCast portal + PipeWire",
+                required_runtime_packages: &[
+                    "xdg-desktop-portal",
+                    "pipewire",
+                    "gst-plugins-rs",
+                    "wl-clipboard",
+                    "tesseract-ocr",
+                ],
+                recommended_portal_backends: &["xdg-desktop-portal-wlr"],
+            },
+            DistroFamily::Gentoo => Self {
+                family,
+                tier: SupportTier::CommunityPackaging,
+                package_manager: "portage",
+                install_command: "pending: ebuild",
+                wayland_capture_method: "XDG ScreenCast portal + PipeWire",
+                required_runtime_packages: &[
+                    "xdg-desktop-portal",
+                    "pipewire",
+                    "gst-plugins-rs",
+                    "wl-clipboard",
+                    "tesseract",
+                ],
+                recommended_portal_backends: &[
+                    "xdg-desktop-portal-gnome",
+                    "xdg-desktop-portal-kde",
+                    "xdg-desktop-portal-wlr",
+                ],
+            },
+            DistroFamily::Void => Self {
+                family,
+                tier: SupportTier::CommunityPackaging,
+                package_manager: "xbps",
+                install_command: "pending: void template",
+                wayland_capture_method: "XDG ScreenCast portal + PipeWire",
+                required_runtime_packages: &[
+                    "xdg-desktop-portal",
+                    "pipewire",
+                    "gst-plugins-rs",
+                    "wl-clipboard",
+                    "tesseract-ocr",
+                ],
+                recommended_portal_backends: &[
+                    "xdg-desktop-portal-gnome",
+                    "xdg-desktop-portal-kde",
+                    "xdg-desktop-portal-wlr",
+                ],
+            },
+            DistroFamily::Unknown => Self {
+                family,
+                tier: SupportTier::Unknown,
+                package_manager: "unknown",
+                install_command: "manual/source build",
+                wayland_capture_method: "XDG ScreenCast portal + PipeWire",
+                required_runtime_packages: &[
+                    "xdg-desktop-portal",
+                    "pipewire",
+                    "gstreamer pipewire plugin",
+                    "wl-clipboard",
+                    "tesseract",
+                ],
+                recommended_portal_backends: &[
+                    "xdg-desktop-portal-gnome",
+                    "xdg-desktop-portal-kde",
+                    "xdg-desktop-portal-wlr",
+                ],
+            },
+        }
+    }
+}
+
+/// Platform-specific paths and commands
+pub struct PlatformPaths {
+    pub config_dir: String,
+    pub data_dir: String,
+    pub cache_dir: String,
+    pub autostart_dir: String,
+}
+
+impl PlatformPaths {
+    /// Get platform paths for the current distribution
+    pub fn for_distro(distro: &DistroInfo) -> Self {
+        match distro.family() {
+            DistroFamily::Nixos => Self::xdg_defaults(),
+            _ => Self::xdg_defaults(),
+        }
+    }
+
+    fn xdg_defaults() -> Self {
+        Self {
+            config_dir: dirs::config_dir()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "~/.config".to_string()),
+            data_dir: dirs::data_dir()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "~/.local/share".to_string()),
+            cache_dir: dirs::cache_dir()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "~/.cache".to_string()),
+            autostart_dir: "~/.config/autostart".to_string(),
+        }
+    }
+}
+
+fn parse_os_release_fields(raw: &str) -> HashMap<String, String> {
+    raw.lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                return None;
+            }
+            let (key, value) = line.split_once('=')?;
+            Some((
+                key.trim().to_string(),
+                unquote_os_release_value(value.trim()),
+            ))
+        })
+        .collect()
+}
+
+fn unquote_os_release_value(value: &str) -> String {
+    let Some(quote) = value.chars().next().filter(|c| *c == '"' || *c == '\'') else {
+        return value.to_string();
+    };
+    if !value.ends_with(quote) || value.len() < 2 {
+        return value.to_string();
+    }
+
+    let inner = &value[1..value.len() - 1];
+    let mut out = String::with_capacity(inner.len());
+    let mut escaped = false;
+    for ch in inner.chars() {
+        if escaped {
+            out.push(ch);
+            escaped = false;
+        } else if ch == '\\' {
+            escaped = true;
+        } else {
+            out.push(ch);
+        }
+    }
+    if escaped {
+        out.push('\\');
+    }
+    out
+}
+
+fn normalize_id(value: impl AsRef<str>) -> Option<String> {
+    let value = value
+        .as_ref()
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .to_ascii_lowercase();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vendor_release_is_only_used_when_local_release_is_missing() {
+        let directory =
+            std::env::temp_dir().join(format!("apexshot-distro-fallback-{}", std::process::id()));
+        fs::create_dir(&directory).unwrap();
+        let primary = directory.join("etc-os-release");
+        let fallback = directory.join("usr-lib-os-release");
+        fs::write(&fallback, "ID=nixos\n").unwrap();
+        assert_eq!(
+            DistroInfo::detect_with_fallback(&primary, &fallback)
+                .unwrap()
+                .family(),
+            DistroFamily::Nixos
+        );
+
+        fs::write(&primary, "ID=ubuntu\n").unwrap();
+        assert_eq!(
+            DistroInfo::detect_with_fallback(&primary, &fallback)
+                .unwrap()
+                .family(),
+            DistroFamily::Debian
+        );
+
+        fs::write(&primary, "NAME=Unknown\n").unwrap();
+        assert!(DistroInfo::detect_with_fallback(&primary, &fallback).is_none());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn portal_only_detection_uses_host_release_and_recognizes_fedora_derivatives() {
+        let directory = std::env::temp_dir().join(format!(
+            "apexshot-distro-flatpak-host-{}",
+            std::process::id()
+        ));
+        fs::create_dir(&directory).unwrap();
+        let host = directory.join("host-os-release");
+        let runtime = directory.join("runtime-os-release");
+        let fallback = directory.join("runtime-fallback-os-release");
+        fs::write(&runtime, "ID=ubuntu\n").unwrap();
+        fs::write(&fallback, "ID=debian\n").unwrap();
+
+        for host_release in [
+            "ID=fedora\n",
+            "ID=custom\nID_LIKE=rhel\n",
+            "ID=custom\nID_LIKE=centos\n",
+        ] {
+            fs::write(&host, host_release).unwrap();
+            let distro = DistroInfo::detect_with_paths(true, &host, &runtime, &fallback).unwrap();
+            assert!(distro.is_fedora(), "{host_release}");
+        }
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn portal_only_detection_does_not_fall_back_to_runtime_release() {
+        let directory = std::env::temp_dir().join(format!(
+            "apexshot-distro-flatpak-missing-host-{}",
+            std::process::id()
+        ));
+        fs::create_dir(&directory).unwrap();
+        let host = directory.join("host-os-release");
+        let runtime = directory.join("runtime-os-release");
+        let fallback = directory.join("runtime-fallback-os-release");
+        fs::write(&runtime, "ID=ubuntu\n").unwrap();
+        fs::write(&fallback, "ID=fedora\n").unwrap();
+
+        assert!(DistroInfo::detect_with_paths(true, &host, &runtime, &fallback).is_none());
+
+        fs::write(&host, "NAME=Malformed host release\n").unwrap();
+        assert!(DistroInfo::detect_with_paths(true, &host, &runtime, &fallback).is_none());
+
+        fs::remove_file(&host).unwrap();
+        fs::create_dir(&host).unwrap();
+        assert!(DistroInfo::detect_with_paths(true, &host, &runtime, &fallback).is_none());
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn native_detection_keeps_local_release_preferred_over_vendor_release() {
+        let directory = std::env::temp_dir().join(format!(
+            "apexshot-distro-native-priority-{}",
+            std::process::id()
+        ));
+        fs::create_dir(&directory).unwrap();
+        let host = directory.join("host-os-release");
+        let primary = directory.join("etc-os-release");
+        let fallback = directory.join("usr-lib-os-release");
+        fs::write(&host, "ID=alpine\n").unwrap();
+        fs::write(&primary, "ID=ubuntu\n").unwrap();
+        fs::write(&fallback, "ID=fedora\n").unwrap();
+
+        let distro = DistroInfo::detect_with_paths(false, &host, &primary, &fallback).unwrap();
+        assert_eq!(distro.family(), DistroFamily::Debian);
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn recognized_id_takes_precedence_over_id_like() {
+        let distro = DistroInfo::parse_os_release("ID=nixos\nID_LIKE=debian\n").unwrap();
+        assert_eq!(distro.family(), DistroFamily::Nixos);
+        assert!(distro.is_nixos());
+        assert!(!distro.is_debian());
+
+        let distro = DistroInfo::parse_os_release("ID=opensuse-leap\nID_LIKE=fedora\n").unwrap();
+        assert_eq!(distro.family(), DistroFamily::OpenSuse);
+        assert!(!distro.is_fedora());
+    }
+
+    #[test]
+    fn unknown_id_uses_first_recognized_id_like() {
+        for (id_like, expected) in [
+            ("custom arch debian", DistroFamily::Arch),
+            ("custom debian arch", DistroFamily::Debian),
+            ("custom suse fedora", DistroFamily::OpenSuse),
+            ("custom nixos", DistroFamily::Nixos),
+            ("custom", DistroFamily::Unknown),
+        ] {
+            let distro =
+                DistroInfo::parse_os_release(&format!("ID=derivative\nID_LIKE=\"{id_like}\"\n"))
+                    .unwrap();
+            assert_eq!(distro.family(), expected);
+        }
+    }
+
+    #[test]
+    fn opensuse_variants_and_enterprise_ids_are_recognized() {
+        for id in ["opensuse-tumbleweed", "opensuse-leap", "opensuse", "sles"] {
+            let distro = DistroInfo::parse_os_release(&format!("ID={id}\n")).unwrap();
+            assert_eq!(distro.family(), DistroFamily::OpenSuse);
+        }
+    }
+
+    #[test]
+    fn nixos_profile_has_a_source_package_without_claiming_runtime_testing() {
+        let profile = DistroSupport::for_family(DistroFamily::Nixos);
+        assert_eq!(profile.tier, SupportTier::ImplementedNeedsTesting);
+        assert!(profile.install_command.contains("nix build .#apexshot"));
+    }
+
+    #[test]
+    fn test_distro_detection_arch() {
+        let arch = DistroInfo {
+            id: "arch".to_string(),
+            id_like: vec![],
+            name: "Arch Linux".to_string(),
+            version_id: None,
+        };
+        assert!(arch.is_arch());
+        assert!(!arch.is_debian());
+        assert!(!arch.is_fedora());
+    }
+
+    #[test]
+    fn parses_os_release_with_quotes_and_id_like() {
+        let distro = DistroInfo::parse_os_release(
+            r#"
+            NAME="Fedora Linux"
+            ID=fedora
+            VERSION_ID="40"
+            ID_LIKE="rhel centos"
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(distro.id, "fedora");
+        assert_eq!(distro.name, "Fedora Linux");
+        assert_eq!(distro.version_id.as_deref(), Some("40"));
+        assert!(distro.id_like.contains(&"rhel".to_string()));
+        assert!(distro.is_fedora());
+        assert_eq!(distro.family(), DistroFamily::Fedora);
+    }
+
+    #[test]
+    fn maps_supported_distro_profiles_to_screencast() {
+        for family in [
+            DistroFamily::Debian,
+            DistroFamily::Arch,
+            DistroFamily::Fedora,
+            DistroFamily::OpenSuse,
+            DistroFamily::Nixos,
+            DistroFamily::Alpine,
+            DistroFamily::Gentoo,
+            DistroFamily::Void,
+        ] {
+            let profile = DistroSupport::for_family(family);
+            assert_eq!(
+                profile.wayland_capture_method,
+                "XDG ScreenCast portal + PipeWire"
+            );
+            assert!(profile
+                .required_runtime_packages
+                .iter()
+                .any(|pkg| pkg.contains("pipewire")));
+            assert!(profile
+                .recommended_portal_backends
+                .iter()
+                .any(|backend| backend.contains("xdg-desktop-portal")));
+        }
+    }
+
+    #[test]
+    fn test_distro_detection_ubuntu() {
+        let ubuntu = DistroInfo {
+            id: "ubuntu".to_string(),
+            id_like: vec!["debian".to_string()],
+            name: "Ubuntu".to_string(),
+            version_id: Some("24.04".to_string()),
+        };
+        assert!(!ubuntu.is_arch());
+        assert!(ubuntu.is_debian());
+        assert!(!ubuntu.is_fedora());
+    }
+
+    #[test]
+    fn test_distro_detection_fedora() {
+        let fedora = DistroInfo {
+            id: "fedora".to_string(),
+            id_like: vec![],
+            name: "Fedora Linux".to_string(),
+            version_id: Some("40".to_string()),
+        };
+        assert!(!fedora.is_arch());
+        assert!(!fedora.is_debian());
+        assert!(fedora.is_fedora());
+    }
+}

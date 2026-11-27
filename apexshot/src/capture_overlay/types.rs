@@ -1,0 +1,145 @@
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LaunchBlockedReason {
+    ApexOverlayAlreadyActive,
+    BuiltinOverlayActive,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum OverlayExitCode {
+    Cancelled = 1,
+    Error = 2,
+    WindowCaptureRequested = 3,
+    SwitchToArea = 4,
+    SwitchToFullscreen = 5,
+    RecordConfigUpdated = 6,
+    ForwardedToExistingOverlay = 10,
+    BlockedByBuiltinOverlay = 11,
+}
+
+/// Result of running the capture overlay — either an area selection or a
+/// full window capture (when user clicks the Window toolbar button).
+pub enum OverlayResult {
+    /// User selected an area — coordinates to crop from.
+    Area(SelectionArea),
+    /// User clicked Window tool — full window pixel data already captured.
+    Window(CaptureData),
+    /// User cancelled.
+    Cancelled,
+}
+
+/// Result of area capture initiation through the C++ overlay.
+#[derive(Debug)]
+pub enum AreaCaptureResult {
+    Captured(CaptureData),
+    CapturedOnDisplay(CaptureData, CaptureDisplay),
+    ScrollCaptured(CaptureData),
+    OcrRequested(CaptureData),
+    RecordingRequested(RecordingRequest),
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CaptureDisplay {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+/// Recording request from the capture overlay.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecordingRequest {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    pub record_type: RecordingType,
+    pub controls: bool,
+    pub mic: bool,
+    pub speaker: bool,
+    /// Connector name of the display a full-screen request targets. Empty
+    /// when unknown.
+    #[serde(default)]
+    pub output: String,
+    /// Linux: the Pulse source chosen in the Quick Capture device menu, and
+    /// the one app whose audio the Speaker item records. Empty values mean
+    /// "use the saved choice, then every app / the server default".
+    #[serde(default)]
+    pub mic_device: String,
+    #[serde(default)]
+    pub speaker_app: String,
+    #[serde(default)]
+    pub speaker_app_pid: u32,
+    // General tab settings
+    pub display_rec_time: bool,
+    pub hidpi: bool,
+    pub notifications: bool,
+    pub cursor: bool,
+    pub remember_selection: bool,
+    pub dim_screen: bool,
+    pub countdown: bool,
+    // Video tab settings
+    pub video_format: u8,
+    pub video_max_res: u8,
+    pub video_fps: u8,
+    pub record_mono: bool,
+    pub open_editor: bool,
+    #[serde(default)]
+    pub noise_suppression: bool,
+    pub fullscreen: bool,
+    /// True when the portal should select a single window instead of a monitor.
+    #[serde(default)]
+    pub window: bool,
+}
+
+impl Default for RecordingRequest {
+    fn default() -> Self {
+        Self {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+            record_type: RecordingType::Video,
+            controls: false,
+            mic: false,
+            speaker: false,
+            output: String::new(),
+            mic_device: String::new(),
+            speaker_app: String::new(),
+            speaker_app_pid: 0,
+            display_rec_time: false,
+            hidpi: true,
+            notifications: true,
+            cursor: true,
+            remember_selection: false,
+            dim_screen: true,
+            countdown: true,
+            video_format: 0,
+            video_max_res: 0,
+            video_fps: 2,
+            record_mono: false,
+            open_editor: true,
+            noise_suppression: false,
+            fullscreen: false,
+            window: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RecordingType {
+    Video,
+}
+
+#[derive(Debug)]
+pub enum AreaCapturePathResult {
+    Captured(PathBuf),
+    CapturedOnDisplay(PathBuf, CaptureDisplay),
+    ScrollCaptured(PathBuf),
+    OcrRequested(CaptureData),
+    RecordingRequested(RecordingRequest),
+    RecordingConfigUpdated,
+    Cancelled,
+}

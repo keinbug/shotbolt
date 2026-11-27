@@ -1,0 +1,613 @@
+impl VideoEditState {
+    pub fn new(metadata: VideoMetadata) -> Self {
+        let sidecar = PointerSidecar::load_next_to_video(&metadata.path);
+        let project_media = seed_project_media(&metadata);
+        let title = title_from_path(&metadata.path);
+        Self {
+            trim_start_seconds: 0.0,
+            trim_end_seconds: metadata.duration_seconds,
+            playhead_seconds: 0.0,
+            custom_width: metadata.width,
+            custom_height: metadata.height,
+            metadata,
+            dimension_preset: DimensionPreset::Original,
+            quality: ExportQuality::default(),
+            audio_mode: AudioMode::Unchanged,
+            cuts: Vec::new(),
+            freeze_tail: 0.0,
+            frozen_segment: None,
+            segments_kept: vec![true],
+            segment_order: vec![0],
+            segment_starts: vec![0.0],
+            segment_speeds: vec![1.0],
+            segment_muted: vec![false],
+            zoom_clips: Vec::new(),
+            zoom_camera: ZoomCameraSettings::default(),
+            zoom_camera_cache: Default::default(),
+            selected_zoom: None,
+            selected_segment: None,
+            clipboard: None,
+            add_zoom_tool: false,
+            background: VideoBackground::None,
+            background_padding: 24.0,
+            sound: Default::default(),
+            // The radius was previously non-zero but never read by any
+            // renderer, so the old value was invisible. It starts at 0 now
+            // that the Background panel actually drives it — a non-zero
+            // default would silently round the corners of every existing
+            // project the first time it was opened.
+            background_corner_radius: 0.0,
+            crop: None,
+            sidecar,
+            cursor: CursorSettings::default(),
+            selected_tool: EditorTool::Cursor,
+            project_media,
+            title,
+            video_locked: false,
+            video_hidden: false,
+            audio_locked: false,
+            audio_removed: false,
+            zoom_locked: false,
+            zoom_hidden: false,
+            zoom_suggestions_reviewed: false,
+            last_edited_zoom_style: None,
+            zoom_history: ZoomHistory::default(),
+            project_sync: Default::default(),
+            zoom_classic: false,
+            timeline_scale: 0.0,
+            timeline_offset_seconds: 0.0,
+            timeline_scroll_seconds: 0.0,
+            export_settings: Default::default(),
+            export_progress: None,
+        }
+    }
+
+    /// The alpha the rendered cursor takes: 0 when the whole-edit hide switch
+    /// is on, otherwise fully visible. The preview and the exporter both read
+    /// this, so the switch reaches both.
+    pub fn cursor_hide_alpha(&self) -> f64 {
+        if self.cursor.hidden {
+            0.0
+        } else {
+            1.0
+        }
+    }
+
+    pub fn composition_duration(&self) -> f64 {
+        self.video_end_seconds().max(0.001)
+    }
+
+    pub fn source_duration(&self) -> f64 {
+        self.metadata.duration_seconds.max(0.001)
+    }
+
+    pub fn content_end_seconds(&self) -> f64 {
+        self.video_end_seconds()
+    }
+
+    pub(crate) fn video_end_seconds(&self) -> f64 {
+        let bounds = self.segment_boundaries();
+        self.segment_order
+            .iter()
+            .filter(|&&i| self.segments_kept.get(i).copied().unwrap_or(true))
+            .filter_map(|&i| {
+                bounds.get(i).map(|_| {
+                    let end = self.segment_start(i) + self.segment_timeline_duration(i);
+                    if self.freeze_applies_to_segment(i) {
+                        end + self.freeze_tail
+                    } else {
+                        end
+                    }
+                })
+            })
+            .fold(0.0_f64, f64::max)
+    }
+
+    /// Push the cursor's shake filter and its tail behaviours into the pointer
+    /// sidecar, so the sprite path the preview draws and the export renders
+    /// follows the panel. The camera reads `cursor.remove_shake_threshold`
+    /// itself; this is the other half of the same setting.
+    ///
+    /// The tail measures back from the last source instant the edit plays, so
+    /// trimming, cutting and reordering move it — and a held freeze tail, which
+    /// lengthens the composition without adding footage, does not.
+    pub(crate) fn sync_sidecar_cursor_filters(&mut self) {
+        let settings = self.cursor.clamped();
+        let end = self
+            .ordered_placed_segments()
+            .last()
+            .map(|(_, _, source_end)| *source_end);
+        if let Some(sidecar) = self.sidecar.as_mut() {
+            sidecar.set_shake_threshold(settings.remove_shake_threshold);
+            sidecar.set_cursor_tail(
+                settings.stop_movement_in_last_part_ms,
+                settings.loop_position_before_end_ms,
+                end,
+            );
+        }
+    }
+
+    pub fn playback_position(&self, timeline_t: f64) -> Option<(f64, f64)> {
+        let frame = 1.0 / self.metadata.export_frame_rate().max(1.0);
+        let mut last = None;
+        for (index, composition_start, source_start, source_end) in self.placed_segment_slots() {
+            let speed = self.segment_speed(index);
+            let duration = (source_end - source_start).max(0.0) / speed;
+            let hold = if self.freeze_applies_to_segment(index) {
+                self.freeze_tail
+            } else {
+                0.0
+            };
+            let last_frame = (source_end - frame).max(source_start);
+            if timeline_t + 1e-9 < composition_start {
+                return Some((composition_start, source_start));
+            }
+            if timeline_t < composition_start + duration + hold {
+                if timeline_t >= composition_start + duration {
+                    return Some((timeline_t, last_frame));
+                }
+                let source =
+                    (source_start + (timeline_t - composition_start) * speed).min(last_frame);
+                return Some((timeline_t, source));
+            }
+            last = Some((composition_start + duration + hold, last_frame));
+        }
+        last
+    }
+
+    pub(crate) fn freeze_tail_playback_position(&self) -> Option<(f64, f64)> {
+        if self.freeze_tail_seconds() <= f64::EPSILON {
+            return None;
+        }
+        self.placed_segment_slots()
+            .into_iter()
+            .find_map(|(index, composition_start, _, _)| {
+                if !self.freeze_applies_to_segment(index) {
+                    return None;
+                }
+                let footage_end = composition_start + self.segment_timeline_duration(index);
+                self.playback_position(footage_end)
+            })
+    }
+
+    /// Return the first retained source position and its composition time.
+    pub(crate) fn first_playable_position(&self) -> Option<(f64, f64)> {
+        self.playback_position(0.0)
+    }
+
+    /// Keep the current head when playable, otherwise clamp it to the nearest
+    /// retained boundary and return the source frame to display.
+    pub(crate) fn reconcile_playhead_after_edit(&mut self) -> Option<f64> {
+        let requested = if self.playhead_seconds.is_finite() {
+            self.playhead_seconds.max(0.0)
+        } else {
+            0.0
+        };
+        let Some((timeline, source)) = self.nearest_playback_position(requested) else {
+            self.playhead_seconds = 0.0;
+            self.set_timeline_scroll(0.0);
+            return None;
+        };
+        self.playhead_seconds = timeline;
+        if (timeline - requested).abs() > 1e-9 {
+            let visible = self.visible_span_seconds();
+            if timeline < self.timeline_scroll_seconds {
+                self.set_timeline_scroll(timeline);
+            } else if timeline > self.timeline_scroll_seconds + visible {
+                self.set_timeline_scroll(timeline - visible * 0.9);
+            }
+        }
+        Some(source)
+    }
+
+    fn nearest_playback_position(&self, timeline_t: f64) -> Option<(f64, f64)> {
+        let resolved = self.playback_position(timeline_t)?;
+        if resolved.0 <= timeline_t + 1e-9 {
+            return Some(resolved);
+        }
+        let frame = 1.0 / self.metadata.export_frame_rate().max(1.0);
+        let previous = self
+            .placed_segment_slots()
+            .into_iter()
+            .filter_map(|(index, composition_start, source_start, source_end)| {
+                let hold = if self.freeze_applies_to_segment(index) {
+                    self.freeze_tail_seconds()
+                } else {
+                    0.0
+                };
+                let end = composition_start + self.segment_timeline_duration(index) + hold;
+                (end <= timeline_t + 1e-9).then_some((end, (source_end - frame).max(source_start)))
+            })
+            .max_by(|left, right| left.0.total_cmp(&right.0));
+        previous
+            .filter(|previous| timeline_t - previous.0 <= resolved.0 - timeline_t)
+            .or(Some(resolved))
+    }
+
+    pub fn visible_span_seconds(&self) -> f64 {
+        let factor = 1.0 + (self.timeline_scale.clamp(0.0, 100.0) / 100.0) * 7.0;
+        self.source_duration() / factor
+    }
+
+    /// Scrollable / drawable length. Always keeps a full viewport of empty
+    /// time after the last frame so the ruler never stops at the clip.
+    pub fn timeline_canvas_seconds(&self) -> f64 {
+        self.composition_duration() + self.visible_span_seconds()
+    }
+
+    pub fn max_timeline_scroll(&self) -> f64 {
+        (self.timeline_canvas_seconds() - self.visible_span_seconds()).max(0.0)
+    }
+
+    pub fn source_to_timeline(&self, source_t: f64) -> f64 {
+        let bounds = self.segment_boundaries();
+        for (index, &(start, end)) in bounds.iter().enumerate().rev() {
+            if !self.segments_kept.get(index).copied().unwrap_or(true) {
+                continue;
+            }
+            if source_t + 1e-9 >= start && source_t <= end + 1e-9 {
+                return self.segment_start(index) + (source_t - start) / self.segment_speed(index);
+            }
+        }
+        if let Some((index, &(start, _))) = bounds
+            .iter()
+            .enumerate()
+            .find(|(index, _)| self.segments_kept.get(*index).copied().unwrap_or(true))
+        {
+            if source_t < start {
+                return self.segment_start(index) + (source_t - start) / self.segment_speed(index);
+            }
+        }
+        if let Some((index, &(start, _))) = bounds
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(index, _)| self.segments_kept.get(*index).copied().unwrap_or(true))
+        {
+            return self.segment_start(index) + (source_t - start) / self.segment_speed(index);
+        }
+        source_t.max(0.0)
+    }
+
+    pub fn timeline_to_source(&self, timeline_t: f64) -> f64 {
+        let bounds = self.segment_boundaries();
+        for (index, &(start, end)) in bounds.iter().enumerate() {
+            if !self.segments_kept.get(index).copied().unwrap_or(true) {
+                continue;
+            }
+            let comp = self.segment_start(index);
+            let comp_end = comp + self.segment_timeline_duration(index);
+            if timeline_t + 1e-9 >= comp && timeline_t <= comp_end + 1e-9 {
+                return (start + (timeline_t - comp) * self.segment_speed(index)).min(end);
+            }
+        }
+        timeline_t - self.timeline_offset_seconds
+    }
+
+    pub fn segment_start(&self, index: usize) -> f64 {
+        self.segment_starts
+            .get(index)
+            .copied()
+            .unwrap_or(0.0)
+            .max(0.0)
+    }
+
+    pub fn set_segment_start(&mut self, index: usize, start: f64) {
+        if self.video_locked || index >= self.segment_starts.len() {
+            return;
+        }
+        // A lone clip cannot float: it is the whole composition, and a start
+        // past zero is dead time playback jumps over.
+        let start = if self.segment_order.len() <= 1 {
+            0.0
+        } else if start.is_finite() {
+            start.max(0.0)
+        } else {
+            0.0
+        };
+        self.segment_starts[index] = start;
+        self.sync_offset_from_segments();
+        self.composition_changed();
+        self.clamp_timeline_scroll();
+    }
+
+    pub fn settle_segment_start(&mut self, index: usize) {
+        if self.video_locked || index >= self.segment_starts.len() {
+            return;
+        }
+        self.segment_starts[index] = self.unoverlap_segment_start(index, self.segment_start(index));
+        self.sync_offset_from_segments();
+        self.composition_changed();
+        self.clamp_timeline_scroll();
+    }
+
+    fn unoverlap_segment_start(&self, index: usize, start: f64) -> f64 {
+        let bounds = self.segment_boundaries();
+        let Some(&(src_start, src_end)) = bounds.get(index) else {
+            return start.max(0.0);
+        };
+        let duration = (src_end - src_start).max(0.0) / self.segment_speed(index);
+        let mut start = if start.is_finite() {
+            start.max(0.0)
+        } else {
+            0.0
+        };
+        for _ in 0..self.segment_starts.len() {
+            let end = start + duration;
+            let Some((other_start, other_end)) =
+                bounds.iter().enumerate().find_map(|(other, &(s0, s1))| {
+                    if other == index || !self.segments_kept.get(other).copied().unwrap_or(true) {
+                        return None;
+                    }
+                    let other_start = self.segment_start(other);
+                    let other_end = other_start + (s1 - s0).max(0.0) / self.segment_speed(other);
+                    ranges_overlap(start, end, other_start, other_end)
+                        .then_some((other_start, other_end))
+                })
+            else {
+                break;
+            };
+            let left = (other_start - duration).max(0.0);
+            let right = other_end;
+            let prefer_right = start + duration * 0.5 >= (other_start + other_end) * 0.5;
+            start = if prefer_right || left + duration > other_start + 1e-9 {
+                right
+            } else {
+                left
+            };
+        }
+        start
+    }
+
+    pub fn source_playhead(&self) -> f64 {
+        // A freeze hold runs past the last frame, so the displayed source time
+        // pins to the footage end rather than extrapolating into frames the
+        // composition does not play. A plain trim is different: the band past
+        // the clip has no hold, so it keeps mapping to the trimmed-away frames
+        // a reveal would add — scrubbing there has to preview them.
+        let footage_end = self.source_to_timeline(self.trim_end_seconds);
+        if self.freeze_tail > f64::EPSILON && self.playhead_seconds > footage_end + 1e-9 {
+            return self.trim_end_seconds.clamp(0.0, self.source_duration());
+        }
+        self.timeline_to_source(self.playhead_seconds)
+            .clamp(0.0, self.source_duration())
+    }
+
+    pub fn source_to_x(&self, source_t: f64, width: f64) -> f64 {
+        self.time_to_x(self.source_to_timeline(source_t), width)
+    }
+
+    pub fn set_timeline_offset(&mut self, value: f64) {
+        if self.video_locked {
+            return;
+        }
+        // A lone clip starts the composition, so sliding it right would leave
+        // dead time at the head that playback jumps straight over. Only a
+        // multi-segment arrangement has somewhere to move.
+        let next = if self.segment_order.len() > 1 {
+            if value.is_finite() {
+                value.max(0.0)
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        };
+        let delta = next - self.timeline_offset_seconds;
+        self.timeline_offset_seconds = next;
+        if self.segment_starts.len() <= 1 {
+            if let Some(start) = self.segment_starts.get_mut(0) {
+                *start = next;
+            }
+        } else {
+            for start in &mut self.segment_starts {
+                *start = (*start + delta).max(0.0);
+            }
+        }
+        self.composition_changed();
+        self.clamp_timeline_scroll();
+    }
+
+    pub(super) fn sync_offset_from_segments(&mut self) {
+        if let Some(min) = self.segment_starts.iter().copied().reduce(f64::min) {
+            self.timeline_offset_seconds = min.max(0.0);
+        }
+    }
+
+    /// Pan (without re-zooming) so the playhead sits inside the window. Used
+    /// while playback walks a freeze tail past the source, where the fixed fit
+    /// ruler would otherwise let the playhead run off the right edge.
+    pub fn follow_playhead_on_timeline(&mut self) {
+        let visible = self.visible_span_seconds();
+        let lead = visible * 0.9;
+        if self.playhead_seconds > self.timeline_scroll_seconds + lead {
+            self.timeline_scroll_seconds = self.playhead_seconds - lead;
+        }
+        self.clamp_timeline_scroll();
+    }
+
+    pub fn set_timeline_scroll(&mut self, value: f64) {
+        self.timeline_scroll_seconds = value;
+        self.clamp_timeline_scroll();
+    }
+
+    pub(super) fn clamp_timeline_scroll(&mut self) {
+        let max_scroll = self.max_timeline_scroll();
+        self.timeline_scroll_seconds = self.timeline_scroll_seconds.clamp(0.0, max_scroll);
+    }
+
+    /// Keep a moving clip inside the fit-zoom window by panning, without
+    /// changing pixels-per-second.
+    pub fn follow_clip_on_timeline(&mut self) {
+        if self.timeline_scale > 0.001 {
+            return;
+        }
+        let start = self.source_to_timeline(self.trim_start_seconds);
+        let end = self.source_to_timeline(self.trim_end_seconds);
+        let visible = self.visible_span_seconds();
+        if end > self.timeline_scroll_seconds + visible {
+            self.timeline_scroll_seconds = end - visible;
+        }
+        if start < self.timeline_scroll_seconds {
+            self.timeline_scroll_seconds = start;
+        }
+        self.clamp_timeline_scroll();
+    }
+
+    pub fn timeline_view(&self) -> (f64, f64) {
+        let visible = self.visible_span_seconds().max(0.001);
+        let start = self.timeline_scroll_seconds.max(0.0);
+        (start, visible)
+    }
+
+    pub fn time_to_x(&self, seconds: f64, width: f64) -> f64 {
+        let (start, span) = self.timeline_view();
+        ((seconds - start) / span.max(1e-6)) * width.max(1.0)
+    }
+
+    pub fn x_to_time(&self, x: f64, width: f64) -> f64 {
+        let (start, span) = self.timeline_view();
+        start + (x / width.max(1.0)) * span
+    }
+
+    pub fn frac_to_x(&self, frac: f64, width: f64) -> f64 {
+        self.time_to_x(frac * self.source_duration(), width)
+    }
+
+    pub fn x_to_frac(&self, x: f64, width: f64) -> f64 {
+        self.x_to_time(x, width) / self.source_duration()
+    }
+
+    pub fn has_source_video(&self) -> bool {
+        self.metadata.duration_seconds > 0.0
+    }
+
+    pub fn has_audio_track(&self) -> bool {
+        self.metadata.has_audio && !self.audio_removed
+    }
+
+    pub fn has_zoom_track(&self) -> bool {
+        !self.zoom_clips.is_empty()
+    }
+
+    pub fn video_tracks(&self) -> Vec<&ProjectMedia> {
+        self.project_media
+            .iter()
+            .filter(|item| item.kind == ProjectMediaKind::Video)
+            .collect()
+    }
+
+    pub fn extra_video_tracks(&self) -> Vec<&ProjectMedia> {
+        self.video_tracks()
+            .into_iter()
+            .filter(|item| item.path != self.metadata.path)
+            .collect()
+    }
+
+    pub fn remove_project_media(&mut self, path: &Path, kind: ProjectMediaKind) {
+        if path == self.metadata.path && kind == ProjectMediaKind::Video {
+            return;
+        }
+        self.project_media
+            .retain(|item| !(item.path == path && item.kind == kind));
+    }
+
+    pub fn video_has_edits(&self) -> bool {
+        self.trim_start_seconds > f64::EPSILON
+            || (self.trim_end_seconds - self.metadata.duration_seconds).abs() > 0.001
+            || self.timeline_offset_seconds > f64::EPSILON
+            || !self.cuts.is_empty()
+            || self.segments_kept.iter().any(|kept| !kept)
+            || self
+                .segment_speeds
+                .iter()
+                .any(|speed| (*speed - 1.0).abs() > 1e-6)
+            || self.segment_muted.iter().any(|muted| *muted)
+    }
+
+    pub fn is_muted(&self) -> bool {
+        self.audio_mode == AudioMode::Muted
+    }
+
+    pub fn toggle_mute(&mut self) {
+        if self.audio_locked {
+            return;
+        }
+        self.audio_mode = if self.is_muted() {
+            AudioMode::Unchanged
+        } else {
+            AudioMode::Muted
+        };
+    }
+
+    pub fn reset_video_edits(&mut self) {
+        if self.video_locked {
+            return;
+        }
+        self.trim_start_seconds = 0.0;
+        self.trim_end_seconds = self.metadata.duration_seconds;
+        self.freeze_tail = 0.0;
+        self.frozen_segment = None;
+        self.timeline_offset_seconds = 0.0;
+        self.timeline_scroll_seconds = 0.0;
+        self.clear_cuts();
+    }
+
+    pub fn remove_audio_track(&mut self) {
+        if self.audio_locked || !self.metadata.has_audio {
+            return;
+        }
+        self.audio_removed = true;
+        self.audio_mode = AudioMode::Muted;
+    }
+
+    pub fn clear_zoom_clips(&mut self) {
+        if self.zoom_locked {
+            return;
+        }
+        self.zoom_clips.clear();
+        self.selected_zoom = None;
+        self.zoom_hidden = false;
+    }
+
+    pub fn set_title(&mut self, raw: &str) {
+        let title = sanitize_title(raw);
+        if self.title == title {
+            return;
+        }
+        let old = self.title.clone();
+        self.title = title.clone();
+        for item in &mut self.project_media {
+            if item.path != self.metadata.path {
+                continue;
+            }
+            match item.kind {
+                ProjectMediaKind::Video if item.display_name == old => {
+                    item.display_name = title.clone();
+                }
+                ProjectMediaKind::Audio if item.display_name == format!("{old} audio") => {
+                    item.display_name = format!("{title} audio");
+                }
+                _ => {}
+            }
+        }
+    }
+
+    pub fn export_path(&self) -> PathBuf {
+        unique_edited_path(
+            self.metadata.path.parent().unwrap_or_else(|| Path::new("")),
+            &self.title,
+        )
+    }
+
+    pub fn add_project_media(&mut self, item: ProjectMedia) {
+        if self
+            .project_media
+            .iter()
+            .any(|existing| existing.path == item.path && existing.kind == item.kind)
+        {
+            return;
+        }
+        self.project_media.push(item);
+    }
+}

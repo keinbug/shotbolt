@@ -1,0 +1,5633 @@
+# ApexShot UI translations.
+# Language: German
+msgid ""
+msgstr ""
+"Project-Id-Version: apexshot\n"
+"Language: de\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Edit: add a background, frame, or 3D tilt."
+msgstr "Bearbeiten: Hintergrund, Rahmen oder 3D-Neigung hinzufügen."
+
+msgid "Hide suggestion"
+msgstr "Vorschlag ausblenden"
+
+msgid "Open in the editor"
+msgstr "Im Editor öffnen"
+
+msgid "System default"
+msgstr "Systemstandard"
+
+msgid "Record shortcut"
+msgstr "Tastenkürzel aufnehmen"
+
+msgid "Try a styled look"
+msgstr "Probiere einen gestalteten Look"
+
+msgid "Undo look"
+msgstr "Look rückgängig machen"
+
+msgid "Next look"
+msgstr "Nächster Look"
+
+msgid "Next look: {name}"
+msgstr "Nächster Look: {name}"
+
+msgid "Frost"
+msgstr "Frost"
+
+msgid "Bleed"
+msgstr "Anschnitt"
+
+msgid "Float"
+msgstr "Schweben"
+
+msgid "Welcome to ApexShot"
+msgstr "Willkommen bei ApexShot"
+
+msgid "Version {version}"
+msgstr "Version {version}"
+
+msgid "ApexShot Settings"
+msgstr "ApexShot-Einstellungen"
+
+msgid "Close"
+msgstr "Schließen"
+
+msgid "Minimize"
+msgstr "Minimieren"
+
+msgid "Save"
+msgstr "Speichern"
+
+msgid "Settings"
+msgstr "Einstellungen"
+
+msgid "Select screenshot save location"
+msgstr "Speicherort für Screenshots wählen"
+
+msgid "Select"
+msgstr "Auswählen"
+
+msgid "Cancel"
+msgstr "Abbrechen"
+
+msgid "Select video save location"
+msgstr "Speicherort für Videos wählen"
+
+msgid "General"
+msgstr "Allgemein"
+
+msgid "Shortcuts"
+msgstr "Tastenkürzel"
+
+msgid "Quick Access"
+msgstr "Schnellzugriff"
+
+msgid "Recording"
+msgstr "Aufnahme"
+
+msgid "Screenshots"
+msgstr "Screenshots"
+
+msgid "Annotate"
+msgstr "Annotieren"
+
+msgid "Cloud"
+msgstr "Cloud"
+
+msgid "Advanced"
+msgstr "Erweitert"
+
+msgid "About"
+msgstr "Info"
+
+msgid "Saving…"
+msgstr "Speichern…"
+
+msgid "Settings saved"
+msgstr "Einstellungen gespeichert"
+
+msgid "Save failed: {message}"
+msgstr "Speichern fehlgeschlagen: {message}"
+
+msgid "After capture:"
+msgstr "Nach der Aufnahme:"
+
+msgid ""
+"Here you can decide what should happen after taking a screenshot or recording your screen."
+msgstr ""
+"Legen Sie fest, was nach einem Screenshot oder einer Aufnahme passieren soll."
+
+msgid "Screenshot"
+msgstr "Screenshot"
+
+msgid "Action"
+msgstr "Aktion"
+
+msgid "Export"
+msgstr "Export"
+
+msgid "Browse"
+msgstr "Durchsuchen"
+
+msgid "Save location"
+msgstr "Speicherort"
+
+msgid "File format"
+msgstr "Dateiformat"
+
+msgid "File & Image (default)"
+msgstr "Datei und Bild (Standard)"
+
+msgid "Image Only"
+msgstr "Nur Bild"
+
+msgid "File Path Only"
+msgstr "Nur Dateipfad"
+
+msgid "Clipboard copy behavior"
+msgstr "Zwischenablage"
+
+msgid "Choose whether screenshots copy as an image, a file URI, or both."
+msgstr "Screenshots als Bild, Datei-URI oder beides kopieren."
+
+msgid "Off"
+msgstr "Aus"
+
+msgid "1 Second"
+msgstr "1 Sekunde"
+
+msgid "3 Seconds"
+msgstr "3 Sekunden"
+
+msgid "5 Seconds"
+msgstr "5 Sekunden"
+
+msgid "10 Seconds"
+msgstr "10 Sekunden"
+
+msgid "Self-Timer interval"
+msgstr "Selbstauslöser"
+
+msgid "Include pointer when available"
+msgstr "Zeiger einbeziehen, wenn verfügbar"
+
+msgid ""
+"ApexShot includes the pointer only when the current capture flow provides cursor data."
+msgstr ""
+"ApexShot bezieht den Zeiger nur ein, wenn der aktuelle Aufnahmepfad Cursordaten liefert."
+
+msgid "Drawing Tools"
+msgstr "Zeichenwerkzeuge"
+
+msgid "Inverse arrow direction"
+msgstr "Pfeilrichtung umkehren"
+
+msgid "Smooth drawing"
+msgstr "Weiches Zeichnen"
+
+msgid "Draw shadow on objects"
+msgstr "Schatten auf Objekten"
+
+msgid "Canvas & Interface"
+msgstr "Leinwand und Oberfläche"
+
+msgid "Automatically expand canvas"
+msgstr "Leinwand automatisch erweitern"
+
+msgid "Show color names (Accessibility)"
+msgstr "Farbnamen anzeigen (Barrierefreiheit)"
+
+msgid "Window"
+msgstr "Fenster"
+
+msgid "Always on top"
+msgstr "Immer im Vordergrund"
+
+msgid "Set Shortcut"
+msgstr "Tastenkürzel festlegen"
+
+msgid "Set"
+msgstr "Festlegen"
+
+msgid "Preparing shortcut capture…"
+msgstr "Tastenkürzel-Aufnahme wird vorbereitet…"
+
+msgid "Press Esc to cancel or Backspace to disable the keyboard shortcut"
+msgstr "Esc zum Abbrechen, Rücktaste zum Deaktivieren"
+
+msgid "Shortcut will be disabled"
+msgstr "Tastenkürzel wird deaktiviert"
+
+msgid ""
+"Shortcuts set here are the same hotkeys ApexShot uses. If one does not work, your desktop environment may already be using it. Open your system keyboard settings and disable conflicting shortcuts if you want to reuse them in ApexShot."
+msgstr ""
+"Diese Kürzel sind dieselben, die ApexShot verwendet. Funktioniert eines nicht, belegt es möglicherweise die Desktop-Umgebung. Deaktivieren Sie Konflikte in den Systemeinstellungen."
+
+msgid "Save Location"
+msgstr "Speicherort"
+
+msgid "Recordings folder"
+msgstr "Aufnahmeordner"
+
+msgid "Filename pattern"
+msgstr "Dateinamensmuster"
+
+msgid "Use {Date} and {Time} placeholders"
+msgstr "Platzhalter {Date} und {Time} verwenden"
+
+msgid "Remember last export folder"
+msgstr "Letzten Exportordner merken"
+
+msgid "Upload destination"
+msgstr "Upload-Ziel"
+
+msgid "ApexShot Cloud"
+msgstr "ApexShot Cloud"
+
+msgid "XBackBone (self-hosted)"
+msgstr "XBackBone (selbst gehostet)"
+
+msgid "Upload with"
+msgstr "Hochladen mit"
+
+msgid "Upload after capture"
+msgstr "Nach der Aufnahme hochladen"
+
+msgid "Send a link instead?"
+msgstr "Stattdessen einen Link senden?"
+
+msgid "Copied. Send a link instead?"
+msgstr "Kopiert. Stattdessen einen Link senden?"
+
+msgid "Free account · 20 links a month"
+msgstr "Kostenloses Konto · 20 Links pro Monat"
+
+msgid "Copied. Want a link instead?"
+msgstr "Kopiert. Möchtest du stattdessen einen Link?"
+
+msgid ""
+"A free ApexShot account turns every capture into a share link, with 20 links "
+"a month."
+msgstr ""
+"Ein kostenloses ApexShot-Konto macht aus jeder Aufnahme einen Freigabelink, "
+"20 Links pro Monat."
+
+msgid "Get link"
+msgstr "Link holen"
+
+msgid "Suggest ApexShot Cloud when copying"
+msgstr "ApexShot Cloud beim Kopieren vorschlagen"
+
+msgid ""
+"Uploads each saved screenshot and copies the share link. Does nothing until you Connect."
+msgstr ""
+"Lädt jeden gespeicherten Screenshot hoch und kopiert den Link. Erst nach dem Verbinden."
+
+msgid "ApexShot Cloud account"
+msgstr "ApexShot-Cloud-Konto"
+
+msgid "Connected"
+msgstr "Verbunden"
+
+msgid "Not connected"
+msgstr "Nicht verbunden"
+
+msgid "Signed in"
+msgstr "Angemeldet"
+
+msgid "Run `apexshot login` in a terminal, or click Connect below."
+msgstr ""
+"Führen Sie `apexshot login` im Terminal aus oder klicken Sie auf Verbinden."
+
+msgid "Connect account"
+msgstr "Konto verbinden"
+
+msgid "Logout"
+msgstr "Abmelden"
+
+msgid "XBackBone instance"
+msgstr "XBackBone-Instanz"
+
+msgid "Instance URL"
+msgstr "Instanz-URL"
+
+msgid "Show"
+msgstr "Anzeigen"
+
+msgid "API token"
+msgstr "API-Token"
+
+msgid ""
+"Generate a token in your XBackBone instance → Profile → Tokens, with the resource:upload ability."
+msgstr ""
+"Erstellen Sie ein Token unter XBackBone → Profil → Tokens mit der Berechtigung resource:upload."
+
+msgid "Test connection"
+msgstr "Verbindung testen"
+
+msgid "Verify setup"
+msgstr "Einrichtung prüfen"
+
+msgid "Open XBackBone API docs"
+msgstr "XBackBone-API-Dokumentation öffnen"
+
+msgid "Documentation"
+msgstr "Dokumentation"
+
+msgid "File Naming"
+msgstr "Dateinamen"
+
+msgid "Filename format"
+msgstr "Namensformat"
+
+msgid "Add @2x suffix for HiDPI screenshots"
+msgstr "@2x-Suffix für HiDPI-Screenshots"
+
+msgid "Text Recognition (OCR)"
+msgstr "Texterkennung (OCR)"
+
+msgid "English"
+msgstr "Englisch"
+
+msgid "Spanish"
+msgstr "Spanisch"
+
+msgid "French"
+msgstr "Französisch"
+
+msgid "German"
+msgstr "Deutsch"
+
+msgid "Italian"
+msgstr "Italienisch"
+
+msgid "Portuguese"
+msgstr "Portugiesisch"
+
+msgid "Chinese (Simplified)"
+msgstr "Chinesisch (vereinfacht)"
+
+msgid "Japanese"
+msgstr "Japanisch"
+
+msgid "Russian"
+msgstr "Russisch"
+
+msgid "Primary language"
+msgstr "Hauptsprache"
+
+msgid "Preserve line breaks"
+msgstr "Zeilenumbrüche beibehalten"
+
+msgid "Privacy"
+msgstr "Datenschutz"
+
+msgid "Share anonymous usage statistics"
+msgstr "Anonyme Nutzungsstatistiken teilen"
+
+msgid ""
+"Daily heartbeat: app version, distro, desktop, and coarse feature counts. The update window also reports each update download (version and size). No screenshots or personal data. Override with APEXSHOT_TELEMETRY=0."
+msgstr ""
+"Täglicher Heartbeat: App-Version, Distribution, Desktop und grobe Funktionszähler. Das Update-Fenster meldet außerdem jeden Update-Download (Version und Größe). Keine Screenshots oder persönlichen Daten. Überschreibbar mit APEXSHOT_TELEMETRY=0."
+
+msgid "Language"
+msgstr "Sprache"
+
+msgid "Display language"
+msgstr "Anzeigesprache"
+
+msgid "System default uses your desktop language. Changes apply after Save."
+msgstr ""
+"Systemstandard folgt der Desktop-Sprache. Änderungen gelten nach Speichern."
+
+msgid "Startup"
+msgstr "Start"
+
+msgid "Start at login"
+msgstr "Beim Anmelden starten"
+
+msgid "Sounds"
+msgstr "Töne"
+
+msgid "Play sounds"
+msgstr "Töne abspielen"
+
+msgid "Shutter sound"
+msgstr "Auslösegeräusch"
+
+msgid "System tray"
+msgstr "Systemleiste"
+
+msgid "Show tray icon"
+msgstr "Symbol in der Leiste anzeigen"
+
+msgid "Overlay"
+msgstr "Overlay"
+
+msgid "Position"
+msgstr "Position"
+
+msgid "Show on all displays"
+msgstr "Auf allen Bildschirmen anzeigen"
+
+msgid "Overlay size"
+msgstr "Overlay-Größe"
+
+msgid "Auto-close"
+msgstr "Automatisch schließen"
+
+msgid "Automatically close window"
+msgstr "Fenster automatisch schließen"
+
+msgid "30 Seconds"
+msgstr "30 Sekunden"
+
+msgid "1 Minute"
+msgstr "1 Minute"
+
+msgid "Interval"
+msgstr "Intervall"
+
+msgid "Behaviors"
+msgstr "Verhalten"
+
+msgid "Close window after dragging"
+msgstr "Fenster nach dem Ziehen schließen"
+
+msgid "Close window after uploading"
+msgstr "Fenster nach dem Hochladen schließen"
+
+msgid "Check for Updates"
+msgstr "Nach Updates suchen"
+
+msgid "What's New"
+msgstr "Neuigkeiten"
+
+msgid "Help Center"
+msgstr "Hilfe"
+
+msgid "Send Feedback"
+msgstr "Feedback senden"
+
+msgid "Website"
+msgstr "Website"
+
+msgid "Support ApexShot"
+msgstr "ApexShot unterstützen"
+
+msgid "ApexShot is free and open source. Donations keep development going."
+msgstr ""
+"ApexShot ist frei und quelloffen. Spenden halten die Entwicklung am Laufen."
+
+msgid "Support on Ko-fi"
+msgstr "Auf Ko-fi unterstützen"
+
+msgid "Cloud is a separate paid product"
+msgstr "Cloud ist ein separates kostenpflichtiges Produkt"
+
+msgid "Opens ApexShot Cloud plans. This is not a donation."
+msgstr "Öffnet ApexShot-Cloud-Tarife. Keine Spende."
+
+msgid "Copyright © 2026 ApexShot. All rights reserved."
+msgstr "Copyright © 2026 ApexShot. Alle Rechte vorbehalten."
+
+msgid "Terms of Service"
+msgstr "Nutzungsbedingungen"
+
+msgid "Privacy Policy"
+msgstr "Datenschutzrichtlinie"
+
+msgid "ApexShot Setup"
+msgstr "ApexShot-Einrichtung"
+
+msgid "← Back"
+msgstr "← Zurück"
+
+msgid "Next →"
+msgstr "Weiter →"
+
+msgid "Start Using ApexShot"
+msgstr "ApexShot jetzt nutzen"
+
+msgid "Extension Installed ✓"
+msgstr "Erweiterung installiert ✓"
+
+msgid "GNOME Shell Extension Required"
+msgstr "GNOME-Shell-Erweiterung erforderlich"
+
+msgid ""
+"ApexShot requires GNOME Shell. Please install on a GNOME desktop to continue."
+msgstr ""
+"ApexShot benötigt GNOME Shell. Installieren Sie es auf einem GNOME-Desktop."
+
+msgid "Exit"
+msgstr "Beenden"
+
+msgid "Update GNOME Extension"
+msgstr "GNOME-Erweiterung aktualisieren"
+
+msgid ""
+"An old version of the ApexShot extension is installed. It needs to be removed before installing the new version."
+msgstr ""
+"Eine alte Version der Erweiterung ist installiert. Entfernen Sie sie vor der Neuinstallation."
+
+msgid "Remove Old Extension"
+msgstr "Alte Erweiterung entfernen"
+
+msgid "GNOME Shell Extension"
+msgstr "GNOME-Shell-Erweiterung"
+
+msgid ""
+"On GNOME Wayland, the shell extension unlocks the polished capture experience:"
+msgstr ""
+"Unter GNOME Wayland schaltet die Erweiterung die ausgefeilte Aufnahme frei:"
+
+msgid "Floating preview windows"
+msgstr "Schwebende Vorschaufenster"
+
+msgid "Always-on-top previews that stay out of your way"
+msgstr "Vorschauen im Vordergrund, ohne zu stören"
+
+msgid "Quick access overlay"
+msgstr "Schnellzugriff-Overlay"
+
+msgid "Post-capture actions without hunting through menus"
+msgstr "Aktionen nach der Aufnahme, ohne Menüs zu suchen"
+
+msgid "Recording status indicator"
+msgstr "Aufnahmeanzeige"
+
+msgid "Shell-managed controls while a recording is live"
+msgstr "Von der Shell verwaltete Steuerelemente während der Aufnahme"
+
+msgid "Install GNOME Extension"
+msgstr "GNOME-Erweiterung installieren"
+
+msgid "Installing..."
+msgstr "Wird installiert..."
+
+msgid ""
+"Note: You may need to log out and back in for the extension to appear in GNOME."
+msgstr ""
+"Hinweis: Möglicherweise müssen Sie sich ab- und wieder anmelden, damit die Erweiterung in GNOME erscheint."
+
+msgid "Or download manually from GitHub"
+msgstr "Oder manuell von GitHub herunterladen"
+
+msgid "Browser Extension"
+msgstr "Browsererweiterung"
+
+msgid ""
+"Optional Chrome/Chromium add-on for full-page web captures that open straight in ApexShot."
+msgstr ""
+"Optionale Chrome/Chromium-Erweiterung für ganzseitige Web-Captures, die direkt in ApexShot öffnen."
+
+msgid "Full-page scroll capture"
+msgstr "Ganzseitige Scroll-Aufnahme"
+
+msgid "Stitch long pages that a normal screenshot can't fit"
+msgstr "Setzt lange Seiten zusammen, die nicht auf einen Screenshot passen"
+
+msgid "Sends directly to ApexShot"
+msgstr "Direkt an ApexShot senden"
+
+msgid "Opens in the editor so you can annotate and share immediately"
+msgstr "Öffnet den Editor zum sofortigen Annotieren und Teilen"
+
+msgid "Works with your desktop app"
+msgstr "Funktioniert mit der Desktop-App"
+
+msgid "Native messaging keeps the browser and ApexShot in sync"
+msgstr "Native Messaging hält Browser und ApexShot synchron"
+
+msgid "Get Chrome Extension"
+msgstr "Chrome-Erweiterung holen"
+
+msgid ""
+"Optional. You can install this later from Settings or the Chrome Web Store."
+msgstr ""
+"Optional. Sie können es später unter Einstellungen oder im Chrome Web Store installieren."
+
+msgid ""
+"Thanks for choosing ApexShot as your screenshot companion.\n"
+"Let's get you set up in just a few quick steps."
+msgstr ""
+"Danke, dass Sie ApexShot gewählt haben.\n"
+"Wir richten es in wenigen Schritten ein."
+
+msgid "Area & fullscreen capture"
+msgstr "Bereichs- und Vollbildaufnahme"
+
+msgid "Grab a region, monitor, or the whole desktop in one hotkey"
+msgstr "Bereich, Monitor oder ganzen Desktop mit einem Kürzel"
+
+msgid "Built-in annotation editor"
+msgstr "Integrierter Annotationseditor"
+
+msgid "Arrows, blur, text, and crop without leaving the app"
+msgstr "Pfeile, Unschärfe, Text und Zuschnitt ohne die App zu verlassen"
+
+msgid "Screen recording with audio"
+msgstr "Bildschirmaufnahme mit Ton"
+
+msgid "MP4 or GIF with mic and system audio when your desktop allows it"
+msgstr "MP4 oder GIF mit Mikrofon und Systemton, wenn der Desktop es zulässt"
+
+msgid "OCR text extraction"
+msgstr "OCR-Textextraktion"
+
+msgid "Pull text and QR codes straight from a capture"
+msgstr "Text und QR-Codes direkt aus einer Aufnahme"
+
+msgid "Cloud Upload"
+msgstr "Cloud-Upload"
+
+msgid "Available now · optional"
+msgstr "Jetzt verfügbar · optional"
+
+msgid ""
+"Share captures and recordings with a link, or keep everything on your own server."
+msgstr ""
+"Teilen Sie Aufnahmen per Link oder behalten Sie alles auf dem eigenen Server."
+
+msgid "Sync across devices"
+msgstr "Geräteübergreifend synchronisieren"
+
+msgid "Pull recent uploads when you're signed in"
+msgstr "Aktuelle Uploads laden, wenn Sie angemeldet sind"
+
+msgid "Instant share links"
+msgstr "Sofortige Freigabelinks"
+
+msgid "Copy a URL after capture without leaving the workflow"
+msgstr "URL nach der Aufnahme kopieren, ohne den Ablauf zu verlassen"
+
+msgid "Storage you control"
+msgstr "Speicher, den Sie kontrollieren"
+
+msgid "Hosted ApexShot Cloud or your own XBackBone instance"
+msgstr "Gehostete ApexShot Cloud oder eigene XBackBone-Instanz"
+
+msgid "Choose your cloud"
+msgstr "Cloud wählen"
+
+msgid "Hosted by us, ready out of the box with device login."
+msgstr "Von uns gehostet, sofort einsatzbereit mit Geräteanmeldung."
+
+msgid "XBackBone"
+msgstr "XBackBone"
+
+msgid "Self-host for full control of storage and URLs."
+msgstr "Selbst hosten für volle Kontrolle über Speicher und URLs."
+
+msgid ""
+"Skip for now if you want. After you Connect, your next screenshot gets a share link. Configure later in Settings → Cloud."
+msgstr ""
+"Sie können überspringen. Nach dem Verbinden erhält der nächste Screenshot einen Link. Später unter Einstellungen → Cloud."
+
+msgid "How to capture"
+msgstr "So nehmen Sie auf"
+
+msgid ""
+"ApexShot runs in the background with a tray icon and hotkeys.\n"
+"After setup, you do not need to open Settings every time."
+msgstr ""
+"ApexShot läuft im Hintergrund mit Leistensymbol und Kürzeln.\n"
+"Nach der Einrichtung müssen Sie Einstellungen nicht jedes Mal öffnen."
+
+msgid "Tray icon"
+msgstr "Leistensymbol"
+
+msgid "Right-click for Area, Screen, Window, and Record"
+msgstr "Rechtsklick: Bereich, Bildschirm, Fenster und Aufnahme"
+
+msgid "App menu"
+msgstr "App-Menü"
+
+msgid "Opening ApexShot shows Settings; captures stay on tray and hotkeys"
+msgstr ""
+"ApexShot öffnet die Einstellungen; Aufnahmen bleiben über Leiste und Kürzel"
+
+msgid "Hotkeys"
+msgstr "Tastenkürzel"
+
+msgid "Defaults below. Change them anytime in Settings → Shortcuts."
+msgstr ""
+"Standardwerte unten. Jederzeit unter Einstellungen → Tastenkürzel ändern."
+
+msgid "Shortcut"
+msgstr "Kürzel"
+
+msgid "Area capture"
+msgstr "Bereichsaufnahme"
+
+msgid "Full screen"
+msgstr "Vollbild"
+
+msgid "Record UI"
+msgstr "Aufnahmeoberfläche"
+
+msgid "Take a test screenshot"
+msgstr "Test-Screenshot aufnehmen"
+
+msgid "Starts the tray daemon if needed, then takes a full screenshot"
+msgstr ""
+"Startet bei Bedarf den Leisten-Dienst und macht einen Vollbild-Screenshot"
+
+msgid "Optional. You can skip this and try a capture after finishing setup."
+msgstr ""
+"Optional. Sie können überspringen und nach der Einrichtung eine Aufnahme testen."
+
+msgid "{shortcut} (default)"
+msgstr "{shortcut} (Standard)"
+
+msgid "You're all set!"
+msgstr "Sie sind startklar!"
+
+msgid ""
+"The tray daemon starts when you finish so hotkeys and captures work right away."
+msgstr ""
+"Der Leisten-Dienst startet am Ende, damit Kürzel und Aufnahmen sofort funktionieren."
+
+msgid "Right-click for Area, Screen, and Record"
+msgstr "Rechtsklick: Bereich, Bildschirm und Aufnahme"
+
+msgid "Capture without opening Settings every time"
+msgstr "Aufnehmen, ohne jedes Mal Einstellungen zu öffnen"
+
+msgid "Open ApexShot anytime for Settings and preferences"
+msgstr "Öffnen Sie ApexShot jederzeit für Einstellungen"
+
+msgid "Pro tip"
+msgstr "Tipp"
+
+msgid ""
+"If a hotkey conflicts with your desktop, change it under Settings → Shortcuts."
+msgstr ""
+"Bei Konflikten mit dem Desktop unter Einstellungen → Tastenkürzel ändern."
+
+msgid "Capture Area"
+msgstr "Bereich aufnehmen"
+
+msgid "Crosshair Capture"
+msgstr "Fadenkreuz-Aufnahme"
+
+msgid "Capture Screen"
+msgstr "Bildschirm aufnehmen"
+
+msgid "Open Recording UI"
+msgstr "Aufnahmeoberfläche öffnen"
+
+msgid "Record Screen"
+msgstr "Bildschirm aufnehmen"
+
+msgid "Record Window"
+msgstr "Fenster aufnehmen"
+
+msgid "Stop Recording"
+msgstr "Aufnahme stoppen"
+
+msgid "Video Editor"
+msgstr "Videoeditor"
+
+msgid "Image Editor"
+msgstr "Bildeditor"
+
+msgid "Open Last Capture"
+msgstr "Letzte Aufnahme öffnen"
+
+msgid "History"
+msgstr "Verlauf"
+
+msgid "Quit"
+msgstr "Beenden"
+
+msgid "Camera"
+msgstr "Kamera"
+
+msgid "Classic"
+msgstr "Klassisch"
+
+msgid "Pop"
+msgstr "Pop"
+
+msgid "None"
+msgstr "Keiner"
+
+msgid "Left"
+msgstr "Links"
+
+msgid "Right"
+msgstr "Rechts"
+
+msgid "Hide"
+msgstr "Ausblenden"
+
+msgid "Hide (stay in Tray)"
+msgstr "Ausblenden (in der Leiste behalten)"
+
+msgid "Min"
+msgstr "Min"
+
+msgid "Def"
+msgstr "Std"
+
+msgid "Max"
+msgstr "Max"
+
+msgid "Show Quick Access overlay"
+msgstr "Schnellzugriff-Overlay zeigen"
+
+msgid "Copy to clipboard"
+msgstr "In die Zwischenablage kopieren"
+
+msgid "Open Annotate tool"
+msgstr "Annotationswerkzeug öffnen"
+
+msgid "Open Video Editor"
+msgstr "Videoeditor öffnen"
+
+msgid "Automatic zoom on import"
+msgstr "Automatischer Zoom beim Import"
+
+msgid "Open File:"
+msgstr "Datei öffnen:"
+
+msgid "Open From Clipboard:"
+msgstr "Aus Zwischenablage öffnen:"
+
+msgid "Restore Recently Closed File:"
+msgstr "Zuletzt geschlossene Datei wiederherstellen:"
+
+msgid "Hide/Show Overlays:"
+msgstr "Overlays ein-/ausblenden:"
+
+msgid "Capture Area:"
+msgstr "Bereich aufnehmen:"
+
+msgid "Crosshair Capture:"
+msgstr "Fadenkreuz-Aufnahme:"
+
+msgid "Capture Previous Area:"
+msgstr "Vorherigen Bereich aufnehmen:"
+
+msgid "Capture Full Screen:"
+msgstr "Vollbild aufnehmen:"
+
+msgid "Show Last Preview:"
+msgstr "Letzte Vorschau zeigen:"
+
+msgid "Open Recording UI:"
+msgstr "Aufnahmeoberfläche öffnen:"
+
+msgid "Record Screen:"
+msgstr "Bildschirm aufnehmen:"
+
+msgid "HEVC (smaller files)"
+msgstr "HEVC (kleinere Dateien)"
+
+msgid "H.264"
+msgstr "H.264"
+
+msgid "Pause or Resume Recording:"
+msgstr "Aufnahme pausieren oder fortsetzen:"
+
+msgid "Restart Recording:"
+msgstr "Aufnahme neu starten:"
+
+msgid "Add Recording Marker:"
+msgstr "Aufnahmemarkierung setzen:"
+
+msgid "Stop and Save Recording:"
+msgstr "Aufnahme stoppen und speichern:"
+
+msgid "Only during recording"
+msgstr "Nur während der Aufnahme"
+
+msgid "+ Add current color"
+msgstr "+ Aktuelle Farbe hinzufügen"
+
+msgid "1 : 1 (Square)"
+msgstr "1 : 1 (Quadrat)"
+
+msgid "1 {unit} ago"
+msgstr "vor 1 {unit}"
+
+msgid "1, 2, 3, 4..."
+msgstr "1, 2, 3, 4..."
+
+msgid "1080p"
+msgstr "1080p"
+
+msgid "16 : 10"
+msgstr "16 : 10"
+
+msgid "16 : 9"
+msgstr "16 : 9"
+
+msgid "2 : 3"
+msgstr "2 : 3"
+
+msgid "2.35 : 1"
+msgstr "2,35 : 1"
+
+msgid "3 : 2"
+msgstr "3 : 2"
+
+msgid "4 : 3"
+msgstr "4 : 3"
+
+msgid "480 x auto"
+msgstr "480 x automatisch"
+
+msgid "5 : 4 (10 : 8)"
+msgstr "5 : 4 (10 : 8)"
+
+msgid "640 x auto"
+msgstr "640 x automatisch"
+
+msgid "7 : 5"
+msgstr "7 : 5"
+
+msgid "720p"
+msgstr "720p"
+
+msgid "800 x auto"
+msgstr "800 x Auto"
+
+msgid "9 : 16"
+msgstr "9:16"
+
+msgid "A, B, C, D..."
+msgstr "A, B, C, D..."
+
+msgid "Actions"
+msgstr "Aktionen"
+
+msgid "Add"
+msgstr "Hinzufügen"
+
+msgid "Add a Manual zoom, or analyze visible cursor motion from the timeline"
+msgstr ""
+"Fügen Sie einen manuellen Zoom hinzu oder analysieren Sie die sichtbaren Cursorbewegungen anhand der Zeitleiste"
+
+msgid "Add to project"
+msgstr "Zum Projekt hinzufügen"
+
+msgid "Add wallpaper"
+msgstr "Hintergrundbild hinzufügen"
+
+msgid "Add zoom at playhead"
+msgstr "Zoom am Abspielzeiger hinzufügen"
+
+msgid "Added {auto_zooms} Auto Zooms from {samples} cursor-motion samples."
+msgstr ""
+"Es wurden {auto_zooms} automatische Zooms aus {samples} Cursor-Bewegungs-Samples hinzugefügt."
+
+msgid "Adwaita"
+msgstr "Adwaita"
+
+msgid "Alignment"
+msgstr "Ausrichtung"
+
+msgid "An error occurred while taking a screenshot."
+msgstr "Beim Erstellen eines Screenshots ist ein Fehler aufgetreten."
+
+msgid "Analyzing visible cursor motion…"
+msgstr "Sichtbare Cursorbewegung wird analysiert…"
+
+msgid "Animation"
+msgstr "Animation"
+
+msgid "ApexShot Editor"
+msgstr "ApexShot-Editor"
+
+msgid "ApexShot History"
+msgstr "Die Geschichte von ApexShot"
+
+msgid "ApexShot Preview"
+msgstr "ApexShot-Vorschau"
+
+msgid "ApexShot Recording"
+msgstr "ApexShot-Aufzeichnung"
+
+msgid "ApexShot Recording Countdown"
+msgstr "ApexShot-Aufnahme-Countdown"
+
+msgid "ApexShot Recording Editor"
+msgstr "ApexShot-Aufnahme-Editor"
+
+msgid "ApexShot Recording Mask"
+msgstr "ApexShot-Aufnahmemaske"
+
+msgid "ApexShot could not export this recording."
+msgstr "ApexShot konnte diese Aufzeichnung nicht exportieren."
+
+msgid "ApexShot could not open this video file."
+msgstr "ApexShot konnte diese Videodatei nicht öffnen."
+
+msgid "ApexShot lost contact with the export worker."
+msgstr "ApexShot hat den Kontakt zum Exportmitarbeiter verloren."
+
+msgid "ApexShot lost contact with the upload worker."
+msgstr "ApexShot hat den Kontakt zum Upload-Worker verloren."
+
+msgid "ApexShot-YYYY-MM-DD_HH-MM-SS.png"
+msgstr "ApexShot-JJJJ-MM-TT_HH-MM-SS.png"
+
+msgid "Apply selection"
+msgstr "Auswahl anwenden"
+
+msgid "Area"
+msgstr "Fläche"
+
+msgid "Arrow"
+msgstr "Pfeil"
+
+msgid "Arrow style"
+msgstr "Pfeil-Stil"
+
+msgid "Aspect Ratio"
+msgstr "Seitenverhältnis"
+
+msgid "Audio"
+msgstr "Audio"
+
+msgid "Auto"
+msgstr "Auto"
+
+msgid "Auto Zoom detection complete"
+msgstr "Erkennung des automatischen Zooms abgeschlossen"
+
+msgid "Auto-balance"
+msgstr "Automatische Gewichtsausgleichung"
+
+msgid "Background"
+msgstr "Hintergrund"
+
+msgid "Before recording"
+msgstr "Vor der Aufnahme"
+
+msgid "Behavior"
+msgstr "Verhalten"
+
+msgid "Black"
+msgstr "Schwarz"
+
+msgid "Blackout"
+msgstr "Stromausfall"
+
+msgid "Blackout has no intensity control"
+msgstr "„Blackout“ verfügt über keine Lautstärkeregelung"
+
+msgid "Blur"
+msgstr "Unschärfe"
+
+msgid "Blurred"
+msgstr "Unscharf"
+
+msgid "CLICK EFFECT"
+msgstr "KLICK-EFFEKT"
+
+msgid "Camera recenters when the cursor nears the edge of the zoomed view"
+msgstr ""
+"Die Kamera zentriert das Bild neu, wenn sich der Cursor dem Rand der vergrößerten Ansicht nähert."
+
+msgid "Captures you take will show up here."
+msgstr "Die von dir aufgenommenen Screenshots werden hier angezeigt."
+
+msgid "Change aspect ratio"
+msgstr "Seitenverhältnis ändern"
+
+msgid "Change video size"
+msgstr "Videogröße ändern"
+
+msgid "Choose a color for the active tool"
+msgstr "Wählen Sie eine Farbe für das aktive Werkzeug aus"
+
+msgid "Choose a folder"
+msgstr "Wählen Sie einen Ordner aus"
+
+msgid "Choose click color"
+msgstr "Farbe für den Klick auswählen"
+
+msgid "Classic Animation"
+msgstr "Klassische Animation"
+
+msgid "Clean up microphone noise"
+msgstr "Mikrofonrauschen entfernen"
+
+msgid "Click a display · Esc to cancel · {keys}"
+msgstr "Auf eine Anzeige klicken · Esc zum Abbrechen · {keys}"
+
+msgid "Click color"
+msgstr "Farbe auswählen"
+
+msgid "Click to open a video, or drop one here"
+msgstr "Klicken Sie hier, um ein Video zu öffnen, oder ziehen Sie eines hierher"
+
+msgid "Clip"
+msgstr "Clip"
+
+msgid "Clipboard does not contain an image to open"
+msgstr "Die Zwischenablage enthält kein Bild, das geöffnet werden könnte."
+
+msgid "Clipboard image unavailable"
+msgstr "Bild aus der Zwischenablage nicht verfügbar"
+
+msgid "Close anyway"
+msgstr "Egal, schließen"
+
+msgid "Closing now stops the encode. Your edit session is kept."
+msgstr ""
+"Wenn Sie das Fenster jetzt schließen, wird die Kodierung beendet. Ihre Bearbeitungssitzung bleibt erhalten."
+
+msgid "Cloud upload not configured"
+msgstr "Cloud-Upload nicht konfiguriert"
+
+msgid "Color"
+msgstr "Farbe"
+
+msgid "Color picker"
+msgstr "Farbauswahl"
+
+msgid "Colors"
+msgstr "Farben"
+
+msgid ""
+"Connect ApexShot Cloud in Settings → Cloud, or switch destination to XBackBone and configure it."
+msgstr ""
+"Verbinden Sie ApexShot Cloud unter „Einstellungen“ → „Cloud“ oder wechseln Sie als Ziel zu XBackBone und konfigurieren Sie es."
+
+msgid ""
+"Connect your ApexShot Cloud account to browse everything you have uploaded, right here in History."
+msgstr ""
+"Verbinden Sie Ihr ApexShot Cloud-Konto, um alle Ihre hochgeladenen Inhalte direkt hier im Verlauf anzusehen."
+
+msgid "Content copied to clipboard"
+msgstr "Inhalt in die Zwischenablage kopiert"
+
+msgid "Content extracted"
+msgstr "Auszug aus dem Inhalt"
+
+msgid "Content extracted, but clipboard copy was unavailable"
+msgstr ""
+"Inhalt wurde extrahiert, aber das Kopieren in die Zwischenablage war nicht möglich"
+
+msgid "Controls"
+msgstr "Bedienelemente"
+
+msgid "Copied"
+msgstr "Kopiert"
+
+msgid ""
+"Copied to clipboard\n"
+"{url}"
+msgstr ""
+"In die Zwischenablage kopiert\n"
+"{url}"
+
+msgid "Copy"
+msgstr "Kopieren"
+
+msgid "Copy failed"
+msgstr "Kopieren fehlgeschlagen"
+
+msgid "Copy file URI"
+msgstr "Datei-URI kopieren"
+
+msgid "Copy link"
+msgstr "Link kopieren"
+
+msgid "Copy the recording path to the clipboard"
+msgstr "Den Aufnahmepfad in die Zwischenablage kopieren"
+
+msgid "Corners"
+msgstr "Ecken"
+
+msgid "Could not delete {name}: {message}"
+msgstr "{name} konnte nicht gelöscht werden: {message}"
+
+msgid "Could not load your cloud uploads"
+msgstr "Ihre Cloud-Uploads konnten nicht geladen werden"
+
+msgid "Could not save edits: {error}"
+msgstr "Änderungen konnten nicht gespeichert werden: {error}"
+
+msgid "Countdown"
+msgstr "Countdown"
+
+msgid "Crop"
+msgstr "Zuschneiden"
+
+msgid "Crop video"
+msgstr "Video zuschneiden"
+
+msgid "Current tool does not support size changes"
+msgstr "Das derzeitige Tool unterstützt keine Größenänderungen."
+
+msgid "Cursor"
+msgstr "Cursor"
+
+msgid "Cursor analysis could not place Auto Zooms"
+msgstr "Die Cursor-Analyse konnte die automatischen Zooms nicht zuordnen"
+
+msgid "Cursor analysis stopped"
+msgstr "Cursor-Analyse beendet"
+
+msgid "Cursor is hidden for this range in preview and export"
+msgstr ""
+"Der Cursor wird in der Vorschau und beim Export für diesen Bereich ausgeblendet."
+
+msgid ""
+"Cursor motion was found, but Manual zooms already cover the detected moments."
+msgstr ""
+"Es wurde eine Cursorbewegung festgestellt, doch die manuellen Zooms decken die erkannten Momente bereits ab."
+
+msgid ""
+"Cursor motion was found, but no purposeful pauses were clear enough to place zooms."
+msgstr ""
+"Es wurden Cursorbewegungen festgestellt, jedoch waren keine gezielten Pausen deutlich genug, um Zooms zu setzen."
+
+msgid ""
+"Cursor replacement is unavailable. Its inferred path can still guide Auto Zoom."
+msgstr ""
+"Die Cursorersetzung ist nicht verfügbar. Der daraus abgeleitete Pfad kann jedoch weiterhin als Orientierung für die automatische Zoomfunktion dienen."
+
+msgid "Cursor styling requires pointer data from an ApexShot recording."
+msgstr ""
+"Für die Gestaltung des Cursors werden Zeigerdaten aus einer ApexShot-Aufzeichnung benötigt."
+
+msgid "Cursor unavailable"
+msgstr "Cursor nicht verfügbar"
+
+msgid "Curved"
+msgstr "Geschwungen"
+
+msgid "Cut mode — click timeline to place cuts"
+msgstr "Schnittmodus – Klicken Sie auf die Zeitleiste, um Schnitte zu setzen"
+
+msgid "Date unknown"
+msgstr "Datum unbekannt"
+
+msgid "Delete"
+msgstr "Löschen"
+
+msgid "Delete clip"
+msgstr "Clip löschen"
+
+msgid "Delete hide"
+msgstr "Löschen, ausblenden"
+
+msgid "Delete selected"
+msgstr "Ausgewählte löschen"
+
+msgid "Delete zoom"
+msgstr "Zoom löschen"
+
+msgid "Delete zoom or cut"
+msgstr "Zoom löschen oder ausschneiden"
+
+msgid "Delete {name}?"
+msgstr "{name} löschen?"
+
+msgid "Deleted {name}"
+msgstr "{name} wurde gelöscht"
+
+msgid "Details"
+msgstr "Details"
+
+msgid "Detect"
+msgstr "Erkennen"
+
+msgid "Detect automatic zooms from clicks and cursor motion"
+msgstr "Automatische Zooms anhand von Klicks und Cursorbewegungen erkennen"
+
+msgid "Detect text"
+msgstr "Text erkennen"
+
+msgid "Dim screen"
+msgstr "Bildschirm abdunkeln"
+
+msgid "Dimensions"
+msgstr "Abmessungen"
+
+msgid "Dismiss"
+msgstr "Schließen"
+
+msgid "Display scale resolution"
+msgstr "Auflösung der Anzeigeskala"
+
+msgid "Display {number}"
+msgstr "{number} anzeigen"
+
+msgid "Do Not Disturb"
+msgstr "Bitte nicht stören"
+
+msgid "Done"
+msgstr "Fertig"
+
+msgid "Dot"
+msgstr "Punkt"
+
+msgid "Double"
+msgstr "Doppelt"
+
+msgid "Download Extension"
+msgstr "Erweiterung herunterladen"
+
+msgid "Drag here"
+msgstr "Hier ziehen"
+
+msgid "Drag here or click to upload"
+msgstr "Hierher ziehen oder zum Hochladen anklicken"
+
+msgid "Drop a recording to begin"
+msgstr "Zieh eine Aufnahme per Drag & Drop hinein, um zu beginnen"
+
+msgid "Drop an image here"
+msgstr "Zieh ein Bild hierhin"
+
+msgid "Duration"
+msgstr "Dauer"
+
+msgid "Ease"
+msgstr "Leichtigkeit"
+
+msgid "Easing"
+msgstr "Lockerung"
+
+msgid "Echo"
+msgstr "Echo"
+
+msgid "Edit"
+msgstr "Bearbeiten"
+
+msgid "Edit quality, resolution and audio after recording"
+msgstr "Qualität, Auflösung und Ton nach der Aufnahme bearbeiten"
+
+msgid "Effects"
+msgstr "Auswirkungen"
+
+msgid "Empty"
+msgstr "Leer"
+
+msgid "End {time}"
+msgstr "Ende {time}"
+
+msgid "Estimated export size"
+msgstr "Geschätztes Exportvolumen"
+
+msgid "Everything you have uploaded to ApexShot Cloud"
+msgstr "Alles, was Sie in die ApexShot Cloud hochgeladen haben"
+
+msgid "Export complete"
+msgstr "Export abgeschlossen"
+
+msgid "Export failed"
+msgstr "Der Export ist fehlgeschlagen"
+
+msgid "Export is still running."
+msgstr "Der Export läuft noch."
+
+msgid "Export quality"
+msgstr "Exportqualität"
+
+msgid "Export the edited MP4"
+msgstr "Die bearbeitete MP4-Datei exportieren"
+
+msgid "Export video"
+msgstr "Video exportieren"
+
+msgid "Export with your current settings, then upload"
+msgstr "Mit den aktuellen Einstellungen exportieren und anschließend hochladen"
+
+msgid "Extra Large"
+msgstr "Extra groß"
+
+msgid "FRAME"
+msgstr "RAHMEN"
+
+msgid "Failed to open video"
+msgstr "Das Video konnte nicht geöffnet werden"
+
+msgid "Fancy"
+msgstr "Ausgefallen"
+
+msgid "File copied to clipboard"
+msgstr "Datei in die Zwischenablage kopiert"
+
+msgid "Focus"
+msgstr "Fokus"
+
+msgid "Focus background intensity"
+msgstr "Fokus-Hintergrundintensität"
+
+msgid "Focused"
+msgstr "Konzentriert"
+msgid "Follow"
+msgstr "Follow"
+
+msgid "Font"
+msgstr "Schriftart"
+
+msgid "Font family"
+msgstr "Schriftfamilie"
+
+msgid "Frame rate"
+msgstr "Bildfrequenz"
+
+msgid "Freeform"
+msgstr "Freiform"
+
+msgid "Fullscreen"
+msgstr "Vollbild"
+
+msgid "GIF"
+msgstr "GIF"
+
+msgid ""
+"GNOME Shell extension is not installed. Please install the ApexShot GNOME extension first."
+msgstr ""
+"Die GNOME-Shell-Erweiterung ist nicht installiert. Bitte installieren Sie zunächst die ApexShot-GNOME-Erweiterung."
+
+msgid "Geometry"
+msgstr "Geometrie"
+
+msgid "Glide"
+msgstr "Gleiten"
+
+msgid "Got it"
+msgstr "Verstanden"
+
+msgid "Gradient"
+msgstr "Gradient"
+
+msgid "Gradients"
+msgstr "Farbverläufe"
+
+msgid "HEIGHT"
+msgstr "HÖHE"
+
+msgid "HEX"
+msgstr "HEX"
+
+msgid "HiDPI"
+msgstr "HiDPI"
+
+msgid "Hide cursor"
+msgstr "Cursor ausblenden"
+
+msgid "Hide cursor at playhead"
+msgstr "Cursor am Abspielkopf ausblenden"
+
+msgid "Hide track"
+msgstr "Titel ausblenden"
+
+msgid "Hide video"
+msgstr "Video ausblenden"
+
+msgid "Remove cursor shake"
+msgstr "Zeigerzittern entfernen"
+
+msgid "Hide when idle"
+msgstr "Bei Inaktivität ausblenden"
+
+msgid "Loop cursor position"
+msgstr "Zeigerposition wiederholen"
+
+msgid "Loop before end"
+msgstr "Wiederholung vor dem Ende"
+
+msgid "Stop at the end"
+msgstr "Am Ende anhalten"
+
+msgid "Hide zoom"
+msgstr "Zoom ausblenden"
+
+msgid "High"
+msgstr "Hoch"
+
+msgid "Highlighter"
+msgstr "Textmarker"
+
+msgid "Idle delay"
+msgstr "Leerlaufverzögerung"
+
+msgid "Image"
+msgstr "Bild"
+
+msgid "Image copied to clipboard"
+msgstr "Bild in die Zwischenablage kopiert"
+
+msgid "Images"
+msgstr "Bilder"
+
+msgid "Insert"
+msgstr "Einfügen"
+
+msgid "Inspector"
+msgstr "Inspektor"
+
+msgid "Intensity"
+msgstr "Intensität"
+
+msgid "Intensity {percent}%"
+msgstr "Intensität {percent}%"
+
+msgid "Just now"
+msgstr "Gerade eben"
+
+msgid "Keep editing"
+msgstr "Weiter bearbeiten"
+
+msgid "Keyboard shortcuts"
+msgstr "Tastaturkürzel"
+
+msgid "Large"
+msgstr "Groß"
+
+msgid "Line"
+msgstr "Zeile"
+
+msgid "Linear"
+msgstr "Linear"
+
+msgid "Load more"
+msgstr "Mehr laden"
+
+msgid "Loading image…"
+msgstr "Bild wird geladen…"
+
+msgid "Loading your cloud uploads…"
+msgstr "Ihre Cloud-Uploads werden geladen…"
+
+msgid "Loading…"
+msgstr "Wird geladen…"
+
+msgid "Lock audio"
+msgstr "Audio sperren"
+
+msgid "Lock track"
+msgstr "Spur sperren"
+
+msgid "Lock video"
+msgstr "Video sperren"
+
+msgid "Lock zoom"
+msgstr "Zoom fixieren"
+
+msgid "Low"
+msgstr "Niedrig"
+
+msgid "MP4 files"
+msgstr "MP4-Dateien"
+
+msgid "MP4 video"
+msgstr "MP4-Video"
+
+msgid "Manual"
+msgstr "Manuell"
+
+msgid "Maximum resolution"
+msgstr "Maximale Auflösung"
+
+msgid "Media"
+msgstr "Medien"
+
+msgid "Medium"
+msgstr "Mittel"
+
+msgid "Method"
+msgstr "Verfahren"
+
+msgid "Mic"
+msgstr "Mikrofon"
+
+msgid "Minimal"
+msgstr "Minimal"
+
+msgid "Motion"
+msgstr "Antrag"
+
+msgid "Move mode — drag a segment to reorder it"
+msgstr "Verschiebungsmodus – Ziehen Sie ein Segment, um es neu anzuordnen"
+
+msgid "Mute"
+msgstr "Stummschalten"
+
+msgid "My colors"
+msgstr "Meine Farben"
+
+msgid "No Auto Zooms added"
+msgstr "Es wurden keine automatischen Zooms hinzugefügt"
+
+msgid ""
+"No Auto Zooms were added. Manual zooms are preserved, and overlapping detections are skipped."
+msgstr ""
+"Es wurden keine automatischen Zooms hinzugefügt. Manuelle Zooms bleiben erhalten, und überlappende Erkennungen werden übersprungen."
+
+msgid "No audio"
+msgstr "Kein Ton"
+
+msgid "No clear clicks or purposeful pointer pauses were found."
+msgstr ""
+"Es wurden keine deutlichen Klickgeräusche oder gezielte Zeigerpausen festgestellt."
+
+msgid "No cursor samples were captured. Zoom centers will use the frame center."
+msgstr ""
+"Es wurden keine Cursor-Samples erfasst. Als Zoom-Mittelpunkt wird die Bildmitte verwendet."
+
+msgid "No editable cursor data was found."
+msgstr "Es wurden keine bearbeitbaren Cursor-Daten gefunden."
+
+msgid "No geometry"
+msgstr "Keine Geometrie"
+
+msgid "No media"
+msgstr "Keine Medien"
+
+msgid "No object selected"
+msgstr "Es wurde kein Objekt ausgewählt"
+
+msgid "No pointer data found"
+msgstr "Es wurden keine Zeigerdaten gefunden"
+
+msgid "No recordings yet"
+msgstr "Noch keine Aufnahmen"
+
+msgid "No screenshots yet"
+msgstr "Noch keine Screenshots"
+
+msgid "No video edits to remove"
+msgstr "Keine Videobearbeitungen zum Entfernen"
+
+msgid "No zooms"
+msgstr "Keine Zooms"
+
+msgid "Noise suppression"
+msgstr "Rauschunterdrückung"
+
+msgid "Notifications"
+msgstr "Benachrichtigungen"
+
+msgid "Number"
+msgstr "Zahl"
+
+msgid "Number Options"
+msgstr "Zahlenoptionen"
+
+msgid "OCR"
+msgstr "OCR"
+
+msgid "OCR complete"
+msgstr "OCR abgeschlossen"
+
+msgid "OCR failed"
+msgstr "OCR fehlgeschlagen"
+
+msgid "Obfuscate method"
+msgstr "Methode zur Verschleierung"
+
+msgid ""
+"On KDE Plasma, the compositor refused the screenshot. Enable KWin's screenshot plugin (System Settings → Desktop Effects, or set screenshotEnabled=true under [Plugins] in ~/.config/kwinrc) and try again."
+msgstr ""
+"Unter KDE Plasma hat der Compositor den Screenshot abgelehnt. Aktivieren Sie das Screenshot-Plugin von KWin (Systemeinstellungen → Desktop-Effekte oder setzen Sie „screenshotEnabled=true“ unter [Plugins] in ~/.config/kwinrc) und versuchen Sie es erneut."
+
+msgid "Opacity"
+msgstr "Deckkraft"
+
+msgid "Open"
+msgstr "Öffnen"
+
+msgid "Open Folder"
+msgstr "Ordner öffnen"
+
+msgid ""
+"Open Zoom and choose Detect to analyze visible cursor motion, or use Manual mode to place zooms yourself."
+msgstr ""
+"Öffnen Sie „Zoom“ und wählen Sie „Erkennen“, um sichtbare Cursorbewegungen zu analysieren, oder verwenden Sie den manuellen Modus, um Zooms selbst zu setzen."
+
+msgid "Open color picker"
+msgstr "Farbauswahl öffnen"
+
+msgid "Open in browser"
+msgstr "Im Browser öffnen"
+
+msgid "Open in editor"
+msgstr "Im Editor öffnen"
+
+msgid "Open video"
+msgstr "Video öffnen"
+
+msgid "Open video editor"
+msgstr "Video-Editor öffnen"
+
+msgid "Opened in your browser"
+msgstr "In Ihrem Browser geöffnet"
+
+msgid "Opened {name}"
+msgstr "Eröffnet: {name}"
+
+msgid "Opening {name} in the {editor}"
+msgstr "{name} im {editor} öffnen"
+
+msgid "Optimize GIF"
+msgstr "GIF optimieren"
+
+msgid "Or click to upload"
+msgstr "Oder zum Hochladen hier klicken"
+
+msgid "Original"
+msgstr "Original"
+
+msgid "Output size"
+msgstr "Ausgabegröße"
+
+msgid "PNG, JPEG, or WebP"
+msgstr "PNG, JPEG oder WebP"
+
+msgid "PRESET"
+msgstr "VOREINSTELLUNG"
+
+msgid "Padding"
+msgstr "Polsterung"
+
+msgid "Composition"
+msgstr "Komposition"
+
+msgid "Motion Blur"
+msgstr "Bewegungsunschärfe"
+
+msgid "Rotation & Perspective"
+msgstr "Drehung & Perspektive"
+
+msgid "Scene Shadows"
+msgstr "Szenenschatten"
+
+msgid "Timing"
+msgstr "Zeitsteuerung"
+
+msgid "Transform"
+msgstr "Transformation"
+
+msgid "day"
+msgstr "Tag"
+
+msgid "hour"
+msgstr "Stunde"
+
+msgid "minute"
+msgstr "Minute"
+
+msgid "Background blur"
+msgstr "Hintergrundunschärfe"
+
+msgid "Background noise"
+msgstr "Hintergrundrauschen"
+
+msgid "Border Radius"
+msgstr "Eckenradius"
+
+msgid "Highlight mode"
+msgstr "Hervorhebungsmodus"
+
+msgid "Marker size"
+msgstr "Markergröße"
+
+msgid "Numbering style"
+msgstr "Nummerierungsstil"
+
+msgid "Shadow blur"
+msgstr "Schattenunschärfe"
+
+msgid "Shadow opacity"
+msgstr "Deckkraft des Schattens"
+
+msgid "Shadow position X"
+msgstr "Schattenposition X"
+
+msgid "Shadow position Y"
+msgstr "Schattenposition Y"
+
+msgid "Watermark inset"
+msgstr "Wasserzeichenabstand"
+
+msgid "Watermark position X"
+msgstr "Position des Wasserzeichens X"
+
+msgid "Watermark position Y"
+msgstr "Position des Wasserzeichens Y"
+
+msgid "Watermark size"
+msgstr "Wasserzeichengröße"
+
+msgid "Palette"
+msgstr "Farbpalette"
+
+msgid "Paste your XBackBone API token"
+msgstr "Fügen Sie Ihren XBackBone-API-Token ein"
+
+msgid "Pick from screen"
+msgstr "Aus dem Bildschirm auswählen"
+
+msgid "Pin"
+msgstr "Anheften"
+
+msgid "Pixelate"
+msgstr "Verpixeln"
+
+msgid "Play"
+msgstr "Abspielen"
+
+msgid "Pointer track missing"
+msgstr "Zeiger-Spur fehlt"
+
+msgid "Pointer track unavailable"
+msgstr "Zeiger-Track nicht verfügbar"
+
+msgid "Primary"
+msgstr "Grundschule"
+
+msgid "QR code decoded"
+msgstr "QR-Code entschlüsselt"
+
+msgid "Quality"
+msgstr "Qualität"
+
+msgid "Ratio"
+msgstr "Verhältnis"
+
+msgid "Record audio in mono"
+msgstr "Audio in Mono aufnehmen"
+
+msgid "Recording failed"
+msgstr "Die Aufzeichnung ist fehlgeschlagen"
+
+msgid "Window recording unavailable"
+msgstr "Fensteraufnahme nicht verfügbar"
+
+msgid "Recording not saved"
+msgstr "Aufnahme wurde nicht gespeichert"
+
+msgid "Recording path copied"
+msgstr "Aufnahmepfad kopiert"
+
+msgid "Recording saved"
+msgstr "Aufzeichnung gespeichert"
+
+msgid "Recording setup"
+msgstr "Aufnahmeeinrichtung"
+
+msgid ""
+"Recording will continue with the OS cursor hidden. Enable the ApexShot GNOME extension for the editor."
+msgstr ""
+"Die Aufzeichnung wird fortgesetzt, wobei der Betriebssystem-Cursor ausgeblendet bleibt. Aktivieren Sie die ApexShot-GNOME-Erweiterung für den Editor."
+
+msgid "Recordings"
+msgstr "Aufnahmen"
+
+msgid "Reduce file size and upload time"
+msgstr "Dateigröße und Upload-Zeit reduzieren"
+
+msgid "Refresh"
+msgstr "Aktualisieren"
+
+msgid "Remember last area"
+msgstr "Letzten Bereich merken"
+
+msgid "Remove audio track"
+msgstr "Audiospur entfernen"
+
+msgid "Remove custom color"
+msgstr "Benutzerdefinierte Farbe entfernen"
+
+msgid "Remove track"
+msgstr "Spur entfernen"
+
+msgid "Remove video track"
+msgstr "Videospur entfernen"
+
+msgid "Remove zoom track"
+msgstr "Zoom-Spur entfernen"
+
+msgid "Rename video"
+msgstr "Video umbenennen"
+
+msgid "Reset"
+msgstr "Zurücksetzen"
+
+msgid "Reset video edits"
+msgstr "Videobearbeitungen zurücksetzen"
+
+msgid "Reset transforms"
+msgstr "Transformationen zurücksetzen"
+
+msgid "Retry"
+msgstr "Erneut versuchen"
+
+msgid "Reverse direction"
+msgstr "Richtung umkehren"
+
+msgid "Revert cuts"
+msgstr "Kürzungen rückgängig machen"
+
+msgid "Ripple"
+msgstr "Ripple"
+
+msgid "Save is disabled in After capture settings"
+msgstr ""
+"Die Funktion „Speichern“ ist in den Einstellungen nach der Aufnahme deaktiviert"
+
+msgid "Saved {file} ({size})"
+msgstr "{file} ({size}) gespeichert"
+
+msgid "Screen Recording"
+msgstr "Bildschirmaufzeichnung"
+
+msgid "Screen recordings you make will show up here."
+msgstr "Die von Ihnen erstellten Bildschirmaufnahmen werden hier angezeigt."
+
+msgid "Screenshot failed"
+msgstr "Der Screenshot ist fehlgeschlagen"
+
+msgid "Screenshot not saved"
+msgstr "Screenshot wurde nicht gespeichert"
+
+msgid "Scroll"
+msgstr "Scrollen"
+
+msgid "Scroll Capture"
+msgstr "Bildlauf-Erfassung"
+
+msgid "Scroll capture requires the ApexShot"
+msgstr "Für die Bildschirmaufnahme per Bildlauf ist ApexShot erforderlich"
+
+msgid "Search isn't available for Cloud"
+msgstr "Die Suchfunktion ist für die Cloud nicht verfügbar"
+
+msgid "Search recordings"
+msgstr "Aufnahmen suchen"
+
+msgid "Search screenshots"
+msgstr "Screenshots suchen"
+
+msgid "Select a Window"
+msgstr "Wählen Sie ein Fenster aus"
+
+msgid "Select a display"
+msgstr "Wählen Sie eine Anzeige aus"
+
+msgid "Select a video, begin your creation."
+msgstr "Wähle ein Video aus und beginne mit der Erstellung."
+
+msgid ""
+"Select a zoom to adjust it; timeline detection uses clicks and pointer pauses"
+msgstr ""
+"Wählen Sie einen Zoom aus, um ihn anzupassen; die Zeitleistenerkennung erfolgt über Klicks und Zeigerpausen"
+
+msgid "Select any annotation on the canvas to inspect it."
+msgstr ""
+"Wählen Sie eine beliebige Anmerkung auf der Arbeitsfläche aus, um sie genauer zu betrachten."
+
+msgid "Selection"
+msgstr "Auswahl"
+
+msgid "Set a fixed focus point for this zoom"
+msgstr "Legen Sie einen festen Fokuspunkt für diesen Zoom fest"
+
+msgid ""
+"Set the instance URL and API token in Settings → Cloud, or switch to ApexShot Cloud and sign in."
+msgstr ""
+"Legen Sie die Instanz-URL und den API-Token unter „Einstellungen“ → „Cloud“ fest oder wechseln Sie zu ApexShot Cloud und melden Sie sich an."
+
+msgid "Shadow"
+msgstr "Schatten"
+
+msgid "Share link copied to clipboard"
+msgstr "Link zum Teilen wurde in die Zwischenablage kopiert"
+
+msgid "Share link: {url}"
+msgstr "Link teilen: {url}"
+
+msgid "Show in files"
+msgstr "In Dateien anzeigen"
+
+msgid "Show less"
+msgstr "Weniger anzeigen"
+
+msgid "Show more"
+msgstr "Mehr anzeigen"
+
+msgid "Show video"
+msgstr "Video anzeigen"
+
+msgid "Show zoom"
+msgstr "Zoom anzeigen"
+
+msgid "Showing {name} in your files"
+msgstr "{name} wird in Ihren Dateien angezeigt"
+
+msgid "Shown over the recording in preview and export"
+msgstr "Wird in der Vorschau und beim Export über die Aufnahme eingeblendet"
+
+msgid "Sign in"
+msgstr "Anmelden"
+
+msgid "Sign in to ApexShot Cloud"
+msgstr "Bei ApexShot Cloud anmelden"
+
+msgid "Size"
+msgstr "Größe"
+
+msgid "Skip back 1s"
+msgstr "1 Sekunde zurückspringen"
+
+msgid "Skip forward 1s"
+msgstr "1 Sekunde vorspulen"
+
+msgid "Small"
+msgstr "Klein"
+
+msgid "Smooth"
+msgstr "Glatt"
+
+msgid "Smoothing"
+msgstr "Glättung"
+
+msgid "Snappy"
+msgstr "Flott"
+
+msgid "Softer follow"
+msgstr "Sanftere Nachführung"
+
+msgid "Speaker"
+msgstr "Referent"
+
+msgid "Speed"
+msgstr "Geschwindigkeit"
+
+msgid "Split"
+msgstr "Split"
+
+msgid "Split at playhead"
+msgstr "An der Abspielposition teilen"
+
+msgid "Spotlight"
+msgstr "Im Fokus"
+
+msgid "Square"
+msgstr "Quadrat"
+
+msgid "Standard"
+msgstr "Standard"
+
+msgid "Start"
+msgstr "Start"
+
+msgid "Start with:"
+msgstr "Beginnen Sie mit:"
+
+msgid "Start {time}"
+msgstr "Start {time}"
+
+msgid "Stroke Thickness"
+msgstr "Strichstärke"
+
+msgid "Stroke size"
+msgstr "Strichstärke"
+
+msgid "Style"
+msgstr "Stil"
+
+msgid "Sway"
+msgstr "Sway"
+
+msgid "Tahoe"
+msgstr "Tahoe"
+
+msgid "Tahoe Inverted"
+msgstr "Tahoe auf den Kopf gestellt"
+
+msgid "Text"
+msgstr "Text"
+
+msgid "Text copied to clipboard"
+msgstr "Text in die Zwischenablage kopiert"
+
+msgid "Text extracted"
+msgstr "Auszug aus dem Text"
+
+msgid "Text extracted, but clipboard copy was unavailable"
+msgstr ""
+"Text wurde extrahiert, aber das Kopieren in die Zwischenablage war nicht möglich"
+
+msgid "Text size"
+msgstr "Schriftgröße"
+
+msgid ""
+"The analysis worker stopped unexpectedly. Manual Zoom is still available."
+msgstr ""
+"Der Analyse-Worker wurde unerwartet angehalten. Die manuelle Zoomfunktion steht weiterhin zur Verfügung."
+
+msgid "The cursor is baked into this imported video."
+msgstr "Der Cursor ist in diesem importierten Video fest eingebettet."
+
+msgid "The saved camera pose is paused while drawing."
+msgstr "Die gespeicherte Kameraperspektive ist beim Zeichnen pausiert."
+
+msgid "The video editor only supports MP4 recordings"
+msgstr "Der Video-Editor unterstützt ausschließlich MP4-Aufnahmen."
+
+msgid "Thick"
+msgstr "Dick"
+
+msgid "Thickness"
+msgstr "Dicke"
+
+msgid "Thin"
+msgstr "Dünn"
+
+msgid "This page covers ApexShot Cloud"
+msgstr "Auf dieser Seite geht es um ApexShot Cloud"
+
+msgid "This permanently removes the file from disk."
+msgstr "Dadurch wird die Datei dauerhaft von der Festplatte gelöscht."
+
+msgid "This upload has no link to open"
+msgstr "Dieser Upload enthält keinen Link, den man öffnen kann."
+
+msgid "This upload has no share link"
+msgstr "Für diesen Upload gibt es keinen Link zum Teilen"
+
+msgid "Tighter, faster"
+msgstr "Straffer, schneller"
+
+msgid "Tilt"
+msgstr "Neigung"
+
+msgid "Timer"
+msgstr "Timer"
+
+msgid "Tool options coming soon"
+msgstr "Tool-Optionen folgen in Kürze"
+
+msgid "Trail"
+msgstr "Wanderweg"
+
+msgid "URL copied to clipboard"
+msgstr "URL in die Zwischenablage kopiert"
+
+msgid "Unlock audio"
+msgstr "Audio freischalten"
+
+msgid "Unlock video"
+msgstr "Video freischalten"
+
+msgid "Unlock zoom"
+msgstr "Zoom entsperren"
+
+msgid "Unmute"
+msgstr "Stummschaltung aufheben"
+
+msgid "Untitled"
+msgstr "Ohne Titel"
+
+msgid "Upload complete"
+msgstr "Upload abgeschlossen"
+
+msgid "Upload failed"
+msgstr "Der Upload ist fehlgeschlagen"
+
+msgid "Upload failed: {message}"
+msgstr "Upload fehlgeschlagen: {message}"
+
+msgid "Upload media"
+msgstr "Medien hochladen"
+
+msgid "Upload to cloud"
+msgstr "In die Cloud hochladen"
+
+msgid "Uploaded {name}"
+msgstr "{name} hochgeladen"
+
+msgid "Uploading…"
+msgstr "Wird hochgeladen…"
+
+msgid "Use the Thickness panel for highlighter"
+msgstr "Verwenden Sie das Bedienfeld „Strichstärke“ für den Textmarker"
+
+msgid "Very Thick"
+msgstr "Sehr dick"
+
+msgid "Video"
+msgstr "Video"
+
+msgid "Videos"
+msgstr "Videos"
+
+msgid "WIDTH"
+msgstr "BREITE"
+
+msgid "Waiting for sign-in…"
+msgstr "Warten auf die Anmeldung…"
+
+msgid "Wallpaper"
+msgstr "Hintergrundbild"
+
+msgid "Waveform unavailable"
+msgstr "Wellenform nicht verfügbar"
+
+msgid "While recording"
+msgstr "Während der Aufnahme"
+
+msgid "White"
+msgstr "Weiß"
+
+msgid "XBackBone upload not configured"
+msgstr "XBackBone-Upload nicht konfiguriert"
+
+msgid "Yaru"
+msgstr "Yaru"
+
+msgid "Yesterday"
+msgstr "Gestern"
+
+msgid "You have not uploaded anything to ApexShot Cloud yet."
+msgstr "Sie haben noch nichts in die ApexShot Cloud hochgeladen."
+
+msgid "You're connected"
+msgstr "Du bist verbunden"
+
+msgid "Your next screenshot gets a share link."
+msgstr "Dein nächster Screenshot erhält einen Link zum Teilen."
+
+msgid ""
+"Your uploads currently go to a self-hosted XBackBone instance. Switch your upload destination to ApexShot Cloud in Settings to browse those uploads here."
+msgstr ""
+"Ihre Uploads werden derzeit auf eine selbst gehostete XBackBone-Instanz übertragen. Ändern Sie in den Einstellungen das Upload-Ziel auf „ApexShot Cloud“, um diese Uploads hier anzuzeigen."
+
+msgid "Zoom"
+msgstr "Zoom"
+
+msgid "Zoom In"
+msgstr "Vergrößern"
+
+msgid "Zoom Out"
+msgstr "Vergrößern"
+
+msgid "Zoom controls"
+msgstr "Zoom-Steuerelemente"
+
+msgid "Zoom in timeline"
+msgstr "Zeitleiste vergrößern"
+
+msgid "Zoom out timeline"
+msgstr "Zeitleiste verkleinern"
+
+msgid "Zoom to Selection"
+msgstr "Auf Auswahl zoomen"
+
+msgid "a, b, c, d..."
+msgstr "a, b, c, d..."
+
+msgid "browser extension."
+msgstr "Browser-Erweiterung."
+
+msgid "i, ii, iii, iv..."
+msgstr "i, ii, iii, iv..."
+
+msgid "macOS"
+msgstr "macOS"
+
+msgid "{count} {unit}s ago"
+msgstr "vor {count} {unit}s"
+
+msgid "{name} is no longer on disk"
+msgstr "{name} befindet sich nicht mehr auf der Festplatte"
+
+msgid "{name} was already gone"
+msgstr "{name} war bereits weg"
+
+msgid "＋ Add to My Colors"
+msgstr "＋ Zu „Meine Farben“ hinzufügen"
+
+msgid "Box"
+msgstr "Kasten"
+
+msgid "Circle"
+msgstr "Kreis"
+
+msgid "Obfuscate"
+msgstr "Verschleiern"
+
+msgid "Pen"
+msgstr "Stift"
+
+msgid "Choose the solid color used when Background is set to plain color"
+msgstr ""
+"Wählen Sie die Volltonfarbe aus, die verwendet wird, wenn „Hintergrund“ auf „Einfarbig“ eingestellt ist"
+
+msgid "ApexShot update available"
+msgstr "Ein ApexShot-Update ist verfügbar"
+
+msgid "Update available · v{version}"
+msgstr "Update verfügbar · v{version}"
+
+msgid "Version {version} is ready. Open the ApexShot menu to view it."
+msgstr "Version {version} ist bereit. Öffne das ApexShot-Menü, um sie anzusehen."
+
+msgid "Static"
+msgstr "Statisch"
+
+msgid "Switch to Static"
+msgstr "Zu Statisch wechseln"
+
+msgid "Switch to Motion"
+msgstr "Zu Motion wechseln"
+
+msgid "Pause"
+msgstr "Pause"
+
+msgid "Continue"
+msgstr "Weiter"
+
+msgid "Don't show this again"
+msgstr "Nicht mehr anzeigen"
+
+msgid "Annotations will be applied"
+msgstr "Anmerkungen werden angewendet"
+
+msgid "Motion will play a snapshot of your annotations. Returning to Static restores the live tools. Your original image is not flattened until Done."
+msgstr "Motion spielt eine Momentaufnahme deiner Anmerkungen. Zurück zu Statisch stellt die Werkzeuge wieder her. Das Originalbild wird erst mit Fertig abgeflacht."
+
+msgid "Motion effects will be cleared"
+msgstr "Motion-Effekte werden gelöscht"
+
+msgid "Motion effect segments can't be edited in Static mode and will be cleared if you continue."
+msgstr "Motion-Segmente können im statischen Modus nicht bearbeitet werden und werden gelöscht, wenn du fortfährst."
+
+msgid "Add motion at playhead"
+msgstr "Motion an der Abspielposition hinzufügen"
+
+msgid "Click a clip, or double-click a track to add a move or text"
+msgstr "Klicke einen Clip oder doppelklicke eine Spur, um eine Bewegung oder Text hinzuzufügen"
+
+msgid "Move"
+msgstr "Bewegung"
+
+msgid "Yaw"
+msgstr "Gier"
+
+msgid "Scale"
+msgstr "Skalierung"
+
+msgid "Pitch"
+msgstr "Nick"
+
+msgid "Roll"
+msgstr "Roll"
+
+msgid "Perspective"
+msgstr "Perspektive"
+
+msgid "Motion blur"
+msgstr "Bewegungsunschärfe"
+
+msgid "X"
+msgstr "X"
+
+msgid "Y"
+msgstr "Y"
+
+msgid "Add text at playhead"
+msgstr "Text an der Abspielposition hinzufügen"
+
+msgid "Fade"
+msgstr "Einblenden"
+
+msgid "Slide"
+msgstr "Einschub"
+
+msgid "Title"
+msgstr "Titel"
+
+msgid "Drag on the preview to place the title"
+msgstr "Ziehe auf der Vorschau, um den Titel zu platzieren"
+
+msgid "Click or drag on the image to place the zoom anchor; double-click to recenter"
+msgstr "Klicke oder ziehe auf dem Bild, um den Zoom-Anker zu setzen; Doppelklick zum Zentrieren"
+
+msgid "Anchor X"
+msgstr "Anker X"
+msgid "Anchor Y"
+msgstr "Anker Y"
+msgid "Blur shutter"
+msgstr "Unschärfeverschluss"
+msgid "Blur trail"
+msgstr "Unschärfespur"
+msgid "Ease X1"
+msgstr "Weichzeichnen X1"
+msgid "Ease X2"
+msgstr "Weichzeichnen X2"
+msgid "Ease Y1"
+msgstr "Weichzeichnen Y1"
+msgid "Ease Y2"
+msgstr "Weichzeichnen Y2"
+msgid "Scope"
+msgstr "Bereich"
+msgid "Unpin"
+msgstr "Lösen"
+
+msgid "Appearance"
+msgstr "Erscheinungsbild"
+
+msgid "Border Color"
+msgstr "Randfarbe"
+
+msgid "Choose"
+msgstr "Auswählen"
+
+msgid "Choose Watermark Image"
+msgstr "Wasserzeichenbild auswählen"
+
+msgid "Choose…"
+msgstr "Auswählen…"
+
+msgid "Hex color"
+msgstr "Hexadezimalfarbe"
+
+msgid "No image selected"
+msgstr "Kein Bild ausgewählt"
+
+msgid "Remove"
+msgstr "Entfernen"
+
+msgid "Show all wallpapers"
+msgstr "Alle Hintergrundbilder anzeigen"
+
+msgid "Wallpapers"
+msgstr "Hintergrundbilder"
+
+msgid "Watermark"
+msgstr "Wasserzeichen"
+
+msgid "Double-click to add motion"
+msgstr "Doppelklicken, um eine Bewegung hinzuzufügen"
+
+msgid "Double-click to add text"
+msgstr "Doppelklicken, um Text hinzuzufügen"
+
+msgid "Show all gradients"
+msgstr "Alle Farbverläufe anzeigen"
+
+msgid "Instagram"
+msgstr "Instagram"
+
+msgid "YouTube"
+msgstr "YouTube"
+
+msgid "Original canvas aspect"
+msgstr "Originales Seitenverhältnis der Leinwand"
+
+msgid "Square 1:1 output"
+msgstr "Quadratische 1:1-Ausgabe"
+
+msgid "Widescreen 16:9 output"
+msgstr "Breitbild-16:9-Ausgabe"
+
+msgid "X (Twitter) link-card 1.91:1 output"
+msgstr "X-(Twitter-)Link-Karten-Ausgabe 1.91:1"
+
+msgid "24 FPS"
+msgstr "24 Bilder pro Sekunde"
+
+msgid "30 FPS"
+msgstr "30 Bilder pro Sekunde"
+
+msgid "50 FPS"
+msgstr "50 FPS"
+
+msgid "60 FPS"
+msgstr "60 FPS"
+
+msgid "Needs a background fill to appear in exports"
+msgstr ""
+"Es ist eine Hintergrundfüllung erforderlich, damit es in den Exporten angezeigt wird"
+
+msgid "Quick Capture"
+msgstr "Schnellaufnahme"
+
+msgid "Redo"
+msgstr "Wiederholen"
+
+msgid "Selected gradient color"
+msgstr "Ausgewählte Farbverlaufsfarbe"
+
+msgid "Shade above the card"
+msgstr "Schatten über der Karte"
+
+msgid "Shade beneath the card"
+msgstr "Schatten unter der Karte"
+
+msgid "Underlay"
+msgstr "Unterlage"
+
+msgid "Undo"
+msgstr "Rückgängig"
+
+msgid "Bounce"
+msgstr "Federung"
+
+msgid "Custom"
+msgstr "Benutzerdefiniert"
+
+msgid "Gentle"
+msgstr "Sanft"
+
+msgid "Bouncy"
+msgstr "Federnd"
+
+msgid "Spring"
+msgstr "Feder"
+
+msgid "Theme"
+msgstr "Design"
+
+msgid "Light"
+msgstr "Hell"
+
+msgid "Dark"
+msgstr "Dunkel"
+
+msgid "System"
+msgstr "System"
+
+msgid "1440p"
+msgstr "1440p"
+
+msgid "2160p"
+msgstr "2160p"
+
+msgid "480p"
+msgstr "480p"
+
+msgid "900p"
+msgstr "900p"
+
+msgid "Balanced"
+msgstr "Ausgewogen"
+
+msgid "Frame height in pixels"
+msgstr "Rahmenhöhe in Pixeln"
+
+msgid "Frame width in pixels"
+msgstr "Rahmenbreite in Pixeln"
+
+msgid "Freehand"
+msgstr "Freihand"
+
+msgid "MP4 with mic and system audio when your desktop allows it"
+msgstr "MP4 mit Mikrofon und Systemton, wenn der Desktop es zulässt"
+
+msgid "More frame sizes"
+msgstr "Weitere Rahmengrößen"
+
+msgid "Number of the selected marker"
+msgstr "Nummer der ausgewählten Markierung"
+
+msgid "Number the next marker starts at"
+msgstr "Nummer, bei der die nächste Markierung beginnt"
+
+msgid "Pinterest"
+msgstr "Pinterest"
+
+msgid "Recording quality"
+msgstr "Aufnahmequalität"
+
+msgid "Text-aware"
+msgstr "Textbezogen"
+
+msgid "Twitter"
+msgstr "Twitter"
+
+msgid "Ultra"
+msgstr "Ultra"
+
+msgid "Background color"
+msgstr "Hintergrundfarbe"
+
+msgid "COLOR"
+msgstr "FARBE"
+
+msgid "Choose background color"
+msgstr "Hintergrundfarbe wählen"
+
+msgid "WALLPAPER"
+msgstr "HINTERGRUNDBILD"
+
+msgid ""
+"Wallpaper or color fills the canvas behind the video in preview and export"
+msgstr ""
+"Hintergrundbild oder Farbe füllt die Fläche hinter dem Video in Vorschau und Export"
+
+msgid "Select a text clip, or add one at the playhead"
+msgstr "Wähle einen Text-Clip oder füge einen an der Abspielposition hinzu"
+
+msgid "Add Text"
+msgstr "Text hinzufügen"
+
+msgid "Drag to place the title; double-click to reset"
+msgstr "Ziehe, um den Titel zu platzieren; Doppelklick zum Zurücksetzen"
+
+msgid "Edited"
+msgstr "Bearbeitet"
+
+msgid "Motion Edits"
+msgstr "Motion-Bearbeitungen"
+
+msgid "Motion edit"
+msgstr "Motion-Bearbeitung"
+
+msgid "Video Edits"
+msgstr "Video-Bearbeitungen"
+
+msgid "Video edit"
+msgstr "Video-Bearbeitung"
+
+msgid "Delete edit"
+msgstr "Bearbeitung löschen"
+
+msgid "Removed the saved edit"
+msgstr "Gespeicherte Bearbeitung entfernt"
+
+msgid "Search motion edits"
+msgstr "Motion-Bearbeitungen suchen"
+
+msgid "Search video edits"
+msgstr "Video-Bearbeitungen suchen"
+
+msgid "No motion edits yet"
+msgstr "Noch keine Motion-Bearbeitungen"
+
+msgid "No video edits yet"
+msgstr "Noch keine Video-Bearbeitungen"
+
+msgid "Motion edits you make will show up here."
+msgstr "Motion-Bearbeitungen, die du erstellst, erscheinen hier."
+
+msgid "Video edits you make will show up here."
+msgstr "Video-Bearbeitungen, die du erstellst, erscheinen hier."
+
+msgid "This removes the saved edit and keeps the original file."
+msgstr "Dies entfernt die gespeicherte Bearbeitung und behält die Originaldatei."
+
+msgid "{count} motion edits"
+msgstr "{count} Motion-Bearbeitungen"
+
+msgid "{count} video edits"
+msgstr "{count} Video-Bearbeitungen"
+
+msgid "Freeze"
+msgstr "Einfrieren"
+
+msgid "Hold the last frame on screen"
+msgstr "Letztes Bild auf dem Bildschirm halten"
+
+msgid "Add stop"
+msgstr "Stopp hinzufügen"
+
+msgid "Angular"
+msgstr "Winkel"
+
+msgid "Custom Wallpaper"
+msgstr "Eigener Hintergrund"
+
+msgid "Cut"
+msgstr "Ausschneiden"
+
+msgid "Diamond"
+msgstr "Raute"
+
+msgid "Duplicate"
+msgstr "Duplizieren"
+
+msgid "Edit custom fill"
+msgstr "Eigene Füllung bearbeiten"
+
+msgid "Flip gradient"
+msgstr "Verlauf umkehren"
+
+msgid "Frames"
+msgstr "Einzelbilder"
+
+msgid "Occupied"
+msgstr "Belegt"
+
+msgid "Paste"
+msgstr "Einfügen"
+
+msgid "Radial"
+msgstr "Radial"
+
+msgid "Radius"
+msgstr "Radius"
+
+msgid "Rotate gradient"
+msgstr "Verlauf drehen"
+
+msgid "Select background image"
+msgstr "Hintergrundbild auswählen"
+
+msgid "Select image..."
+msgstr "Bild auswählen..."
+
+msgid "Choose Background Image"
+msgstr "Hintergrundbild auswählen"
+
+msgid "Stops"
+msgstr "Stopps"
+
+msgid "Takes"
+msgstr "Aufnahmen"
+
+msgid "Takes — coming soon"
+msgstr "Aufnahmen — bald verfügbar"
+
+msgid "rgb"
+msgstr "rgb"
+
+msgid "Drag to adjust duration"
+msgstr "Ziehen, um die Dauer anzupassen"
+
+msgid "Detection"
+msgstr "Erkennung"
+
+msgid "Clicks"
+msgstr "Klicks"
+
+msgid "Clicks + Hovers"
+msgstr "Klicks + Zeigerpausen"
+
+msgid "Zoom only where the recording captured a click"
+msgstr "Nur zoomen, wo die Aufnahme einen Klick festgehalten hat"
+
+msgid "Also zoom on a purposeful pointer pause that no click covers"
+msgstr "Auch bei einer beabsichtigten Zeigerpause zoomen, die kein Klick abdeckt"
+
+msgid "Applies the next time Detect runs"
+msgstr "Wird beim nächsten Erkennen angewendet"
+
+msgid "Detect uses recorded clicks only"
+msgstr "Erkennen verwendet nur aufgezeichnete Klicks"
+
+msgid "Detect uses recorded clicks"
+msgstr "Erkennen verwendet aufgezeichnete Klicks"
+
+msgid "Detect uses recorded clicks and purposeful pointer pauses"
+msgstr "Erkennen verwendet aufgezeichnete Klicks und beabsichtigte Zeigerpausen"
+
+msgid "Apply"
+msgstr "Übernehmen"
+
+msgid "Add the staged zooms to the timeline"
+msgstr "Die bereitgestellten Zooms zur Zeitleiste hinzufügen"
+
+msgid "Discard"
+msgstr "Verwerfen"
+
+msgid "Throw the staged zooms away"
+msgstr "Die bereitgestellten Zooms verwerfen"
+
+msgid "{count} zoom suggestions ready to review"
+msgstr "{count} Zoom-Vorschläge zur Überprüfung bereit"
+
+msgid "Add a Manual zoom from the timeline"
+msgstr "Füge einen manuellen Zoom über die Zeitleiste hinzu"
+
+msgid "Detect automatic zooms from recorded clicks"
+msgstr "Automatische Zooms aus aufgezeichneten Klicks erkennen"
+
+msgid "No clear clicks were found."
+msgstr "Es wurden keine eindeutigen Klicks gefunden."
+
+msgid "No new zooms were added. Manual zooms are preserved."
+msgstr "Es wurden keine neuen Zooms hinzugefügt. Manuelle Zooms bleiben erhalten."
+
+msgid "Open Zoom and choose Detect to place zooms from the recorded clicks, or use Manual mode to place them yourself."
+msgstr "Öffne Zoom und wähle Erkennen, um Zooms aus den aufgezeichneten Klicks zu setzen, oder platziere sie selbst im manuellen Modus."
+
+msgid "This video has no recorded clicks, so there is nothing to zoom on."
+msgstr "Dieses Video hat keine aufgezeichneten Klicks, es gibt also nichts zu zoomen."
+
+msgid "Instant animation"
+msgstr "Instant animation"
+
+msgid "If enabled, the zoom will be applied instantly without any animation."
+msgstr "If enabled, the zoom will be applied instantly without any animation."
+
+msgid "Save Last Screenshot:"
+msgstr "Letzten Screenshot speichern:"
+
+msgid "No screenshot is available to save"
+msgstr "Es ist kein Screenshot zum Speichern verfügbar"
+
+msgid "Camera follows the recorded pointer"
+msgstr "Die Kamera folgt dem aufgezeichneten Cursor"
+
+msgid "These settings apply to every zoom."
+msgstr "Diese Einstellungen gelten für jeden Zoom."
+
+msgid "Camera speed"
+msgstr "Kamerageschwindigkeit"
+
+msgid "Smoothness"
+msgstr "Weichheit"
+
+msgid "Start animation early"
+msgstr "Animation früher starten"
+
+msgid "Begin the camera move 0.35 seconds before each zoom."
+msgstr "Die Kamerabewegung beginnt 0,35 Sekunden vor jedem Zoom."
+
+msgid "Played once, when the capture freezes. Saving or cropping stays silent."
+msgstr "Wird einmal abgespielt, wenn die Aufnahme einfriert. Speichern und Zuschneiden bleiben stumm."
+
+msgid "Your desktop controls the capture sound on this route, so ApexShot cannot replace or disable it here and will not play an additional sound."
+msgstr "Auf diesem Weg steuert Ihre Desktop-Umgebung den Aufnahmeton. ApexShot kann ihn hier weder ersetzen noch deaktivieren und spielt keinen zusätzlichen Ton ab."
+
+msgid "Bold"
+msgstr "Fett"
+
+msgid "Canvas"
+msgstr "Leinwand"
+
+msgid "Center"
+msgstr "Mitte"
+
+msgid "Character"
+msgstr "Zeichen"
+
+msgid "Choose how Typewriter reveals the text"
+msgstr "Wählen, wie der Schreibmaschinen-Effekt den Text einblendet"
+
+msgid "Content"
+msgstr "Inhalt"
+
+msgid "Drag to place the headline on the composition; double-click to reset"
+msgstr ""
+"Ziehen, um die Überschrift in der Komposition zu platzieren; zum Zurücksetzen doppelklicken"
+
+msgid "Drag to place the title on the image; double-click to reset"
+msgstr ""
+"Ziehen, um den Titel auf dem Bild zu platzieren; zum Zurücksetzen doppelklicken"
+
+msgid "Edit text color"
+msgstr "Textfarbe bearbeiten"
+
+msgid "Entrance duration for slides and fades"
+msgstr "Einblenddauer für Gleit- und Überblend-Effekte"
+
+msgid "From bottom"
+msgstr "Von unten"
+
+msgid "From left"
+msgstr "Von links"
+
+msgid "From right"
+msgstr "Von rechts"
+
+msgid "From top"
+msgstr "Von oben"
+
+msgid "Italic"
+msgstr "Kursiv"
+
+msgid "Letter spacing"
+msgstr "Zeichenabstand"
+
+msgid "Line spacing"
+msgstr "Zeilenabstand"
+
+msgid "No fonts found"
+msgstr "Keine Schriftarten gefunden"
+
+msgid "Outline"
+msgstr "Kontur"
+
+msgid "Paragraph width; Auto keeps the natural line width"
+msgstr "Absatzbreite; Auto behält die natürliche Zeilenbreite bei"
+
+msgid "Placement"
+msgstr "Platzierung"
+
+msgid "Rotation"
+msgstr "Drehung"
+
+msgid "Search fonts…"
+msgstr "Schriftarten suchen…"
+
+msgid "Text color"
+msgstr "Textfarbe"
+
+msgid "Time to reveal all text"
+msgstr "Zeit bis zur vollständigen Texteinblendung"
+
+msgid "Type your text; press Enter for a new line"
+msgstr "Text eingeben; für eine neue Zeile die Eingabetaste drücken"
+
+msgid "Typewriter"
+msgstr "Schreibmaschine"
+
+msgid "Typography"
+msgstr "Typografie"
+
+msgid "Width"
+msgstr "Breite"
+
+msgid "Word"
+msgstr "Wort"
+
+msgid "Available when your desktop supports the GlobalShortcuts portal"
+msgstr "Verfügbar, wenn Ihr Desktop das GlobalShortcuts-Portal unterstützt"
+
+msgid "Desktop notification settings are managed outside Flatpak."
+msgstr ""
+"Die Einstellungen für Desktop-Benachrichtigungen werden außerhalb von Flatpak verwaltet."
+
+msgid "Download GNOME Extension"
+msgstr "GNOME-Erweiterung herunterladen"
+
+msgid "Download extension archive"
+msgstr "Erweiterungsarchiv herunterladen"
+
+msgid "Enable GNOME Extension"
+msgstr "GNOME-Erweiterung aktivieren"
+
+msgid "Extension Enabled ✓"
+msgstr "Erweiterung aktiviert ✓"
+
+msgid "Extension installation failed — try again"
+msgstr "Installation der Erweiterung fehlgeschlagen — erneut versuchen"
+
+msgid "Extension is installed but inactive — enable it in GNOME Extensions"
+msgstr ""
+"Die Erweiterung ist installiert, aber inaktiv — aktivieren Sie sie in GNOME-Erweiterungen"
+
+msgid ""
+"Host-installed browsers need scripts/install-flatpak-browser-host.py run on the host. This bridge does not support browsers installed as Flatpaks."
+msgstr ""
+"Für auf dem Host installierte Browser muss scripts/install-flatpak-browser-host.py auf dem Host ausgeführt werden. Diese Brücke unterstützt keine als Flatpak installierten Browser."
+
+msgid ""
+"The GNOME extension is installed but not active. Use Enable GNOME Extension or enable it in GNOME Extensions."
+msgstr ""
+"Die GNOME-Erweiterung ist installiert, aber nicht aktiv. Verwenden Sie „GNOME-Erweiterung aktivieren“ oder aktivieren Sie sie in GNOME-Erweiterungen."
+
+msgid ""
+"The tray daemon starts when you finish. Capture from its menu; global hotkeys depend on desktop portal support and approval."
+msgstr ""
+"Der Dienst für das Symbol im Infobereich startet, wenn Sie fertig sind. Starten Sie Aufnahmen über sein Menü; globale Tastenkürzel hängen von der Unterstützung und Freigabe durch das Desktop-Portal ab."
+
+msgid ""
+"These defaults require desktop GlobalShortcuts portal support and approval. Use the tray if shortcuts are unavailable."
+msgstr ""
+"Diese Standardeinstellungen erfordern Unterstützung und Freigabe durch das GlobalShortcuts-Portal des Desktops. Verwenden Sie den Infobereich, wenn Tastenkürzel nicht verfügbar sind."
+
+msgid ""
+"This Flatpak cannot install extensions into your host desktop. Open the release page and download the GNOME extension archive, then install and enable it on the host in GNOME Extensions or run `gnome-extensions install --force ~/Downloads/apexshot-gnome-integration.zip` followed by `gnome-extensions enable apexshot-gnome-integration@apexshot.github.io` in a host terminal. ApexShot will detect it when the extension is enabled."
+msgstr ""
+"Dieses Flatpak kann keine Erweiterungen auf Ihrem Host-Desktop installieren. Öffnen Sie die Release-Seite und laden Sie das Archiv der GNOME-Erweiterung herunter. Installieren und aktivieren Sie es dann auf dem Host in GNOME-Erweiterungen oder führen Sie `gnome-extensions install --force ~/Downloads/apexshot-gnome-integration.zip` und anschließend `gnome-extensions enable apexshot-gnome-integration@apexshot.github.io` in einem Host-Terminal aus. ApexShot erkennt die Erweiterung, sobald sie aktiviert ist."
+
+msgid ""
+"You may need to log out and back in for the extension to appear in GNOME."
+msgstr ""
+"Möglicherweise müssen Sie sich ab- und wieder anmelden, damit die Erweiterung in GNOME erscheint."
+
+msgid "Back"
+msgstr "Zurück"
+
+msgid "Cloud sharing"
+msgstr "Cloud-Freigabe"
+
+msgid "Connect ApexShot Cloud"
+msgstr "ApexShot Cloud verbinden"
+
+msgid "Connect your account"
+msgstr "Konto verbinden"
+
+msgid "Copy code"
+msgstr "Code kopieren"
+
+msgid "Free"
+msgstr "Kostenlos"
+
+msgid "Manage your account or disconnect in Settings → Cloud."
+msgstr ""
+"Verwalte dein Konto oder trenne die Verbindung unter Einstellungen → Cloud."
+
+msgid ""
+"Not now? Skip with Next. Connect later from Settings → Cloud, or self-host XBackBone."
+msgstr ""
+"Nicht jetzt? Überspringe mit „Weiter“. Verbinde später unter Einstellungen → Cloud oder betreibe XBackBone selbst."
+
+msgid "Open browser"
+msgstr "Browser öffnen"
+
+msgid "Optional · capture stays free"
+msgstr "Optional · Aufnahme bleibt kostenlos"
+
+msgid "{plan} plan"
+msgstr "{plan}-Tarif"
+
+msgid "Starting…"
+msgstr "Wird gestartet…"
+
+msgid "Try again"
+msgstr "Erneut versuchen"
+
+msgid ""
+"Turn a capture into a link you can paste anywhere. Everything else keeps working offline."
+msgstr ""
+"Mach aus einer Aufnahme einen Link, den du überall einfügen kannst. Alles andere funktioniert weiter offline."
+
+msgid "Uploads are on: your next screenshot gets a share link copied for you."
+msgstr ""
+"Uploads sind aktiv: Deine nächste Aufnahme erhält einen Freigabelink, der für dich kopiert wird."
+
+msgid "Waiting for you to authorize…"
+msgstr "Warten auf deine Autorisierung…"
+
+msgid "Could not open billing"
+msgstr "Abrechnung konnte nicht geöffnet werden"
+
+msgid "Go Pro"
+msgstr "Pro holen"
+
+msgid "Keep working"
+msgstr "Weiterarbeiten"
+
+msgid "Support ApexShot / Go Pro"
+msgstr "ApexShot unterstützen / Pro holen"
+
+msgid "Your capture is saved"
+msgstr "Deine Aufnahme wurde gespeichert"
+
+msgid "Your screenshot companion for Linux. Set it up in a few quick steps."
+msgstr "Dein Screenshot-Begleiter für Linux. In wenigen Schritten eingerichtet."
+
+msgid "Authorization was denied in the browser."
+msgstr "Die Autorisierung wurde im Browser abgelehnt."
+
+msgid "Automatic upload is off. Turn it on in Settings → Cloud to get a share link after each capture."
+msgstr "Automatischer Upload ist aus. Aktiviere ihn unter Einstellungen → Cloud, um nach jeder Aufnahme einen Link zu erhalten."
+
+msgid "Captures upload to your XBackBone server. Change the destination in Settings → Cloud."
+msgstr "Aufnahmen werden auf deinen XBackBone-Server hochgeladen. Ändere das Ziel unter Einstellungen → Cloud."
+
+msgid "Code expires in {minutes} min"
+msgstr "Code läuft in {minutes} Min. ab"
+
+msgid "Couldn't reach ApexShot Cloud. Check your connection and try again."
+msgstr "ApexShot Cloud ist nicht erreichbar. Prüfe deine Verbindung und versuche es erneut."
+
+msgid "Couldn't save your setup. Check that your config folder is writable, then try again."
+msgstr "Die Einrichtung konnte nicht gespeichert werden. Prüfe, ob der Konfigurationsordner beschreibbar ist, und versuche es erneut."
+
+msgid "Get started"
+msgstr "Los geht’s"
+
+msgid "Hosted by us. Connect with a one-time code from your browser."
+msgstr "Von uns gehostet. Verbinde dich mit einem einmaligen Code aus dem Browser."
+
+msgid "Optional. Connect ApexShot Cloud to turn a capture into a link you can paste anywhere. ApexShot works offline without an account, so you can skip this."
+msgstr "Optional. Verbinde ApexShot Cloud, um eine Aufnahme in einen Link zu verwandeln, den du überall einfügen kannst. ApexShot funktioniert auch offline ohne Konto, du kannst diesen Schritt also überspringen."
+
+msgid "Self-host for full control of storage. Set it up later in Settings → Cloud."
+msgstr "Selbst hosten für volle Kontrolle über den Speicher. Richte es später unter Einstellungen → Cloud ein."
+
+msgid "Share captures as links"
+msgstr "Aufnahmen als Links teilen"
+
+msgid "Skip for now"
+msgstr "Vorerst überspringen"
+
+msgid "Step {current} of {total}"
+msgstr "Schritt {current} von {total}"
+
+msgid "This code expired. Try again to get a new one."
+msgstr "Der Code ist abgelaufen. Versuche es erneut, um einen neuen zu erhalten."
+
+msgid "Enter this code in your browser to link this device."
+msgstr "Gib diesen Code in deinem Browser ein, um dieses Gerät zu verknüpfen."
+
+msgid "Opening your browser…"
+msgstr "Browser wird geöffnet…"
+
+msgid "Sent to your browser. If no page opened, copy the link below."
+msgstr "An deinen Browser gesendet. Falls keine Seite geöffnet wurde, kopiere den Link unten."
+
+msgid "Couldn't open a browser: {error}. Copy the link below and open it yourself."
+msgstr "Browser konnte nicht geöffnet werden: {error}. Kopiere den Link unten und öffne ihn selbst."
+
+msgid "The selected portal will embed the cursor in the video, so it cannot be edited separately."
+msgstr "Das ausgewählte Portal bettet den Cursor in das Video ein, sodass er nicht separat bearbeitet werden kann."
+
+msgid "The window cursor remains editable, but Auto Zoom clicks will not be recorded without the ApexShot GNOME extension."
+msgstr "Der Fenstercursor bleibt bearbeitbar, aber Auto-Zoom-Klicks werden ohne die ApexShot-GNOME-Erweiterung nicht aufgezeichnet."
+
+msgid "Export Motion video"
+msgstr "Motion-Video exportieren"
+
+msgid "Close the editor after a successful export"
+msgstr "Den Editor nach einem erfolgreichen Export schließen"
+
+msgid "Overwrite the opened image instead of saving a copy"
+msgstr "Das geöffnete Bild überschreiben, statt eine Kopie zu speichern"
+
+msgid "Image files"
+msgstr "Bilddateien"
+
+msgid "Choose a different destination to keep the original image unchanged."
+msgstr "Wähle ein anderes Ziel, damit das Originalbild unverändert bleibt."
+
+msgid "Export completed, but the editing session could not be saved: {error}"
+msgstr "Export abgeschlossen, aber die Bearbeitungssitzung konnte nicht gespeichert werden: {error}"
+
+msgid "Motion will play a snapshot of your annotations. Returning to Static restores the live tools. The original image stays unchanged unless you enable overwrite in Settings → Annotate."
+msgstr "Motion zeigt eine Momentaufnahme deiner Anmerkungen. Bei der Rückkehr zu Static werden die aktiven Werkzeuge wiederhergestellt. Das Originalbild bleibt unverändert, sofern du das Überschreiben nicht unter Einstellungen → Annotieren aktivierst."
+
+msgid "14-day refund on your first purchase."
+msgstr "14 Tage Rückerstattung für deinen ersten Kauf."
+
+msgid "Activate"
+msgstr "Aktivieren"
+
+msgid "Animate your captures with titles and easing, then export as MP4."
+msgstr "Animiere deine Aufnahmen mit Titeln und Easing und exportiere sie als MP4."
+
+msgid "Camera controls"
+msgstr "Kamerasteuerung"
+
+msgid "Capture, annotation, recording and clean exports stay free."
+msgstr "Aufnahme, Annotation, Bildschirmaufzeichnung und saubere Exporte bleiben kostenlos."
+
+msgid "Entitlement saved. This build isn't covered by the included updates; install a covered build to use Studio output."
+msgstr "Lizenz gespeichert. Dieser Build ist nicht von den enthaltenen Updates abgedeckt; installiere einen abgedeckten Build, um die Studio-Ausgabe zu nutzen."
+
+msgid "I have a license"
+msgstr "Ich habe eine Lizenz"
+
+msgid "$39 once"
+msgstr "Einmalig 39 $"
+
+msgid "12 months of updates"
+msgstr "12 Monate Updates"
+
+msgid "14-day refund"
+msgstr "14 Tage Rückerstattung"
+
+msgid "Versions you get keep working forever."
+msgstr "Versionen, die du erhältst, funktionieren für immer weiter."
+
+msgid "Uses {feature}"
+msgstr "Nutzt {feature}"
+
+msgid "This export uses {features}"
+msgstr "Dieser Export nutzt {features}"
+
+msgid "Instant zooms, speed, smoothness and motion blur for recordings."
+msgstr "Sofortige Zooms, Geschwindigkeit, Weichheit und Bewegungsunschärfe für Aufzeichnungen."
+
+msgid "License saved, but this version is newer than the updates it includes."
+msgstr "Lizenz gespeichert, aber diese Version ist neuer als die enthaltenen Updates."
+
+msgid "Manage license"
+msgstr "Lizenz verwalten"
+
+msgid "Motion text and its animation are Studio previews; final MP4 export needs activation."
+msgstr "Motion-Text und seine Animation sind Studio-Vorschauen; für den finalen MP4-Export ist eine Aktivierung nötig."
+
+msgid "Motion timeline"
+msgstr "Motion-Zeitleiste"
+
+msgid "Paste Studio entitlement JSON"
+msgstr "Studio-Lizenz als JSON einfügen"
+
+msgid "Paste the signed entitlement you received after purchase. Activation is stored on this device and works offline."
+msgstr "Füge die signierte Lizenz ein, die du nach dem Kauf erhalten hast. Die Aktivierung wird auf diesem Gerät gespeichert und funktioniert offline."
+
+msgid "Paste your license"
+msgstr "Lizenz einfügen"
+
+msgid "Perspective and placement"
+msgstr "Perspektive und Platzierung"
+
+msgid "Professional tools for presenting your captures."
+msgstr "Professionelle Werkzeuge, um deine Aufnahmen zu präsentieren."
+
+msgid "Purchase or recover Studio"
+msgstr "Studio kaufen oder wiederherstellen"
+
+msgid "Recover license"
+msgstr "Lizenz wiederherstellen"
+
+msgid "Studio"
+msgstr "Studio"
+
+msgid "Studio activated for this build."
+msgstr "Studio für diesen Build aktiviert."
+
+msgid "Studio controls. Default zoom and legacy easing stay free; active exports using non-default camera settings or instant animation need activation."
+msgstr "Studio-Steuerung. Standardzoom und klassisches Easing bleiben kostenlos; aktive Exporte mit nicht standardmäßigen Kameraeinstellungen oder Sofortanimation erfordern eine Aktivierung."
+
+msgid "Studio export unavailable"
+msgstr "Studio-Export nicht verfügbar"
+
+msgid "Studio is optional. Your free capture, editing, recording, projects, and clean exports remain available without an account or network connection."
+msgstr "Studio ist optional. Aufnahme, Bearbeitung, Bildschirmaufzeichnung, Projekte und saubere Exporte bleiben kostenlos und ohne Konto oder Netzwerkverbindung verfügbar."
+
+msgid "Studio isn't available"
+msgstr "Studio ist nicht verfügbar"
+
+msgid "Studio license couldn't be verified"
+msgstr "Studio-Lizenz konnte nicht überprüft werden"
+
+msgid "Studio preview. A non-default rendered pose needs activation for final images; backgrounds and normal edits stay free."
+msgstr "Studio-Vorschau. Eine nicht standardmäßig gerenderte Pose erfordert für finale Bilder eine Aktivierung; Hintergründe und normale Bearbeitungen bleiben kostenlos."
+
+msgid "Studio preview. MP4 export needs activation; local editing and project saves remain free."
+msgstr "Studio-Vorschau. Der MP4-Export erfordert eine Aktivierung; lokale Bearbeitung und Projektspeicherung bleiben kostenlos."
+
+msgid "Studio status"
+msgstr "Studio-Status"
+
+msgid "The license saved on this device couldn't be checked. Paste a valid license to unlock Studio."
+msgstr "Die auf diesem Gerät gespeicherte Lizenz konnte nicht überprüft werden. Füge eine gültige Lizenz ein, um Studio freizuschalten."
+
+msgid "This build can't verify Studio licenses, so this export can't be completed."
+msgstr "Dieser Build kann Studio-Lizenzen nicht überprüfen, daher lässt sich dieser Export nicht abschließen."
+
+msgid "This build can't verify Studio licenses. Check the official Studio page for build availability or license recovery; buying a license alone can't enable this build."
+msgstr "Dieser Build kann Studio-Lizenzen nicht überprüfen. Auf der offiziellen Studio-Seite findest du Informationen zu verfügbaren Builds oder zur Lizenzwiederherstellung; der Kauf allein aktiviert diesen Build nicht."
+
+msgid "Check Studio availability"
+msgstr "Studio-Verfügbarkeit prüfen"
+
+msgid "This version is newer than your license"
+msgstr "Diese Version ist neuer als deine Lizenz"
+
+msgid "Tilt, rotate and position a still inside its background."
+msgstr "Neige, drehe und positioniere ein Standbild innerhalb seines Hintergrunds."
+
+msgid "Unlock ApexShot Studio"
+msgstr "ApexShot Studio freischalten"
+
+msgid "Upgrade to Studio — $39 once"
+msgstr "Auf Studio upgraden — einmalig 39 $"
+
+msgid "Your license includes updates through an earlier release. Versions it covers keep working offline."
+msgstr "Deine Lizenz enthält Updates bis zu einer früheren Version. Versionen, die sie abdeckt, funktionieren weiterhin offline."
+
+msgid "That license couldn't be verified. Make sure you pasted all of it."
+msgstr "Diese Lizenz konnte nicht überprüft werden. Achte darauf, dass du sie vollständig eingefügt hast."
+
+msgid "Replace license"
+msgstr "Lizenz ersetzen"
+
+msgid "Active"
+msgstr "Aktiv"
+
+msgid "Copy license"
+msgstr "Lizenz kopieren"
+
+msgid "100% displays export pixels at native screen scale"
+msgstr "100 % zeigen die Exportpixel in der nativen Bildschirmskalierung an."
+
+msgid "ApexShot lost contact with the copy worker."
+msgstr "ApexShot hat die Verbindung zum Kopier-Worker verloren."
+
+msgid "Before / after divider"
+msgstr "Vorher-/Nachher-Trennlinie"
+
+msgid "Compare before / after"
+msgstr "Vorher/Nachher vergleichen"
+
+msgid "Compare neural upscaling"
+msgstr "Neuronale Hochskalierung vergleichen"
+
+msgid "Could not prepare the comparison image."
+msgstr "Das Vergleichsbild konnte nicht vorbereitet werden."
+
+msgid "Enhance small screenshots locally before image and Motion exports."
+msgstr "Verbessere kleine Screenshots lokal vor Bild- und Motion-Exporten."
+
+msgid ""
+"Export preview: {width} × {height} pixels. Check text carefully; missing detail may not be recovered."
+msgstr ""
+"Exportvorschau: {width} × {height} Pixel. Prüfe Text sorgfältig; fehlende Details können möglicherweise nicht wiederhergestellt werden."
+
+msgid "Exporting…"
+msgstr "Exportiere…"
+
+msgid "Load an image before previewing upscaling."
+msgstr "Lade ein Bild, bevor du die Hochskalierung in der Vorschau ansiehst."
+
+msgid "Neural 2×"
+msgstr "Neural 2×"
+
+msgid "Neural 4×"
+msgstr "Neural 4×"
+
+msgid "Neural upscaling"
+msgstr "Neuronale Hochskalierung"
+
+msgid "Neural upscaling for Studio exports"
+msgstr "Neuronale Hochskalierung für Studio-Exporte"
+
+msgid ""
+"Offline neural enhancement for small images. Image exports grow by 2× or 4×; Motion keeps its Frame size. Compare the export for free before enabling Studio enhancement. Supports up to 1 megapixel. Missing detail cannot always be recovered."
+msgstr ""
+"Offline-neuronale Verbesserung für kleine Bilder. Bild-Exporte werden um 2× oder 4× vergrößert; Motion behält seine Frame-Größe. Vergleiche den Export kostenlos, bevor du die Studio-Verbesserung aktivierst. Unterstützt bis zu 1 Megapixel. Fehlende Details können nicht immer wiederhergestellt werden."
+
+msgid "Preparing before / after preview…"
+msgstr "Vorher-/Nachher-Vorschau wird vorbereitet…"
+
+msgid "Preview neural enhancement without a Studio license"
+msgstr "Neuronale Verbesserung ohne Studio-Lizenz ansehen"
+
+msgid ""
+"Standard enlargement on the left, neural enhancement on the right. Move the divider and scroll to inspect rendered export pixels before file compression. This preview is free; enhanced exports require Studio."
+msgstr ""
+"Links die standardmäßige Vergrößerung, rechts die neuronale Verbesserung. Verschiebe die Trennlinie und scrolle, um die gerenderten Exportpixel vor der Dateikomprimierung zu prüfen. Diese Vorschau ist kostenlos; verbesserte Exporte erfordern Studio."
+
+msgid "The upscaling preview worker stopped unexpectedly."
+msgstr "Der Worker für die Hochskalierungsvorschau wurde unerwartet beendet."
+
+msgid "Use enhancement"
+msgstr "Verbesserung verwenden"
+
+msgid "Add a background"
+msgstr "Hintergrund hinzufügen"
+
+msgid "Add a background so the shadow appears in the exported result."
+msgstr ""
+"Füge einen Hintergrund hinzu, damit der Schatten im exportierten Ergebnis erscheint."
+
+msgid "Add a background to enable padding and noise."
+msgstr "Füge einen Hintergrund hinzu, um Polsterung und Rauschen zu aktivieren."
+
+msgid "Add a background to use Scene Shadows in image mode."
+msgstr ""
+"Füge einen Hintergrund hinzu, um Scene Shadows im Bildmodus zu verwenden."
+
+msgid "Add a background to use this control."
+msgstr "Füge einen Hintergrund hinzu, um dieses Bedienelement zu verwenden."
+
+msgid ""
+"Add a background, choose an outer frame style, or transform the image to round its corners."
+msgstr ""
+"Füge einen Hintergrund hinzu, wähle einen äußeren Rahmenstil oder transformiere das Bild, um seine Ecken abzurunden."
+
+msgid "Background blur needs a gradient, wallpaper, or image."
+msgstr ""
+"Hintergrundunschärfe benötigt einen Gradienten, ein Hintergrundbild oder ein Bild."
+
+msgid "Background blur needs a wallpaper or image in Motion."
+msgstr ""
+"Hintergrundunschärfe benötigt in Motion ein Hintergrundbild oder ein Bild."
+
+msgid ""
+"Border Radius needs a background, an outer frame style, or a transformed image."
+msgstr ""
+"Der Eckenradius benötigt einen Hintergrund, einen äußeren Rahmenstil oder ein transformiertes Bild."
+
+msgid "Choose a Scene Shadows preset before adjusting opacity."
+msgstr "Wähle eine Scene-Shadows-Voreinstellung, bevor du die Deckkraft anpasst."
+
+msgid "Choose a preset to enable Scene Shadows opacity and placement."
+msgstr ""
+"Wähle eine Voreinstellung, um Deckkraft und Platzierung von Scene Shadows zu aktivieren."
+
+msgid "Could not open that image. Choose a PNG, JPEG, or WebP file."
+msgstr ""
+"Dieses Bild konnte nicht geöffnet werden. Wähle eine PNG-, JPEG- oder WebP-Datei."
+
+msgid ""
+"Custom sizes use even pixels. Sizes over a 1920-pixel long edge are scaled down."
+msgstr ""
+"Benutzerdefinierte Größen verwenden gerade Pixelwerte. Größen über einer langen Kante von 1920 Pixeln werden verkleinert."
+
+msgid "Frame"
+msgstr "Rahmen"
+
+msgid ""
+"Frame sizes need a background in image mode. Add one to change the canvas size."
+msgstr ""
+"Rahmengrößen benötigen im Bildmodus einen Hintergrund. Füge einen hinzu, um die Leinwandgröße zu ändern."
+
+msgid "Image export height; select a preset to change the aspect ratio"
+msgstr ""
+"Exporthöhe für Bilder; wähle eine Voreinstellung, um das Seitenverhältnis zu ändern"
+
+msgid "Image export width; select a preset to change the aspect ratio"
+msgstr ""
+"Exportbreite für Bilder; wähle eine Voreinstellung, um das Seitenverhältnis zu ändern"
+
+msgid ""
+"Increase Scene Shadows opacity to see the effect and change its placement."
+msgstr ""
+"Erhöhe die Deckkraft von Scene Shadows, um den Effekt zu sehen und die Platzierung zu ändern."
+
+msgid "Increase Shadow opacity to enable blur and position."
+msgstr "Erhöhe die Schatten-Deckkraft, um Unschärfe und Position zu aktivieren."
+
+msgid "Neural 4× is unavailable: {reason}"
+msgstr "Neural 4× ist nicht verfügbar: {reason}"
+
+msgid ""
+"That size was not applied. Width and height must be between 16 and 7680 pixels."
+msgstr ""
+"Diese Größe wurde nicht übernommen. Breite und Höhe müssen zwischen 16 und 7680 Pixeln liegen."
+
+msgid ""
+"The enhanced canvas exceeds the 16-megapixel output limit. Reduce upscaling or background padding."
+msgstr ""
+"Die verbesserte Leinwand überschreitet das Ausgabelimit von 16 Megapixeln. Reduziere die Hochskalierung oder die Hintergrundpolsterung."
+
+msgid "Tilt the image with Yaw or Pitch before adjusting perspective."
+msgstr "Neige das Bild mit Gier oder Nick, bevor du die Perspektive anpasst."
+
+msgid ""
+"Without a background, Underlay is hidden in video exports. Choose Overlay to shade the image."
+msgstr ""
+"Ohne Hintergrund ist die Unterlage in Video-Exporten ausgeblendet. Wähle Overlay, um das Bild zu schattieren."
+
+msgid "{name}: {ratio} image aspect ratio"
+msgstr "{name}: {ratio} Seitenverhältnis des Bildes"
+
+msgid ""
+"{reason} This image is {width} × {height} pixels. Crop it or choose a smaller image to enable enhancement."
+msgstr ""
+"{reason} Dieses Bild ist {width} × {height} Pixel groß. Schneide es zu oder wähle ein kleineres Bild, um die Verbesserung zu aktivieren."
+
+msgid "Device ID"
+msgstr "Geräte-ID"
+
+msgid "Copy this machine's Device ID from Settings → Studio and claim the license for it at apexshot.org/studio. Your other device keeps working."
+msgstr "Kopiere die Geräte-ID dieses Rechners unter Einstellungen → Studio und fordere die Lizenz dafür auf apexshot.org/studio an. Dein anderes Gerät funktioniert weiterhin."
+
+msgid "Paste this at apexshot.org/studio to claim a Studio licence for this device."
+msgstr "Füge dies auf apexshot.org/studio ein, um eine Studio-Lizenz für dieses Gerät zu erhalten."
+
+msgid "Claim for this device"
+msgstr "Für dieses Gerät anfordern"
+
+msgid "Unavailable on this system"
+msgstr "Auf diesem System nicht verfügbar"
+
+msgid "This license belongs to another device"
+msgstr "Diese Lizenz gehört zu einem anderen Gerät"
+
+msgid "Upgrade to Studio — $39 with 12 months of updates"
+msgstr "Auf Studio upgraden — 39 $ inklusive 12 Monaten Updates"
+
+msgid "Shadow softness"
+msgstr "Schattenweichheit"
+
+msgid "Shadow rotation"
+msgstr "Schatten-Drehung"
+
+msgid "Shadow size"
+msgstr "Schattengröße"
+
+msgid "Shadow horizontal offset"
+msgstr "Horizontaler Schattenversatz"
+
+msgid "Shadow vertical offset"
+msgstr "Vertikaler Schattenversatz"
+
+msgid "Reset every Scene Shadows control."
+msgstr "Setzt alle Szenenschatten-Regler zurück."
+
+msgid "Card shadow"
+msgstr "Kartenschatten"
+
+msgid "Cast light"
+msgstr "Lichtwurf"
+
+msgid "Light strength"
+msgstr "Lichtstärke"
+
+msgid "Reset every Cast light control."
+msgstr "Setzt alle Lichtwurf-Regler zurück."
+
+msgid "Add a background to use Cast light in image mode."
+msgstr "Füge einen Hintergrund hinzu, um den Lichtwurf im Bildmodus zu verwenden."
+
+msgid "Choose a Cast light preset before adjusting its strength."
+msgstr "Wähle eine Lichtwurf-Vorgabe, bevor du ihre Stärke anpasst."
+
+msgid "Choose a Cast light preset before adjusting its shape."
+msgstr "Wähle eine Lichtwurf-Vorgabe, bevor du ihre Form anpasst."
+
+msgid "Choose a preset to enable Cast light strength and placement."
+msgstr "Wähle eine Vorgabe, um Lichtstärke und Platzierung des Lichtwurfs zu aktivieren."
+
+msgid "Increase Cast light strength to see the effect and change its placement."
+msgstr "Erhöhe die Lichtstärke, um den Effekt zu sehen und seine Platzierung zu ändern."
+
+msgid "Spread"
+msgstr "Weit"
+
+msgid "Hug"
+msgstr "Anliegend"
+
+msgid "Adaptive"
+msgstr "Adaptiv"
+
+msgid "Adjust Light"
+msgstr "Licht anpassen"
+
+msgid "16:9"
+msgstr "16:9"
+
+msgid "9:16"
+msgstr "9:16"
+
+msgid "Add gradient stop"
+msgstr "Verlaufspunkt hinzufügen"
+
+msgid "ApexShot Video Editor"
+msgstr "ApexShot-Videoeditor"
+
+msgid "Background image"
+msgstr "Hintergrundbild"
+
+msgid "Bottom left"
+msgstr "Unten links"
+
+msgid "Bottom right"
+msgstr "Unten rechts"
+
+msgid "Cloud browsing and sign-in are not available in the Windows build yet."
+msgstr "Cloud-Browser und Anmeldung sind im Windows-Build noch nicht verfügbar."
+
+msgid "Cloud uploads are not available in the Windows build yet"
+msgstr "Cloud-Uploads sind im Windows-Build noch nicht verfügbar"
+
+msgid ""
+"Cloud uploads are not wired in the Windows build yet. Destination and XBackBone settings are saved for a future release."
+msgstr ""
+"Cloud-Uploads sind im Windows-Build noch nicht angebunden. Ziel- und XBackBone-Einstellungen werden für eine spätere Version gespeichert."
+
+msgid "Corner radius"
+msgstr "Eckenradius"
+
+msgid "Could not access the Windows clipboard"
+msgstr "Auf die Windows-Zwischenablage konnte nicht zugegriffen werden"
+
+msgid "Could not copy file: {message}"
+msgstr "Datei konnte nicht kopiert werden: {message}"
+
+msgid "Could not copy image: {message}"
+msgstr "Bild konnte nicht kopiert werden: {message}"
+
+msgid "Could not open Explorer: {message}"
+msgstr "Explorer konnte nicht geöffnet werden: {message}"
+
+msgid "Could not start the video editor: {message}"
+msgstr "Videoeditor konnte nicht gestartet werden: {message}"
+
+msgid "Do Not Disturb integration is not available on Windows yet."
+msgstr ""
+"Die Integration mit „Nicht stören“ ist unter Windows noch nicht verfügbar."
+
+msgid "Dragging the result card out of the app is not available on Windows yet."
+msgstr ""
+"Das Ziehen der Ergebnis-Karte aus der App heraus ist unter Windows noch nicht möglich."
+
+msgid "Edits you save in the video editor will show up here."
+msgstr "Bearbeitungen aus dem Videoeditor erscheinen hier."
+
+msgid "Export failed."
+msgstr "Export fehlgeschlagen."
+
+msgid "Exported successfully."
+msgstr "Erfolgreich exportiert."
+
+msgid "FINISH"
+msgstr "ABSCHLUSS"
+
+msgid "Fill the frame with the camera instead of the bubble."
+msgstr "Füllt den Rahmen mit der Kamera statt mit der Blase."
+
+msgid "First available camera"
+msgstr "Erste verfügbare Kamera"
+
+msgid "Flip the camera left to right, the way a mirror shows it."
+msgstr "Spiegelt die Kamera von links nach rechts, wie im Spiegel."
+
+msgid "Frame changes keep the source footage centred in the preview."
+msgstr "Rahmenänderungen halten das Ausgangsmaterial in der Vorschau zentriert."
+
+msgid ""
+"Global shortcuts are not available in the Windows build yet. Bindings are saved for a future release."
+msgstr ""
+"Globale Kürzel sind im Windows-Build noch nicht verfügbar. Belegungen werden für eine spätere Version gespeichert."
+
+msgid "Hide the camera without removing its track."
+msgstr "Blendet die Kamera aus, ohne ihre Spur zu entfernen."
+
+msgid "Horizontal"
+msgstr "Horizontal"
+
+msgid "Huge"
+msgstr "Sehr groß"
+
+msgid "If enabled, the zoom is applied instantly without any animation."
+msgstr "Wenn aktiviert, wird der Zoom sofort und ohne Animation angewendet."
+
+msgid "Instant"
+msgstr "Sofort"
+
+msgid "MP4 recordings"
+msgstr "MP4-Aufnahmen"
+
+msgid "Maximize"
+msgstr "Maximieren"
+
+msgid "Mirror camera"
+msgstr "Kamera spiegeln"
+
+msgid "Mirror the picture"
+msgstr "Bild spiegeln"
+
+msgid "Motion editing is not available in the Windows build yet."
+msgstr "Bewegungsbearbeitung ist im Windows-Build noch nicht verfügbar."
+
+msgid "Open recording"
+msgstr "Aufnahme öffnen"
+
+msgid "Opened {name} in the video editor"
+msgstr "{name} im Videoeditor geöffnet"
+
+msgid "POSITION"
+msgstr "POSITION"
+
+msgid "Put the camera back where the recording captured it."
+msgstr "Setzt die Kamera dorthin zurück, wo die Aufnahme sie erfasst hat."
+
+msgid "Record a webcam track"
+msgstr "Webcam-Spur aufnehmen"
+
+msgid "Rectangle"
+msgstr "Rechteck"
+
+msgid "Remove stop"
+msgstr "Punkt entfernen"
+
+msgid "Reverse gradient"
+msgstr "Verlauf umkehren"
+
+msgid "SHAPE"
+msgstr "FORM"
+
+msgid "SIZE"
+msgstr "GRÖSSE"
+
+msgid "STEPS"
+msgstr "SCHRITTE"
+
+msgid "Search isn't available on this page"
+msgstr "Die Suche ist auf dieser Seite nicht verfügbar"
+
+msgid "Select a zoom clip on the timeline"
+msgstr "Wähle einen Zoom-Clip in der Zeitleiste"
+
+msgid "Select image…"
+msgstr "Bild auswählen…"
+
+msgid "Shape"
+msgstr "Form"
+
+msgid "Show camera"
+msgstr "Kamera anzeigen"
+
+msgid "Show in Explorer"
+msgstr "Im Explorer zeigen"
+
+msgid "Strength"
+msgstr "Stärke"
+
+msgid "TRANSITION"
+msgstr "ÜBERGANG"
+
+msgid "The Windows recorder always captures at native display resolution."
+msgstr "Der Windows-Recorder nimmt immer in der nativen Bildschirmauflösung auf."
+
+msgid "The Windows recorder always shows its controls."
+msgstr "Der Windows-Recorder zeigt seine Steuerelemente immer an."
+
+msgid ""
+"The Windows shell needs its tray icon until global shortcuts are available."
+msgstr ""
+"Die Windows-Shell braucht ihr Taskleisten-Symbol, bis globale Kürzel verfügbar sind."
+
+msgid ""
+"The annotate editor is not available in the Windows build yet. These preferences are saved for a future release."
+msgstr ""
+"Der Anmerkungseditor ist im Windows-Build noch nicht verfügbar. Diese Einstellungen werden für eine spätere Version gespeichert."
+
+msgid "The annotate editor is not available on Windows yet."
+msgstr "Der Anmerkungseditor ist unter Windows noch nicht verfügbar."
+
+msgid "The export stopped unexpectedly."
+msgstr "Der Export wurde unerwartet beendet."
+
+msgid "The image editor is not available in the Windows build yet"
+msgstr "Der Bildeditor ist im Windows-Build noch nicht verfügbar"
+
+msgid "This recording has no camera track."
+msgstr "Diese Aufnahme hat keine Kameraspur."
+
+msgid "Top left"
+msgstr "Oben links"
+
+msgid "Top right"
+msgstr "Oben rechts"
+
+msgid "Transition"
+msgstr "Übergang"
+
+msgid "Untitled recording"
+msgstr "Unbenannte Aufnahme"
+
+msgid "Uploading from the result card is not available on Windows yet."
+msgstr ""
+"Das Hochladen aus der Ergebnis-Karte ist unter Windows noch nicht möglich."
+
+msgid "Usage telemetry is not sent from the Windows build."
+msgstr "Der Windows-Build sendet keine Nutzungstelemetrie."
+
+msgid "Vertical"
+msgstr "Vertikal"
+
+msgid "Video export from the Windows editor is not available yet."
+msgstr "Der Videoexport aus dem Windows-Editor ist noch nicht verfügbar."
+
+msgid "Webcam"
+msgstr "Webcam"
+
+msgid "Windows UI translations are not available yet."
+msgstr "Übersetzungen der Windows-Oberfläche sind noch nicht verfügbar."
+
+msgid "ZOOM"
+msgstr "ZOOM"
+
+msgid "cancelling…"
+msgstr "wird abgebrochen…"
+
+msgid "estimated:"
+msgstr "geschätzt:"
+
+msgid "finishing…"
+msgstr "wird abgeschlossen…"
+
+msgid "Video editing is not available in the Windows build yet."
+msgstr "Die Videobearbeitung ist in der Windows-Version noch nicht verfügbar."
+
+# First-run onboarding in the Windows build.
+msgid "Your screenshot companion for Windows. Set it up in a few quick steps."
+msgstr "Dein Screenshot-Begleiter für Windows. In wenigen Schritten eingerichtet."
+
+msgid "ApexShot runs in the background with a tray icon.\nAfter setup, you do not need to open Settings every time."
+msgstr "ApexShot läuft im Hintergrund mit Leistensymbol.\nNach der Einrichtung müssen Sie Einstellungen nicht jedes Mal öffnen."
+
+msgid "ApexShot stays in the tray; right-click it for the capture menu."
+msgstr "ApexShot bleibt im Infobereich; ein Rechtsklick öffnet das Aufnahmemenü."
+
+msgid "Bindings are saved; global hotkeys arrive in a later build."
+msgstr "Tastenbelegungen werden gespeichert; globale Kürzel folgen in einem späteren Build."
+
+msgid "ApexShot is ready. It runs from the tray from now on."
+msgstr "ApexShot ist bereit. Ab jetzt läuft es aus dem Infobereich."
+
+msgid "Signed in, but this device could not save the account."
+msgstr "Angemeldet, aber dieses Gerät konnte das Konto nicht speichern."
+
+msgid "Add a layout change at the playhead."
+msgstr "Füge am Abspielkopf eine Layoutänderung hinzu."
+
+msgid "CAMERA"
+msgstr "KAMERA"
+
+msgid "Camera layout changes"
+msgstr "Kamera-Layoutänderungen"
+
+msgid "Change"
+msgstr "Änderung"
+
+msgid "Change {time}"
+msgstr "{time} ändern"
+
+msgid "Default"
+msgstr "Standard"
+
+msgid "Default layout"
+msgstr "Standard-Layout"
+
+msgid "Delete this layout change."
+msgstr "Diese Layoutänderung löschen."
+
+msgid "Drag to set the camera's position in the frame; double-click to centre it"
+msgstr "Ziehe, um die Kameraposition im Rahmen festzulegen; Doppelklick zentriert sie"
+
+msgid "Edit the default layout for the whole recording."
+msgstr "Bearbeite das Standard-Layout für die gesamte Aufnahme."
+
+msgid "Edit the selected layout change."
+msgstr "Bearbeite die ausgewählte Layoutänderung."
+
+msgid "Layout change"
+msgstr "Layoutänderung"
+
+msgid "Move this change to another time. A time that collides with another change is rejected."
+msgstr "Verschiebe diese Änderung auf eine andere Zeit. Eine Zeit, die mit einer anderen Änderung kollidiert, wird abgelehnt."
+
+msgid "Percentage of the frame width."
+msgstr "Prozentsatz der Rahmenbreite."
+
+msgid "Percentage of the free space around the bubble."
+msgstr "Prozentsatz des freien Raums um die Blase."
+
+msgid "SCREEN SHARE"
+msgstr "BILDSCHIRMFREIGABE"
+
+msgid "Select a layout change in the timeline to edit it."
+msgstr "Wähle eine Layoutänderung in der Zeitleiste, um sie zu bearbeiten."
+
+msgid "Select the layout change at the playhead."
+msgstr "Wähle die Layoutänderung am Abspielkopf aus."
+
+msgid "Shared by every camera layout."
+msgstr "Gilt für jedes Kamera-Layout."
+
+msgid "Shared by every cutout layout."
+msgstr "Gilt für jedes Freistell-Layout."
+
+msgid "Shared by every layout change."
+msgstr "Gilt für jede Layoutänderung."
+
+msgid "Shared by every overlay."
+msgstr "Gilt für alle Overlays."
+
+msgid "Shared by every split layout."
+msgstr "Gilt für jedes Split-Layout."
+
+msgid "The bubble's width, as a percentage of the frame."
+msgstr "Die Breite der Blase, als Prozentsatz des Rahmens."
+
+msgid "The camera layer reported: {error}"
+msgstr "Die Kameraspur meldet: {error}"
+
+msgid "The screen's share of the split, as a percentage."
+msgstr "Der Anteil des Bildschirms am Split, als Prozentsatz."
+
+msgid "Time"
+msgstr "Zeit"
+
+msgid "{time} · {layout}"
+msgstr "{time} · {layout}"
+
+msgid "Camera layer"
+msgstr "Kamera-Ebene"
+
+msgid "Delete change"
+msgstr "Änderung löschen"
+
+msgid "Draw the camera over the screen. Off shows the screen alone and keeps your layout changes."
+msgstr "Zeichnet die Kamera über den Bildschirm. Aus zeigt nur den Bildschirm und behält Ihre Layout-Änderungen."
+
+msgid "Turn camera off"
+msgstr "Kamera ausschalten"
+
+msgid "Turn camera on"
+msgstr "Kamera einschalten"
+
+msgid "Add change at playhead"
+msgstr "Änderung an der Abspielposition hinzufügen"
+
+msgid "ApexShot"
+msgstr "ApexShot"
+
+msgid "No settings found"
+msgstr "Keine Einstellungen gefunden"
+
+msgid "Saved"
+msgstr "Gespeichert"
+
+msgid "Search settings"
+msgstr "Einstellungen durchsuchen"
+
+msgid "This device"
+msgstr "Dieses Gerät"
+
+msgid "Timed capture is not wired into the Windows build yet. The interval is saved for a future release."
+msgstr "Zeitversetzte Aufnahme ist im Windows-Build noch nicht angebunden. Das Intervall wird für eine künftige Version gespeichert."
+
+msgid "APEXSHOT CLOUD"
+msgstr "APEXSHOT CLOUD"
+
+msgid "Allowance unavailable"
+msgstr "Kontingent nicht verfügbar"
+
+msgid "Authorize this device"
+msgstr "Dieses Gerät autorisieren"
+
+msgid "Back to Cloud"
+msgstr "Zurück zu Cloud"
+
+msgid "Click Connect to link this device with a one-time code."
+msgstr "Klicke auf Verbinden, um dieses Gerät mit einem einmaligen Code zu verknüpfen."
+
+msgid "Cloud browsing is not available in the Windows build yet. Connect your account in Settings → Cloud."
+msgstr "Das Durchsuchen der Cloud ist in der Windows-Version noch nicht verfügbar. Verbinde dein Konto unter Einstellungen → Cloud."
+
+msgid "Connect to see your usage"
+msgstr "Verbinde dein Konto, um deine Nutzung zu sehen"
+
+msgid "Could not refresh. Showing previous values."
+msgstr "Aktualisierung fehlgeschlagen. Die vorherigen Werte werden angezeigt."
+
+msgid "Couldn't open your browser. Copy the link and open it yourself."
+msgstr "Der Browser konnte nicht geöffnet werden. Kopiere den Link und öffne ihn selbst."
+
+msgid "Go to Cloud settings"
+msgstr "Zu den Cloud-Einstellungen"
+
+msgid "Less than 0.1% used"
+msgstr "Weniger als 0,1 % belegt"
+
+msgid "Loading usage..."
+msgstr "Nutzung wird geladen..."
+
+msgid "Manage billing"
+msgstr "Abrechnung verwalten"
+
+msgid "Monthly usage resets in UTC."
+msgstr "Die monatliche Nutzung wird nach UTC zurückgesetzt."
+
+msgid "No monthly limit"
+msgstr "Kein monatliches Limit"
+
+msgid "Plan unavailable"
+msgstr "Tarif nicht verfügbar"
+
+msgid "Refreshing..."
+msgstr "Wird aktualisiert..."
+
+msgid "Sign in to view your uploads, storage and plan."
+msgstr "Melde dich an, um deine Uploads, deinen Speicher und deinen Tarif zu sehen."
+
+msgid "Storage"
+msgstr "Speicher"
+
+msgid "This month"
+msgstr "Diesen Monat"
+
+msgid "Uploads"
+msgstr "Uploads"
+
+msgid "Usage"
+msgstr "Nutzung"
+
+msgid "Usage is unavailable"
+msgstr "Nutzung nicht verfügbar"
+
+msgid "Used space"
+msgstr "Belegter Speicher"
+
+msgid "We couldn't load your usage. Check your connection and try again."
+msgstr "Deine Nutzung konnte nicht geladen werden. Prüfe deine Verbindung und versuche es erneut."
+
+msgid "Your session has expired. Connect your account again in Cloud settings."
+msgstr "Deine Sitzung ist abgelaufen. Verbinde dein Konto in den Cloud-Einstellungen erneut."
+
+msgid "of {limit}"
+msgstr "von {limit}"
+
+msgid "of {limit} monthly uploads"
+msgstr "von {limit} monatlichen Uploads"
+
+msgid "{percent}% used"
+msgstr "{percent} % belegt"
+
+msgid "2160p (4K)"
+msgstr "2160p (4K)"
+
+msgid "Could not pause the shortcut listener. Close this dialog and try again."
+msgstr ""
+"Der Tastenkürzel-Listener konnte nicht pausiert werden. Schließe diesen Dialog und versuche es erneut."
+
+msgid "Disabled"
+msgstr "Deaktiviert"
+
+msgid "Off by default. Turning this on sends anonymous usage statistics."
+msgstr ""
+"Standardmäßig aus. Wenn du das einschaltest, werden anonyme Nutzungsstatistiken gesendet."
+
+msgid ""
+"Optional daily heartbeat: app version, Windows, and feature counts. The update window also reports each update download (version and size). No screenshots, paths, or OCR text. APEXSHOT_TELEMETRY=0 turns both off."
+msgstr ""
+"Optionaler täglicher Heartbeat: App-Version, Windows und Funktionszähler. Das Update-Fenster meldet außerdem jeden Update-Download (Version und Größe). Keine Screenshots, Pfade oder OCR-Texte. APEXSHOT_TELEMETRY=0 schaltet beides ab."
+
+msgid "Requires the corresponding Windows OCR language pack."
+msgstr "Erfordert das passende Windows-OCR-Sprachpaket."
+
+msgid "Shortcuts work while the ApexShot background shell is running."
+msgstr "Tastenkürzel funktionieren, solange die ApexShot-Hintergrundshell läuft."
+
+msgid ""
+"The Windows shell uses its tray icon to open capture, Settings, and Quit."
+msgstr ""
+"Die Windows-Shell nutzt ihr Leistensymbol, um Aufnahme, Einstellungen und Beenden zu öffnen."
+
+msgid "The capture shell currently uses its own dark appearance."
+msgstr ""
+"Die Aufnahme-Shell verwendet derzeit ihr eigenes dunkles Erscheinungsbild."
+
+msgid "The capture toolbar can change the timer for an individual screenshot."
+msgstr ""
+"Die Aufnahme-Werkzeugleiste kann den Timer für einen einzelnen Screenshot ändern."
+
+msgid "This action requires the Windows image editor or overlay backend."
+msgstr "Diese Aktion erfordert den Windows-Bildeditor oder das Overlay-Backend."
+
+msgid "Use your configured shortcuts while ApexShot runs in the background."
+msgstr ""
+"Nutze deine konfigurierten Tastenkürzel, während ApexShot im Hintergrund läuft."
+
+msgid "When hidden, stop the recording from the tray or with its shortcut."
+msgstr ""
+"Wenn sie ausgeblendet ist, beende die Aufnahme über die Leiste oder ihr Kürzel."
+
+msgid ""
+"When off, output uses the capture's display scale before applying the maximum resolution."
+msgstr ""
+"Wenn ausgeschaltet, nutzt die Ausgabe die Anzeigeskalierung der Aufnahme, bevor die maximale Auflösung angewendet wird."
+
+msgid ""
+"When off, recordings remain in the temporary folder for the result card and editor."
+msgstr ""
+"Wenn ausgeschaltet, bleiben Aufnahmen im temporären Ordner für die Ergebniskarte und den Editor."
+
+msgid "Beta"
+msgstr "Beta"
+
+msgid "Hide sidebar"
+msgstr "Seitenleiste ausblenden"
+
+msgid "Show sidebar"
+msgstr "Seitenleiste anzeigen"
+
+msgid ""
+"10:21 image aspect ratio; long pins may be cropped in feeds. 2:3 is recommended."
+msgstr ""
+"Bildseitenverhältnis 10:21; lange Pins können in Feeds zugeschnitten werden. 2:3 wird empfohlen."
+
+msgid ""
+"16:9 image aspect ratio; banners need at least 2048 x 1152 pixels and may be cropped on some devices."
+msgstr ""
+"Bildseitenverhältnis 16:9; Banner benötigen mindestens 2048 x 1152 Pixel und werden auf manchen Geräten eventuell zugeschnitten."
+
+msgid "Activation"
+msgstr "Aktivierung"
+
+msgid "Add a background and padding to see the shadow."
+msgstr "Füge einen Hintergrund und Polsterung hinzu, um den Schatten zu sehen."
+
+msgid ""
+"Add arrows, text, and blur, then set the background, padding, and shadow before you export."
+msgstr ""
+"Füge Pfeile, Text und Unschärfe hinzu und lege dann Hintergrund, Polsterung und Schatten vor dem Export fest."
+
+msgid "Annotate and style every capture."
+msgstr "Annotiere und gestalte jede Aufnahme."
+
+msgid "Annotation color"
+msgstr "Anmerkungsfarbe"
+
+msgid "Automatic"
+msgstr "Automatisch"
+
+msgid "Available"
+msgstr "Verfügbar"
+
+msgid "Back to editor"
+msgstr "Zurück zum Editor"
+
+msgid "Capture your screen, mark it up, and export it."
+msgstr "Nimm deinen Bildschirm auf, markiere ihn und exportiere ihn."
+
+msgid "Change any of this later."
+msgstr "All das kannst du später ändern."
+
+msgid "Choose video export options"
+msgstr "Videoexport-Optionen wählen"
+
+msgid "Click a Motion clip, or click the track to add a move."
+msgstr ""
+"Klicke auf einen Motion-Clip oder auf die Spur, um eine Bewegung hinzuzufügen."
+
+msgid "Click or drag to place the watermark; double-click to center it"
+msgstr ""
+"Klicke oder ziehe, um das Wasserzeichen zu platzieren; Doppelklick zum Zentrieren"
+
+msgid "Click or drag to place the zoom anchor; double-click to recenter"
+msgstr ""
+"Klicke oder ziehe, um den Zoom-Anker zu platzieren; Doppelklick zum erneuten Zentrieren"
+
+msgid "Click or drag to position the camera; double-click to recenter"
+msgstr ""
+"Klicke oder ziehe, um die Kamera zu positionieren; Doppelklick zum erneuten Zentrieren"
+
+msgid "Clipboard is unavailable."
+msgstr "Die Zwischenablage ist nicht verfügbar."
+
+msgid "Close custom color"
+msgstr "Benutzerdefinierte Farbe schließen"
+
+msgid "Close export options"
+msgstr "Exportoptionen schließen"
+
+msgid "Complete"
+msgstr "Abgeschlossen"
+
+msgid "Could not open background image."
+msgstr "Hintergrundbild konnte nicht geöffnet werden."
+
+msgid "Couldn't open a browser: {error}. Use Copy link and open it yourself."
+msgstr ""
+"Browser konnte nicht geöffnet werden: {error}. Nutze „Link kopieren“ und öffne ihn selbst."
+
+msgid "Custom color"
+msgstr "Benutzerdefinierte Farbe"
+
+msgid "Drag to choose what the camera shows"
+msgstr "Ziehe, um zu wählen, was die Kamera zeigt"
+
+msgid "Drop a PNG, JPEG, or WebP here, or choose one from disk."
+msgstr ""
+"Lege ein PNG, JPEG oder WebP hier ab oder wähle eines von der Festplatte."
+
+msgid "Estimated output size"
+msgstr "Geschätzte Ausgabegröße"
+
+msgid "Estimating…"
+msgstr "Wird geschätzt…"
+
+msgid "Export a file and copy it to the clipboard for pasting into other apps."
+msgstr ""
+"Exportiere eine Datei und kopiere sie in die Zwischenablage, um sie in andere Apps einzufügen."
+
+msgid "Export time depends on your hardware and effects."
+msgstr "Die Exportdauer hängt von deiner Hardware und den Effekten ab."
+
+msgid "Export to file"
+msgstr "In Datei exportieren"
+
+msgid "Exported successfully"
+msgstr "Erfolgreich exportiert"
+
+msgid "Exporting video"
+msgstr "Video wird exportiert"
+
+msgid "File copied to clipboard. Ready to paste into other apps."
+msgstr "Datei in die Zwischenablage kopiert. Bereit zum Einfügen in andere Apps."
+
+msgid "Finishing…"
+msgstr "Wird abgeschlossen…"
+
+msgid "Fit to window"
+msgstr "An Fenster anpassen"
+
+msgid "Free up space or raise your allowance to keep uploading."
+msgstr "Gib Speicher frei oder erhöhe dein Kontingent, um weiter hochzuladen."
+
+msgid "Here’s where to find everything."
+msgstr "Hier findest du alles."
+
+msgid "Image editor preview with an annotated capture and the Appearance panel"
+msgstr ""
+"Bildeditor-Vorschau mit einer annotierten Aufnahme und dem Bereich „Erscheinungsbild“"
+
+msgid "Last checked"
+msgstr "Zuletzt geprüft"
+
+msgid "Monthly, UTC"
+msgstr "Monatlich, UTC"
+
+msgid "Move the light to direct the shadow"
+msgstr "Bewege das Licht, um den Schatten zu lenken"
+
+msgid "Neural upscaling is not available in the Windows image editor yet"
+msgstr "Neuronale Hochskalierung ist im Windows-Bildeditor noch nicht verfügbar"
+
+msgid "No account needed."
+msgstr "Kein Konto erforderlich."
+
+msgid "Not set"
+msgstr "Nicht festgelegt"
+
+msgid "Obfuscate intensity"
+msgstr "Verschleierungsintensität"
+
+msgid "One shortcut away."
+msgstr "Nur ein Kürzel entfernt."
+
+msgid "Open ApexShot"
+msgstr "ApexShot öffnen"
+
+msgid "Open Image"
+msgstr "Bild öffnen"
+
+msgid "Open an image to annotate"
+msgstr "Öffne ein Bild zum Annotieren"
+
+msgid "Open image"
+msgstr "Bild öffnen"
+
+msgid "Opening {name}…"
+msgstr "{name} wird geöffnet…"
+
+msgid ""
+"Optional. Link your account now so it’s ready when uploads arrive on Windows."
+msgstr ""
+"Optional. Verbinde dein Konto jetzt, damit es bereit ist, wenn Uploads auf Windows verfügbar sind."
+
+msgid "Preparing export…"
+msgstr "Export wird vorbereitet…"
+
+msgid "Remove the watermark"
+msgstr "Wasserzeichen entfernen"
+
+msgid "Resets"
+msgstr "Zurücksetzung"
+
+msgid "Retention"
+msgstr "Aufbewahrung"
+
+msgid "Reverse"
+msgstr "Umkehren"
+
+msgid "Right-click for your capture menu."
+msgstr "Rechtsklick für dein Aufnahmemenü."
+
+msgid "Save annotated image"
+msgstr "Annotiertes Bild speichern"
+
+msgid "Save the annotated image"
+msgstr "Das annotierte Bild speichern"
+
+msgid "Select image"
+msgstr "Bild auswählen"
+
+msgid "Shortcuts work while ApexShot runs in the background."
+msgstr "Tastenkürzel funktionieren, während ApexShot im Hintergrund läuft."
+
+msgid "Start a capture from your keyboard or the tray menu."
+msgstr "Starte eine Aufnahme über deine Tastatur oder das Leistenmenü."
+
+msgid "Status"
+msgstr "Status"
+
+msgid "Stop export"
+msgstr "Export stoppen"
+
+msgid "Stopping export…"
+msgstr "Export wird gestoppt…"
+
+msgid "Storage is full"
+msgstr "Speicher ist voll"
+
+msgid "Storage is nearly full"
+msgstr "Speicher ist fast voll"
+
+msgid "Storage is within your allowance"
+msgstr "Speicher liegt innerhalb deines Kontingents"
+
+msgid "Storage used"
+msgstr "Belegter Speicher"
+
+msgid "Stroke"
+msgstr "Strich"
+
+msgid "Switch to Motion: not available in the Windows image editor yet"
+msgstr "Zu Motion wechseln: im Windows-Bildeditor noch nicht verfügbar"
+
+msgid "That file is not a supported image. Choose a PNG, JPEG, or WebP."
+msgstr "Diese Datei ist kein unterstütztes Bild. Wähle ein PNG, JPEG oder WebP."
+
+msgid "The image could not be read."
+msgstr "Das Bild konnte nicht gelesen werden."
+
+msgid "The image is empty."
+msgstr "Das Bild ist leer."
+
+msgid "They reset monthly in UTC."
+msgstr "Sie werden monatlich nach UTC zurückgesetzt."
+
+msgid "This month's uploads are used up"
+msgstr "Die Uploads dieses Monats sind aufgebraucht"
+
+msgid "Video exported, but could not copy to clipboard:"
+msgstr ""
+"Video exportiert, aber das Kopieren in die Zwischenablage war nicht möglich:"
+
+msgid "Exported, but the sound could not be added:"
+msgstr "Exportiert, aber der Ton konnte nicht hinzugefügt werden:"
+
+msgid "Wait for the background image to finish loading."
+msgstr "Warte, bis das Hintergrundbild vollständig geladen ist."
+
+msgid "Your shortcuts work while ApexShot runs."
+msgstr "Deine Tastenkürzel funktionieren, während ApexShot läuft."
+
+msgid "You’re all set."
+msgstr "Du bist startklar."
+
+msgid "left"
+msgstr "übrig"
+
+msgid "of {limit} allowance"
+msgstr "von deinem {limit}-Kontingent"
+
+msgid "of {limit} this month"
+msgstr "von {limit} diesen Monat"
+
+msgid "{current} / {total}"
+msgstr "{current} / {total}"
+
+msgid "{days} days"
+msgstr "{days} Tage"
+
+msgid "{remaining} remains before your allowance is reached."
+msgstr "{remaining} verbleiben, bevor dein Kontingent erreicht ist."
+
+msgid "{remaining} remains of your {limit} allowance."
+msgstr "{remaining} verbleiben von deinem {limit}-Kontingent."
+
+msgid "ApexShot Update"
+msgstr "ApexShot-Update"
+
+msgid "ApexShot v{version} is ready to install."
+msgstr "ApexShot v{version} kann jetzt installiert werden."
+
+msgid "ApexShot v{version} is on its way. Keep this window open."
+msgstr "ApexShot v{version} ist unterwegs. Lass dieses Fenster geöffnet."
+
+msgid "ApexShot v{version} has finished downloading."
+msgstr "ApexShot v{version} wurde heruntergeladen."
+
+msgid "ApexShot v{version} could not be updated."
+msgstr "ApexShot v{version} konnte nicht aktualisiert werden."
+
+msgid "Update available"
+msgstr "Update verfügbar"
+
+msgid "Downloading update"
+msgstr "Update wird heruntergeladen"
+
+msgid "Update ready"
+msgstr "Update bereit"
+
+msgid "Update failed"
+msgstr "Update fehlgeschlagen"
+
+msgid "Update now"
+msgstr "Jetzt aktualisieren"
+
+msgid "Later"
+msgstr "Später"
+
+msgid "Cancel download"
+msgstr "Download abbrechen"
+
+msgid "Install now"
+msgstr "Jetzt installieren"
+
+msgid "Installed version"
+msgstr "Installierte Version"
+
+msgid "Latest version"
+msgstr "Neueste Version"
+
+msgid "Download size"
+msgstr "Downloadgröße"
+
+msgid "Download speed"
+msgstr "Downloadgeschwindigkeit"
+
+msgid "Downloaded"
+msgstr "Heruntergeladen"
+
+msgid "Downloading..."
+msgstr "Wird heruntergeladen..."
+
+msgid "Starting..."
+msgstr "Wird gestartet..."
+
+msgid "Filename"
+msgstr "Dateiname"
+
+msgid "File size"
+msgstr "Dateigröße"
+
+msgid "Progress"
+msgstr "Fortschritt"
+
+msgid "Release notes"
+msgstr "Versionshinweise"
+
+msgid "Failed"
+msgstr "Fehlgeschlagen"
+
+msgid "Could not start the installer: {error}"
+msgstr "Installationsprogramm konnte nicht gestartet werden: {error}"
+
+msgid "Captures and recordings can now upload from this PC."
+msgstr "Aufnahmen und Bildschirmaufzeichnungen können jetzt von diesem PC hochgeladen werden."
+
+msgid "Close the result card when its Upload action starts an upload."
+msgstr "Schließt die Ergebniskarte, wenn ihre Upload-Aktion einen Upload startet."
+
+msgid "Could not open the Motion encoder input."
+msgstr "Der Motion-Encoder-Eingang konnte nicht geöffnet werden."
+
+msgid "Could not render the Motion frame."
+msgstr "Das Motion-Bild konnte nicht gerendert werden."
+
+msgid "Could not start the image editor: {message}"
+msgstr "Der Bildeditor konnte nicht gestartet werden: {message}"
+
+msgid "Motion has no still to export."
+msgstr "Motion hat kein Standbild zum Exportieren."
+
+msgid "Opened {name} in the image editor"
+msgstr "{name} im Bildeditor geöffnet"
+
+msgid "Optional. Link your account to upload screenshots and recordings to ApexShot Cloud."
+msgstr "Optional. Verknüpfe dein Konto, um Screenshots und Aufzeichnungen in ApexShot Cloud hochzuladen."
+
+msgid "Share link copied to clipboard: {url}"
+msgstr "Freigabelink in die Zwischenablage kopiert: {url}"
+
+msgid "The Motion encoder is not running."
+msgstr "Der Motion-Encoder läuft nicht."
+
+msgid "The Windows image editor names each color when you point at its swatch."
+msgstr "Der Windows-Bildeditor nennt jede Farbe, wenn Sie auf ihr Farbfeld zeigen."
+
+msgid "Upload"
+msgstr "Hochladen"
+
+msgid "Uploaded"
+msgstr "Hochgeladen"
+
+msgid "Uploaded {name} and copied its share link"
+msgstr "{name} hochgeladen und Freigabelink kopiert"
+
+msgid "Uploads each saved screenshot and recording and copies the share link. Does nothing until you Connect."
+msgstr "Lädt jeden gespeicherten Screenshot und jede Aufzeichnung hoch und kopiert den Freigabelink. Tut nichts, bis du dich verbindest."
+
+msgid "ffmpeg failed to encode the Motion video."
+msgstr "ffmpeg konnte das Motion-Video nicht kodieren."
+
+msgid "Upgrade to Studio"
+msgstr "Auf Studio upgraden"
+
+msgid "Add zoom: click the preview to place it"
+msgstr "Zoom hinzufügen: Klicke auf die Vorschau, um ihn zu platzieren"
+
+msgid "Adds a zoom that automatically follows the mouse activity"
+msgstr "Fügt einen Zoom hinzu, der der Mausaktivität automatisch folgt"
+
+msgid "Automatic zoom"
+msgstr "Automatischer Zoom"
+
+msgid "Click where to zoom in"
+msgstr "Klicke, wohin gezoomt werden soll"
+
+msgid "Click where to zoom in, or use Automatic zoom"
+msgstr "Klicke, wohin gezoomt werden soll, oder verwende die Option „Automatischer Zoom“"
+
+msgid "Hardware acceleration"
+msgstr "Hardwarebeschleunigung"
+
+msgid "Use the GPU encoder when one is available. Falls back to the CPU automatically."
+msgstr "Den GPU-Encoder verwenden, wenn einer verfügbar ist. Wechselt automatisch zur CPU."
+
+msgid "Always use the default cursor"
+msgstr "Immer den Standardcursor verwenden"
+
+msgid "Base angle"
+msgstr "Basiswinkel"
+
+msgid "Point along movement"
+msgstr "In Bewegungsrichtung ausrichten"
+
+msgid "Tilt amount"
+msgstr "Neigungsstärke"
+
+msgid "Tilt with motion"
+msgstr "Mit der Bewegung neigen"
+
+msgid "Codec"
+msgstr "Codec"
+
+msgid "Smaller files at the same quality, but not every app or browser plays HEVC."
+msgstr "Kleinere Dateien bei gleicher Qualität, aber nicht jede App und jeder Browser spielt HEVC ab."
+msgid "Hardware encoding uses a bitrate, so file sizes follow the estimate; the software encoder uses a constant quality."
+msgstr "Hardware-Kodierung nutzt eine Bitrate, daher folgen Dateigrößen der Schätzung; der Software-Encoder nutzt eine konstante Qualität."
+
+msgid "Estimated output size: {size}"
+msgstr "Geschätzte Dateigröße: {size}"
+
+msgid "Export time ≈ {time}"
+msgstr "Exportdauer ≈ {time}"
+
+msgid "Frame styles and shadows"
+msgstr "Rahmenstile und Schatten"
+
+msgid "Frame styles and shadows for stills."
+msgstr "Rahmenstile und Schatten für Standbilder."
+
+msgid "Included with Studio"
+msgstr "In Studio enthalten"
+
+msgid "Studio preview. A non-default rendered pose needs activation for final images."
+msgstr "Studio-Vorschau. Eine nicht standardmäßig gerenderte Pose erfordert für finale Bilder eine Aktivierung."
+
+msgid "Automatic width"
+msgstr "Automatische Breite"
+
+msgid "Camera delay"
+msgstr "Kameraverzögerung"
+
+msgid "Camera side"
+msgstr "Kameraseite"
+
+msgid "Edge inset"
+msgstr "Randabstand"
+
+msgid "Edge softness"
+msgstr "Kantenweichheit"
+
+msgid "Fill"
+msgstr "Füllen"
+
+msgid "Hide during silence"
+msgstr "Bei Stille ausblenden"
+
+msgid "Hide the camera while nobody is talking, and bring it back when they do."
+msgstr "Blendet die Kamera aus, solange niemand spricht, und wieder ein, sobald gesprochen wird."
+
+msgid "Keep the screen's shape and give the camera the rest of the frame."
+msgstr "Behält die Form des Bildschirms bei und gibt der Kamera den Rest des Bildes."
+
+msgid "Layout"
+msgstr "Layout"
+
+msgid "Layout settings"
+msgstr "Layout-Einstellungen"
+
+msgid "Leave the Background padding between the screen and the camera, with rounded corners."
+msgstr "Lässt zwischen Bildschirm und Kamera den Hintergrundabstand frei, mit abgerundeten Ecken."
+
+msgid "Make the camera smaller while the screen is zoomed, so it covers less of the recording."
+msgstr "Verkleinert die Kamera, solange der Bildschirm gezoomt ist, damit sie weniger von der Aufnahme verdeckt."
+
+msgid "Minimum silence"
+msgstr "Minimale Stille"
+
+msgid "Padded"
+msgstr "Mit Abstand"
+
+msgid "Rounded"
+msgstr "Abgerundet"
+
+msgid "Roundness"
+msgstr "Rundung"
+
+msgid "Screen width"
+msgstr "Bildschirmbreite"
+
+msgid "Shift the camera against the screen and sound. Raise it if your lips move after the words, lower it if they move before."
+msgstr "Verschiebt die Kamera gegenüber Bildschirm und Ton. Erhöhe den Wert, wenn sich die Lippen nach den Worten bewegen, und senke ihn, wenn sie sich davor bewegen."
+
+msgid "Shrink during zoom"
+msgstr "Beim Zoomen verkleinern"
+
+msgid "Shrink size"
+msgstr "Verkleinerte Größe"
+
+msgid "The camera's longest side, as a percentage of the frame's shortest side."
+msgstr "Die längste Seite der Kamera in Prozent der kürzesten Seite des Bildes."
+
+msgid "The person's size, as a percentage of the frame's shortest side."
+msgstr "Die Größe der Person in Prozent der kürzesten Seite des Bildes."
+
+msgid "The split fills the frame edge to edge."
+msgstr "Der Split füllt das Bild von Rand zu Rand."
+
+msgid "Transitions"
+msgstr "Übergänge"
+
+msgid "1:1"
+msgstr "1:1"
+
+msgid "4:3"
+msgstr "4:3"
+
+msgid "All typing suggestions are handled. Undo brings them back."
+msgstr "Alle Tippvorschläge sind erledigt. Mit Rückgängig kommen sie zurück."
+
+msgid "Apply all suggestions"
+msgstr "Alle Vorschläge anwenden"
+
+msgid "Apply suggestion"
+msgstr "Vorschlag anwenden"
+
+msgid "Apply to this project"
+msgstr "Auf dieses Projekt anwenden"
+
+msgid "Built-in defaults"
+msgstr "Integrierte Standardwerte"
+
+msgid "Could not open the preset's folder."
+msgstr "Der Ordner der Voreinstellung konnte nicht geöffnet werden."
+
+msgid "Create"
+msgstr "Erstellen"
+
+msgid "Default for new recordings"
+msgstr "Standard für neue Aufnahmen"
+
+msgid "Default video preset"
+msgstr "Standard-Videovoreinstellung"
+
+msgid "Editor"
+msgstr "Editor"
+
+msgid "Keyboard"
+msgstr "Tastatur"
+
+msgid "Movement"
+msgstr "Bewegung"
+
+msgid "Name the preset before saving it."
+msgstr "Gib der Voreinstellung vor dem Speichern einen Namen."
+
+msgid "New preset from this project"
+msgstr "Neue Voreinstellung aus diesem Projekt"
+
+msgid "No presets yet"
+msgstr "Noch keine Voreinstellungen"
+
+msgid "No typing to speed up in this recording."
+msgstr "In dieser Aufnahme gibt es kein Tippen zum Beschleunigen."
+
+msgid "Preset name"
+msgstr "Name der Voreinstellung"
+
+msgid "Preset options"
+msgstr "Optionen der Voreinstellung"
+
+msgid "Presets"
+msgstr "Voreinstellungen"
+
+msgid "Press + to save this project's background, cursor, camera and captions as a preset."
+msgstr "Drücke +, um Hintergrund, Cursor, Kamera und Untertitel dieses Projekts als Voreinstellung zu speichern."
+
+msgid "Preview"
+msgstr "Vorschau"
+
+msgid "Put every zoom animation setting back to its default."
+msgstr "Alle Zoom-Animationseinstellungen auf den Standard zurücksetzen."
+
+msgid "Record keystrokes"
+msgstr "Tastenanschläge aufnehmen"
+
+msgid "Remove as default"
+msgstr "Nicht mehr als Standard verwenden"
+
+msgid "Remove suggestion"
+msgstr "Vorschlag entfernen"
+
+msgid "Rename"
+msgstr "Umbenennen"
+
+msgid "Renamed to {name}."
+msgstr "In {name} umbenannt."
+
+msgid "Set as default"
+msgstr "Als Standard festlegen"
+
+msgid "Show in folder"
+msgstr "Im Ordner anzeigen"
+
+msgid "Show keyboard shortcuts"
+msgstr "Tastenkürzel anzeigen"
+
+msgid "Show single letters"
+msgstr "Einzelne Buchstaben anzeigen"
+
+msgid "Soft"
+msgstr "Sanft"
+
+msgid "Sound"
+msgstr "Ton"
+
+msgid "That preset is no longer on disk."
+msgstr "Diese Voreinstellung ist nicht mehr auf dem Datenträger."
+
+msgid "This recording has no keystrokes. Turn on Record keystrokes in Settings, under Recording, then record again."
+msgstr "Diese Aufnahme enthält keine Tastenanschläge. Aktiviere „Tastenanschläge aufnehmen“ in den Einstellungen unter „Aufnahme“ und nimm erneut auf."
+
+msgid "This zoom"
+msgstr "Dieser Zoom"
+
+msgid "Typing"
+msgstr "Tippen"
+
+msgid "Unavailable preset"
+msgstr "Nicht verfügbare Voreinstellung"
+
+msgid "Update with current look"
+msgstr "Mit aktuellem Aussehen aktualisieren"
+
+msgid "Visibility"
+msgstr "Sichtbarkeit"
+
+msgid "Volume"
+msgstr "Lautstärke"
+
+msgid "{name} deleted."
+msgstr "{name} gelöscht."
+
+msgid "{name} now holds the current look."
+msgstr "{name} enthält jetzt das aktuelle Aussehen."
+
+msgid "{name} saved."
+msgstr "{name} gespeichert."
+
+msgid "Motion videos you export appear in Recordings. Saved Motion projects are not kept on Windows yet."
+msgstr "Exportierte Motion-Videos erscheinen unter Aufnahmen. Gespeicherte Motion-Projekte werden unter Windows noch nicht aufbewahrt."
+
+msgid "Expires in {time}"
+msgstr "Läuft ab in {time}"
+
+msgid "Background music"
+msgstr "Hintergrundmusik"
+
+msgid "Choose background music"
+msgstr "Hintergrundmusik wählen"
+
+msgid "Clip {current} of {total}"
+msgstr "Clip {current} von {total}"
+
+msgid "Clips"
+msgstr "Clips"
+
+msgid "Length {original}"
+msgstr "Länge {original}"
+
+msgid "Microphone"
+msgstr "Mikrofon"
+
+msgid "Microphone volume"
+msgstr "Mikrofonlautstärke"
+
+msgid "Music volume"
+msgstr "Musiklautstärke"
+
+msgid "Mute clip"
+msgstr "Clip stummschalten"
+
+msgid "Mute microphone"
+msgstr "Mikrofon stummschalten"
+
+msgid "Mute music"
+msgstr "Musik stummschalten"
+
+msgid "Mute system sound"
+msgstr "Systemton stummschalten"
+
+msgid "Muted"
+msgstr "Stumm"
+
+msgid "Remove music"
+msgstr "Musik entfernen"
+
+msgid "Select a clip on the timeline to change its speed and sound."
+msgstr "Wähle einen Clip in der Zeitleiste, um Geschwindigkeit und Ton zu ändern."
+
+msgid "Select music…"
+msgstr "Musik auswählen…"
+
+msgid "System sound"
+msgstr "Systemton"
+
+msgid "System sound volume"
+msgstr "Systemtonlautstärke"
+
+msgid "This recording has no sound. Turn on the microphone or system audio before recording."
+msgstr "Diese Aufnahme hat keinen Ton. Aktiviere das Mikrofon oder den Systemton vor der Aufnahme."
+
+msgid "{original} at 1× · {now} at {speed}"
+msgstr "{original} bei 1× · {now} bei {speed}"
+
+msgid "Loud"
+msgstr "Laut"
+
+msgid "Noise reduction"
+msgstr "Rauschunterdrückung"
+
+msgid "Podcast"
+msgstr "Podcast"
+
+msgid "Warm"
+msgstr "Warm"
+
+msgid "Even, natural voice"
+msgstr "Gleichmäßige, natürliche Stimme"
+
+msgid "Punchy and compressed"
+msgstr "Druckvoll und komprimiert"
+
+msgid "Removes steady noise"
+msgstr "Entfernt gleichmäßiges Rauschen"
+
+msgid "Warm, polished voice"
+msgstr "Warme, polierte Stimme"
+
+msgid "Fuller, deeper tone"
+msgstr "Vollerer, tieferer Klang"
+
+msgid "As recorded"
+msgstr "Wie aufgenommen"
+
+msgid "Evens out your voice so it stays at one level."
+msgstr "Gleicht deine Stimme aus, damit sie auf einem Pegel bleibt."
+
+msgid "Louder, compressed voice that cuts through music."
+msgstr "Lautere, komprimierte Stimme, die sich gegen Musik durchsetzt."
+
+msgid "Removes steady background noise, then evens out the voice."
+msgstr "Entfernt gleichmäßiges Hintergrundrauschen und gleicht dann die Stimme aus."
+
+msgid "Full, warm voice with softened hiss and sibilance."
+msgstr "Volle, warme Stimme mit gedämpftem Zischen und Zischlauten."
+
+msgid "Adds body to thin microphones."
+msgstr "Verleiht dünnen Mikrofonen mehr Fülle."
+
+msgid "Keeps the microphone exactly as it was recorded."
+msgstr "Lässt das Mikrofon genau so, wie es aufgenommen wurde."
+
+msgid "Output"
+msgstr "Ausgabe"
+
+msgid "Format"
+msgstr "Format"
+
+msgid "Estimated size"
+msgstr "Geschätzte Größe"
+
+msgid "Export time"
+msgstr "Exportdauer"
+
+msgid "Resolution"
+msgstr "Auflösung"
+
+msgid "Remove recording"
+msgstr "Aufnahme entfernen"
+
+msgid "This recording has no audio."
+msgstr "Diese Aufnahme hat keinen Ton."
+
+msgid "Hide cursor here"
+msgstr "Zeiger hier ausblenden"
+
+msgid "Exporting {percent}%"
+msgstr "Exportiere {percent} %"
+
+msgid "Export cancelled"
+msgstr "Export abgebrochen"
+
+msgid "Could not render the image."
+msgstr "Das Bild konnte nicht gerendert werden."
+
+msgid "Compare enhancement"
+msgstr "Verbesserung vergleichen"
+
+msgid "Drag the divider across the image."
+msgstr "Ziehe den Trenner über das Bild."
+
+msgid "Enhancing the image…"
+msgstr "Bild wird verbessert…"
+
+msgid "Free preview. Exporting with enhancement needs Studio."
+msgstr "Kostenlose Vorschau. Für den Export mit Verbesserung brauchst du Studio."
+
+msgid "Sharpens small screenshots on this device, up to 1 megapixel. Missing detail cannot always be recovered."
+msgstr "Schärft kleine Screenshots auf diesem Gerät, bis zu 1 Megapixel. Fehlende Details lassen sich nicht immer wiederherstellen."
+
+msgid "Source"
+msgstr "Quelle"
+
+msgid "Use Neural 2×"
+msgstr "Neural 2× verwenden"
+
+msgid "16:9 image aspect ratio; banners may be cropped on some devices."
+msgstr "Seitenverhältnis 16:9; Banner können auf manchen Geräten beschnitten werden."
+
+msgid "Exports at {width} × {height} px."
+msgstr "Wird mit {width} × {height} px exportiert."
+
+msgid "Ratio presets change the aspect ratio; platform presets also export at the size that platform asks for. W/H shows the export size. Click the selected preset again to reset."
+msgstr "Seitenverhältnis-Voreinstellungen ändern das Seitenverhältnis; Plattform-Voreinstellungen exportieren zusätzlich in der Größe, die die Plattform verlangt. W/H zeigt die Exportgröße. Klicke die ausgewählte Voreinstellung erneut an, um zurückzusetzen."
+
+msgid "This image is large, so enhancing it takes a while on this device. {percent}% done, about {left} left. You can close the preview to stop."
+msgstr "Dieses Bild ist groß, daher dauert die Verbesserung auf diesem Gerät eine Weile. {percent} % erledigt, noch etwa {left}. Schließe die Vorschau, um abzubrechen."
+
+msgid "Enhancing… {percent}%, about {left} left"
+msgstr "Wird verbessert… {percent} %, noch etwa {left}"
+
+msgid "{minutes} min"
+msgstr "{minutes} Min."
+
+msgid "{seconds} s"
+msgstr "{seconds} s"
+msgid "A link to the exported file was copied"
+msgstr "Ein Link zur exportierten Datei wurde kopiert"
+
+msgid "ApexShot could not reserve a file for the export."
+msgstr "ApexShot konnte keine Datei für den Export reservieren."
+
+msgid "Checking encoder support…"
+msgstr "Encoder-Unterstützung wird geprüft…"
+
+msgid "Copy exported file"
+msgstr "Exportierte Datei kopieren"
+
+msgid "Depends on hardware"
+msgstr "Hängt von der Hardware ab"
+
+msgid "Disk space is almost full"
+msgstr "Der Speicherplatz ist fast voll"
+
+msgid "Encode with HEVC"
+msgstr "Mit HEVC kodieren"
+
+msgid "Export stopped"
+msgstr "Export abgebrochen"
+
+msgid "Hardware encoding failed; the export restarted on the software encoder"
+msgstr "Die Hardware-Kodierung ist fehlgeschlagen; der Export wurde mit dem Software-Encoder neu gestartet"
+
+msgid "Open failed"
+msgstr "Öffnen fehlgeschlagen"
+
+msgid "Recording stopped"
+msgstr "Aufnahme beendet"
+
+msgid "Retrying on the software encoder…"
+msgstr "Neuer Versuch mit dem Software-Encoder…"
+
+msgid "Show in Files"
+msgstr "In Dateien anzeigen"
+
+msgid "The partial file was removed"
+msgstr "Die unvollständige Datei wurde entfernt"
+
+msgid "The selected codec cannot encode on this machine"
+msgstr "Der ausgewählte Codec kann auf diesem Gerät nicht kodieren"
+
+msgid "This ffmpeg build has no HEVC encoder"
+msgstr "Dieser ffmpeg-Build hat keinen HEVC-Encoder"
+
+msgid "Uploaded, but the link could not be copied: {error}"
+msgstr "Hochgeladen, aber der Link konnte nicht kopiert werden: {error}"
+
+msgid "Motion isn't available for long screenshots"
+msgstr "Motion ist für lange Screenshots nicht verfügbar"
+
+msgid "This screenshot is too long to animate. Scrolling captures and other long images stay in Static, where every annotation and export tool still works."
+msgstr "Dieser Screenshot ist zu lang für eine Animation. Scroll-Aufnahmen und andere lange Bilder bleiben in Statisch, wo alle Anmerkungs- und Exportwerkzeuge weiterhin funktionieren."
+
+msgid "Account"
+msgstr "Konto"
+
+msgid "Cloud storage"
+msgstr "Cloud-Speicher"
+
+msgid "Email"
+msgstr "E-Mail"
+
+msgid "Last updated"
+msgstr "Zuletzt aktualisiert"
+
+msgid "Loading usage…"
+msgstr "Nutzung wird geladen…"
+
+msgid "Plan"
+msgstr "Tarif"
+
+msgid "Refreshing…"
+msgstr "Wird aktualisiert…"
+
+msgid ""
+"System default uses your desktop language. Changes are saved automatically."
+msgstr ""
+"Systemstandard verwendet die Sprache Ihres Desktops. Änderungen werden automatisch gespeichert."
+
+msgid "Unlimited"
+msgstr "Unbegrenzt"
+
+msgid "Used"
+msgstr "Verwendet"
+
+msgid "{used} of {limit}"
+msgstr "{used} von {limit}"
+
+msgid "Activate a license"
+msgstr "Lizenz aktivieren"
+
+msgid "ApexShot Studio"
+msgstr "ApexShot Studio"
+
+msgid "Included updates ended {date}."
+msgstr "Enthaltene Updates endeten am {date}."
+
+msgid "License"
+msgstr "Lizenz"
+
+msgid "License key"
+msgstr "Lizenzschlüssel"
+
+msgid "Needs attention"
+msgstr "Aktion erforderlich"
+
+msgid "Not activated on this device."
+msgstr "Auf diesem Gerät nicht aktiviert."
+
+msgid "Open ApexShot anytime for Settings, shortcuts, and preferences"
+msgstr "Öffne ApexShot jederzeit für Einstellungen, Tastenkürzel und Präferenzen"
+
+msgid "Other device"
+msgstr "Anderes Gerät"
+
+msgid "Paste your license key"
+msgstr "Lizenzschlüssel einfügen"
+
+msgid "Replace…"
+msgstr "Ersetzen…"
+
+msgid "The saved license couldn't be verified."
+msgstr "Die gespeicherte Lizenz konnte nicht überprüft werden."
+
+msgid "This build can't verify Studio licenses."
+msgstr "Dieser Build kann keine Studio-Lizenzen überprüfen."
+
+msgid "This license belongs to another device."
+msgstr "Diese Lizenz gehört zu einem anderen Gerät."
+
+msgid "Unavailable"
+msgstr "Nicht verfügbar"
+
+msgid "Updates ended"
+msgstr "Updates beendet"
+
+msgid "Updates included through {date}."
+msgstr "Updates enthalten bis {date}."
+
+msgid "0 B/s"
+msgstr "0 B/s"
+
+msgid "An export is still running. Let it finish, then try again."
+msgstr "Ein Export läuft noch. Lass ihn fertig werden und versuche es dann erneut."
+
+msgid "ApexShot could not close every window. Close them, then try again."
+msgstr "ApexShot konnte nicht alle Fenster schließen. Schließe sie und versuche es dann erneut."
+
+msgid "ApexShot is up to date"
+msgstr "ApexShot ist auf dem neuesten Stand"
+
+msgid "ApexShot v{version} is being installed. Keep this window open."
+msgstr "ApexShot v{version} wird installiert. Lass dieses Fenster geöffnet."
+
+msgid "ApexShot v{version} is installed."
+msgstr "ApexShot v{version} ist installiert."
+
+msgid "ApexShot v{version} is ready. Your current work will not be interrupted."
+msgstr "ApexShot v{version} ist bereit. Deine aktuelle Arbeit wird nicht unterbrochen."
+
+msgid "ApexShot window"
+msgstr "ApexShot-Fenster"
+
+msgid "Could not check the release: {error}"
+msgstr "Die Version konnte nicht geprüft werden: {error}"
+
+msgid "Could not create the update folder: {error}"
+msgstr "Der Update-Ordner konnte nicht erstellt werden: {error}"
+
+msgid "Could not find a local cache folder for the update."
+msgstr "Für das Update wurde kein lokaler Cache-Ordner gefunden."
+
+msgid "Could not finish the update: {error}"
+msgstr "Das Update konnte nicht abgeschlossen werden: {error}"
+
+msgid "Could not install the GNOME extension update."
+msgstr "Das Update der GNOME-Erweiterung konnte nicht installiert werden."
+
+msgid "Could not reach the Flatpak service: {error}"
+msgstr "Der Flatpak-Dienst ist nicht erreichbar: {error}"
+
+msgid "Could not reach the package service: {error}"
+msgstr "Der Paketdienst ist nicht erreichbar: {error}"
+
+msgid "Could not read the checksums: {error}"
+msgstr "Die Prüfsummen konnten nicht gelesen werden: {error}"
+
+msgid "Could not save the update: {error}"
+msgstr "Das Update konnte nicht gespeichert werden: {error}"
+
+msgid "Could not start the package manager: {error}"
+msgstr "Die Paketverwaltung konnte nicht gestartet werden: {error}"
+
+msgid "Enhancement works up to 1 MP and 4096 px per edge. Crop this {width} × {height} image to use it."
+msgstr "Die Verbesserung funktioniert bis 1 MP und 4096 px pro Kante. Schneide dieses Bild mit {width} × {height} zu, um sie zu nutzen."
+
+msgid "Finish your recording first"
+msgstr "Beende zuerst die Aufnahme"
+
+msgid "Image editor"
+msgstr "Bildeditor"
+
+msgid "Installation was cancelled."
+msgstr "Die Installation wurde abgebrochen."
+
+msgid "Installing restarts ApexShot, which would stop the recording in progress."
+msgstr "Die Installation startet ApexShot neu, wodurch die laufende Aufnahme beendet würde."
+
+msgid "Installing update"
+msgstr "Update wird installiert"
+
+msgid "Log out and back in to finish updating the GNOME extension."
+msgstr "Melde dich ab und wieder an, um das Update der GNOME-Erweiterung abzuschließen."
+
+msgid "Preparing to install"
+msgstr "Installation wird vorbereitet"
+
+msgid "Refreshing the GNOME extension..."
+msgstr "GNOME-Erweiterung wird aktualisiert..."
+
+msgid "Restart ApexShot"
+msgstr "ApexShot neu starten"
+
+msgid "Restart ApexShot to use the new version."
+msgstr "Starte ApexShot neu, um die neue Version zu verwenden."
+
+msgid "Saving your work…"
+msgstr "Deine Arbeit wird gespeichert…"
+
+msgid "Setup"
+msgstr "Einrichtung"
+
+msgid "The Flatpak update could not start: {error}"
+msgstr "Das Flatpak-Update konnte nicht starten: {error}"
+
+msgid "The Flatpak update failed."
+msgstr "Das Flatpak-Update ist fehlgeschlagen."
+
+msgid "The Flatpak update stopped without finishing."
+msgstr "Das Flatpak-Update wurde vor dem Abschluss beendet."
+
+msgid "The download did not match the published checksum."
+msgstr "Der Download stimmt nicht mit der veröffentlichten Prüfsumme überein."
+
+msgid "The download stopped: {error}"
+msgstr "Der Download wurde abgebrochen: {error}"
+
+msgid "The installer starts as soon as these windows have saved and closed."
+msgstr "Das Installationsprogramm startet, sobald diese Fenster gespeichert und geschlossen sind."
+
+msgid "The package manager could not install the update."
+msgstr "Die Paketverwaltung konnte das Update nicht installieren."
+
+msgid "The package service could not install the update."
+msgstr "Der Paketdienst konnte das Update nicht installieren."
+
+msgid "The package service refused the update: {error}"
+msgstr "Der Paketdienst hat das Update abgelehnt: {error}"
+
+msgid "The package service stopped without finishing."
+msgstr "Der Paketdienst wurde vor dem Abschluss beendet."
+
+msgid "The release did not publish a checksum for {name}."
+msgstr "Die Version enthält keine Prüfsumme für {name}."
+
+msgid "The release did not publish checksums."
+msgstr "Die Version enthält keine Prüfsummen."
+
+msgid "The server sent an empty download."
+msgstr "Der Server hat einen leeren Download gesendet."
+
+msgid "The update package is missing."
+msgstr "Das Update-Paket fehlt."
+
+msgid "These windows close while ApexShot updates and reopen with your edits afterwards:"
+msgstr "Diese Fenster schließen sich während des Updates von ApexShot und öffnen sich danach mit deinen Änderungen wieder:"
+
+msgid "This installation is managed by Nix. Update the ApexShot flake input and rebuild your configuration, or upgrade its Nix profile entry."
+msgstr "Diese Installation wird von Nix verwaltet. Aktualisiere den ApexShot-Flake-Input und baue deine Konfiguration neu, oder aktualisiere den Eintrag in deinem Nix-Profil."
+
+msgid "This release does not include a package for this system."
+msgstr "Diese Version enthält kein Paket für dieses System."
+
+msgid "This system needs the terminal updater."
+msgstr "Dieses System benötigt das Update-Programm im Terminal."
+
+msgid "This version is not in your Flatpak repository yet. Try again later."
+msgstr "Diese Version ist noch nicht in deinem Flatpak-Repository. Versuche es später erneut."
+
+msgid "Tidying the startup entries..."
+msgstr "Autostart-Einträge werden aufgeräumt..."
+
+msgid "Update ApexShot"
+msgstr "ApexShot aktualisieren"
+
+msgid "Updating..."
+msgstr "Wird aktualisiert..."
+
+msgid "Verifying download..."
+msgstr "Download wird überprüft..."
+
+msgid "Video editor"
+msgstr "Videoeditor"
+
+msgid "Waiting for permission..."
+msgstr "Warte auf Berechtigung..."
+
+msgid "Your windows will reopen with your edits."
+msgstr "Deine Fenster öffnen sich mit deinen Änderungen wieder."
+
+msgid "Your work will reopen"
+msgstr "Deine Arbeit wird wieder geöffnet"
+
+msgid "{label} ({count})"
+msgstr "{label} ({count})"
+
+msgid "Uploading video"
+msgstr "Video wird hochgeladen"
+
+msgid "{sent} of {total}"
+msgstr "{sent} von {total}"
+
+msgid "Link copied to clipboard"
+msgstr "Link in die Zwischenablage kopiert"
+
+msgid "The link will be copied when you return to this window"
+msgstr "Der Link wird kopiert, sobald du zu diesem Fenster zurückkehrst"
+
+msgid "Switch back to the editor to copy the link"
+msgstr "Wechsle zurück zum Editor, um den Link zu kopieren"
+
+msgid "Open link"
+msgstr "Link öffnen"
+
+msgid "Exported Motion video"
+msgstr "Exportiertes Motion-Video"
+
+msgid "Motion edits you make and Motion videos you export will show up here."
+msgstr "Motion-Bearbeitungen, die du erstellst, und Motion-Videos, die du exportierst, erscheinen hier."
+
+msgid "60 FPS makes animation smoother and takes longer to export."
+msgstr "60 FPS machen Animationen flüssiger, der Export dauert aber länger."
+
+msgid "Export cannot recover detail missing from the screenshot."
+msgstr "Der Export kann keine Details wiederherstellen, die im Screenshot fehlen."
+
+msgid "Keystroke captions"
+msgstr "Tastenanzeige"
+
+msgid "Show the shortcuts you press on screen in recordings."
+msgstr "Zeige die Tastenkürzel, die du drückst, in Aufnahmen auf dem Bildschirm."
+
+msgid "Camera cutout"
+msgstr "Kamera-Freisteller"
+
+msgid "Cut yourself out of the camera and set yourself on the screen."
+msgstr "Stelle dich aus dem Kamerabild frei und platziere dich auf dem Bildschirm."
+
+msgid "Microphone unavailable"
+msgstr "Mikrofon nicht verfügbar"
+
+msgid "Recording continues without the microphone."
+msgstr "Die Aufnahme wird ohne Mikrofon fortgesetzt."
+
+msgid "System audio unavailable"
+msgstr "Systemaudio nicht verfügbar"
+
+msgid "Recording continues without system audio."
+msgstr "Die Aufnahme wird ohne Systemaudio fortgesetzt."
+
+msgid "Recording all system audio"
+msgstr "Gesamtes Systemaudio wird aufgenommen"
+
+msgid "{app} is not playing audio, so the recording captures every app."
+msgstr "{app} gibt keinen Ton wieder, daher nimmt die Aufnahme alle Apps auf."
+
+msgid "Pause Recording"
+msgstr "Aufnahme pausieren"
+
+msgid "Resume Recording"
+msgstr "Aufnahme fortsetzen"
+
+msgid "Restart Recording"
+msgstr "Aufnahme neu starten"
+
+msgid "Discard Recording"
+msgstr "Aufnahme verwerfen"
+
+msgid "Choose your screen"
+msgstr "Bildschirm auswählen"
+
+msgid "A virtual screen records an empty display. Pick your screen in the sharing dialog."
+msgstr "Ein virtueller Bildschirm nimmt eine leere Anzeige auf. Wähle deinen Bildschirm im Freigabedialog."
+
+msgid "Almost out of free uploads"
+msgstr "Fast keine kostenlosen Uploads mehr"
+
+msgid "Could not open the dashboard"
+msgstr "Das Dashboard konnte nicht geöffnet werden"
+
+msgid "Delete old uploads, or Go Pro for 50 GB."
+msgstr "Lösche alte Uploads oder hol dir Pro für 50 GB."
+
+msgid "See Studio"
+msgstr "Studio ansehen"
+
+msgid "What's new"
+msgstr "Neuigkeiten"
+
+msgid "What's new in ApexShot {version}"
+msgstr "Neu in ApexShot {version}"
+
+msgid "Explore Studio"
+msgstr "Studio entdecken"
+
+msgid "Exported with Studio. 1 free Studio export left."
+msgstr "Mit Studio exportiert. Noch 1 kostenloser Studio-Export."
+
+msgid "Exported with Studio. {count} free Studio exports left."
+msgstr "Mit Studio exportiert. Noch {count} kostenlose Studio-Exporte."
+
+msgid "Go Pro for 50 GB."
+msgstr "Hol dir Pro für 50 GB."
+
+msgid "Go Pro for unlimited uploads."
+msgstr "Hol dir Pro für unbegrenzte Uploads."
+
+msgid "Manage uploads"
+msgstr "Uploads verwalten"
+
+msgid "Not uploaded"
+msgstr "Nicht hochgeladen"
+
+msgid "Studio exports left on the free trial"
+msgstr "Verbleibende Studio-Exporte im kostenlosen Test"
+
+msgid "Studio · 1 free export left"
+msgstr "Studio · noch 1 kostenloser Export"
+
+msgid "Studio · {count} free exports left"
+msgstr "Studio · noch {count} kostenlose Exporte"
+
+msgid "That was your last free Studio export. Get Studio to keep these styles."
+msgstr "Das war dein letzter kostenloser Studio-Export. Hol dir Studio, um diese Stile zu behalten."
+
+msgid "Uploads come back next month."
+msgstr "Uploads sind nächsten Monat wieder verfügbar."
+
+msgid "Uploads come back on {date}."
+msgstr "Uploads sind am {date} wieder verfügbar."
+
+msgid "You've used this month's free uploads"
+msgstr "Du hast die kostenlosen Uploads dieses Monats aufgebraucht"
+
+msgid "You've used your 3 free Studio exports"
+msgstr "Du hast deine 3 kostenlosen Studio-Exporte genutzt"
+
+msgid "Your capture is saved on this computer."
+msgstr "Deine Aufnahme ist auf diesem Computer gespeichert."
+
+msgid "Your free Cloud storage is almost full"
+msgstr "Dein kostenloser Cloud-Speicher ist fast voll"
+
+msgid "Your free Cloud storage is full"
+msgstr "Dein kostenloser Cloud-Speicher ist voll"
+
+msgid "{used} of {max} free Cloud storage used."
+msgstr "{used} von {max} kostenlosem Cloud-Speicher belegt."
+
+msgid "{used} of {max} free uploads used this month."
+msgstr "{used} von {max} kostenlosen Uploads in diesem Monat genutzt."
+
+msgid "{used} of {max} free uploads used."
+msgstr "{used} von {max} kostenlosen Uploads genutzt."
+
+msgid "{used} of {max} used this month."
+msgstr "{used} von {max} in diesem Monat genutzt."
+
+msgid "{used} of {max} used."
+msgstr "{used} von {max} belegt."
+
+msgid "Try Studio free"
+msgstr "Studio kostenlos testen"
+
+msgid "Buying Studio takes one step"
+msgstr "Studio kaufen in einem Schritt"
+
+msgid "Capture, annotation, recording, and the editors' core tools stay free."
+msgstr "Aufnahme, Anmerkungen, Bildschirmaufnahme und die Kernwerkzeuge der Editoren bleiben kostenlos."
+
+msgid "Studio is active on this device"
+msgstr "Studio ist auf diesem Gerät aktiv"
+
+msgid "Studio activation failed"
+msgstr "Studio-Aktivierung fehlgeschlagen"
+
+msgid "Uses Studio · 1 free export left"
+msgstr "Nutzt Studio · noch 1 kostenloser Export"
+
+msgid "Uses Studio · {count} free exports left"
+msgstr "Nutzt Studio · noch {count} kostenlose Exporte"
+
+msgid "Exported with Studio."
+msgstr "Mit Studio exportiert."
+
+msgid "1 free Studio export left."
+msgstr "Noch 1 kostenloser Studio-Export."
+
+msgid "{count} free Studio exports left."
+msgstr "Noch {count} kostenlose Studio-Exporte."
+
+msgid "That was your last free Studio export."
+msgstr "Das war dein letzter kostenloser Studio-Export."
+
+msgid "Get Studio to keep these styles."
+msgstr "Hol dir Studio, um diese Stile zu behalten."
+
+msgid "Get Studio"
+msgstr "Studio holen"
+
+msgid "Your next 3 Studio exports are on us. After each one, ApexShot shows how many are left."
+msgstr "Deine nächsten 3 Studio-Exporte gehen auf uns. Nach jedem zeigt ApexShot, wie viele noch übrig sind."
+
+msgid "Choose Studio in ApexShot, sign in, and pay. ApexShot turns Studio on for you, with no licence file to copy or import."
+msgstr "Wähle Studio in ApexShot, melde dich an und bezahle. ApexShot schaltet Studio für dich frei, ohne Lizenzdatei zum Kopieren oder Importieren."
+
+msgid "Name"
+msgstr "Name"
+
+msgid "New preset"
+msgstr "Neue Voreinstellung"
+
+msgid "New recordings open with this look"
+msgstr "Neue Aufnahmen öffnen mit diesem Aussehen"
+
+msgid "Save current look"
+msgstr "Aktuelles Aussehen speichern"
+
+msgid "Save this project's background, cursor and click sound, then put them on any recording."
+msgstr "Speichere Hintergrund, Cursor und Klickton dieses Projekts und lege sie auf jede Aufnahme."
+
+msgid "Save this project's background, cursor, camera and captions, then put them on any recording."
+msgstr "Speichere Hintergrund, Cursor, Kamera und Untertitel dieses Projekts und lege sie auf jede Aufnahme."
+
+msgid "ApexShot on X11 desktops"
+msgstr "ApexShot auf X11-Desktops"
+
+msgid "Cinnamon, Xfce, MATE, and other X11 desktops now get shortcuts, window recordings, scrolling capture, and Auto Zoom."
+msgstr "Cinnamon, Xfce, MATE und andere X11-Desktops erhalten jetzt Tastenkürzel, Fensteraufnahmen, Scroll-Aufnahmen und automatischen Zoom."
+
+msgid "Record on Fedora"
+msgstr "Aufnehmen unter Fedora"
+
+msgid "Screen recording now works on Fedora. On KDE Plasma, recordings keep an editable cursor, clicks, and Auto Zoom."
+msgstr "Bildschirmaufnahmen funktionieren jetzt unter Fedora. Unter KDE Plasma behalten Aufnahmen einen bearbeitbaren Cursor, Klicks und den automatischen Zoom."
+
+msgid "Presets in the video editor"
+msgstr "Voreinstellungen im Video-Editor"
+
+msgid "Save a recording's background, cursor, and click sound as a preset, apply it in one click, or make it the default for new recordings."
+msgstr "Speichere Hintergrund, Cursor und Klickton einer Aufnahme als Voreinstellung, wende sie mit einem Klick an oder mache sie zum Standard für neue Aufnahmen."
+
+msgid "Hide the cursor with one switch"
+msgstr "Cursor mit einem Schalter ausblenden"
+
+msgid "Turn on Hide cursor in the Cursor panel to take the cursor out of the whole video."
+msgstr "Aktiviere „Cursor ausblenden“ im Bereich „Cursor“, um den Cursor aus dem ganzen Video zu entfernen."
+
+msgid "Recording works again"
+msgstr "Aufnahmen funktionieren wieder"
+
+msgid "Screen and webcam recordings start again. In 0.3.1 the bundled ffmpeg stopped every recording from starting."
+msgstr "Bildschirm- und Webcam-Aufnahmen starten wieder. In 0.3.1 verhinderte das mitgelieferte ffmpeg den Start jeder Aufnahme."
+
+msgid "Choose your mic and speaker"
+msgstr "Mikrofon und Lautsprecher wählen"
+
+msgid "In Video mode, right-click Mic or Speaker to pick a device. The toolbar shows the device you chose and a live level meter."
+msgstr "Klicke im Modus „Video“ mit der rechten Maustaste auf „Mic“ oder „Speaker“, um ein Gerät zu wählen. Die Leiste zeigt das gewählte Gerät und einen Live-Pegel."
+
+msgid "Record one app's sound"
+msgstr "Den Ton einer einzelnen App aufnehmen"
+
+msgid "The Speaker menu records every app, a single app, or no system sound at all."
+msgstr "Das Menü „Speaker“ nimmt alle Apps, eine einzelne App oder gar keinen Systemton auf."
+
+msgid "Faster downloads and updates"
+msgstr "Schnellere Downloads und Updates"
+
+msgid "ApexShot now downloads from its own download servers, so installs and updates finish sooner."
+msgstr "ApexShot lädt jetzt von eigenen Download-Servern, daher sind Installationen und Updates schneller fertig."
+
+msgid "Updates skip the setup wizard"
+msgstr "Updates ohne Einrichtungsassistent"
+
+msgid "Updating goes straight to installing, without asking you to accept the licence again."
+msgstr "Ein Update installiert sofort, ohne dass du die Lizenz erneut akzeptieren musst."
+
+msgid "Quick Access in your recordings"
+msgstr "Schnellzugriff in deinen Aufnahmen"
+
+msgid "A Quick Access card that appears while you record now shows in the video, so you can record yourself capturing and editing."
+msgstr "Eine Schnellzugriff-Karte, die während der Aufnahme erscheint, ist jetzt im Video zu sehen. So kannst du dich beim Aufnehmen und Bearbeiten filmen."
+
+msgid "Stop any recording"
+msgstr "Jede Aufnahme stoppen"
+
+msgid "A recording started without the controls bar now stops from the tray, with apexshot record stop, or with Ctrl+C."
+msgstr "Eine Aufnahme ohne Steuerleiste lässt sich jetzt über das Tray-Symbol, mit apexshot record stop oder mit Strg+C beenden."
+
+msgid "Not now"
+msgstr "Nicht jetzt"
+
+msgid "Your capture is saved. Connect a free ApexShot account and every upload becomes a link in your clipboard."
+msgstr "Deine Aufnahme ist gespeichert. Verbinde ein kostenloses ApexShot-Konto, und jeder Upload wird zu einem Link in deiner Zwischenablage."
+
+msgid "Connected as {email}"
+msgstr "Verbunden als {email}"
+
+msgid "Uploading your capture…"
+msgstr "Deine Aufnahme wird hochgeladen…"
+
+msgid "Your next capture gets a share link."
+msgstr "Deine nächste Aufnahme erhält einen Freigabelink."
+
+msgid "Sign in to get a share link"
+msgstr "Melde dich an, um einen Freigabelink zu erhalten."
+
+msgid "Connect your ApexShot account in Settings → Cloud to get share links."
+msgstr ""
+"Verbinde dein ApexShot-Konto unter Einstellungen → Cloud, um Freigabelinks zu erhalten."
+
+msgid ""
+"Every capture becomes a link in your clipboard. Free: 20 uploads a month."
+msgstr ""
+"Jede Aufnahme wird zu einem Link in deiner Zwischenablage. Kostenlos: 20 Uploads pro Monat."
+
+msgid "Go Pro for unlimited uploads and links that last 90 days."
+msgstr "Hol dir Pro für unbegrenzte Uploads und Links, die 90 Tage halten."
+
+msgid ""
+"Link copied. Free links stay up for 7 days.\n"
+"{url}"
+msgstr ""
+"Link kopiert. Kostenlose Links bleiben 7 Tage verfügbar.\n"
+"{url}"
+
+msgid ""
+"Free links stay up for 7 days.\n"
+"{url}"
+msgstr ""
+"Kostenlose Links bleiben 7 Tage verfügbar.\n"
+"{url}"

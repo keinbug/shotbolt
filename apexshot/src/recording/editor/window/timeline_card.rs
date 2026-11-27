@@ -1,0 +1,64 @@
+use crate::capture::editor::window::icon_names;
+use crate::recording::editor::model::{
+    format_zoom_scale, freeze_hold_active, freeze_hold_lead, playhead_for_replay,
+    snap_range_to_target, snap_to_target, usable_media_timestamp_seconds, VideoEditState, ZoomMode,
+    ADD_ZOOM_DURATION_SECONDS,
+};
+use crate::recording::editor::sound::SoundPlan;
+use crate::recording::editor::sound_peaks::Peaks;
+use crate::recording::editor::window::sound_player::SoundSync;
+use crate::recording::editor::window::tool_sidebar::format_clip_speed;
+use gtk4::gdk;
+use gtk4::glib;
+use gtk4::{
+    prelude::*, Adjustment, Align, Box as GtkBox, Button, DrawingArea, EventControllerMotion,
+    EventControllerScroll, EventControllerScrollFlags, GestureClick, GestureDrag, Image, Label,
+    MediaFile, Orientation, Overlay, Popover, PositionType, Scale, Scrollbar, Widget,
+};
+use std::cell::{Cell, RefCell};
+use std::path::PathBuf;
+use std::rc::Rc;
+use std::sync::{mpsc, Arc, Mutex};
+
+use crate::i18n::t;
+
+mod shell {
+    use super::*;
+    include!("timeline_card_parts/shell.rs");
+}
+mod format {
+    use super::*;
+    include!("timeline_card_parts/format.rs");
+}
+mod lanes {
+    use super::*;
+    include!("timeline_card_parts/lanes.rs");
+}
+mod interaction {
+    use super::*;
+    include!("timeline_card_parts/interaction.rs");
+}
+mod geometry {
+    use super::*;
+    include!("timeline_card_parts/geometry.rs");
+}
+mod painting {
+    use super::*;
+    include!("timeline_card_parts/painting.rs");
+}
+mod clip_menu {
+    use super::*;
+    include!("timeline_card_parts/clip_menu.rs");
+}
+mod clip_ghost {
+    use super::*;
+    include!("timeline_card_parts/clip_ghost.rs");
+}
+pub(super) use clip_ghost::*;
+pub(super) use clip_menu::*;
+pub(super) use format::*;
+pub(super) use geometry::*;
+pub(super) use interaction::*;
+pub(super) use lanes::*;
+pub(super) use painting::*;
+pub(super) use shell::build_timeline_card;

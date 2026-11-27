@@ -1,0 +1,3996 @@
+use gdk4x11::X11Surface;
+use gtk4::gdk;
+use gtk4::{
+    glib, prelude::*, Application, ApplicationWindow, Box as GtkBox, Button, CheckButton,
+    DrawingArea, DropTarget, Entry, Image, Label, Orientation, Overlay, Popover, Stack,
+};
+use std::cell::{Cell, RefCell};
+use std::path::PathBuf;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
+
+use crate::i18n::t;
+use std::time::{SystemTime, UNIX_EPOCH};
+use x11rb::{connection::Connection, protocol::xproto, protocol::xproto::ConnectionExt};
+
+use self::background_panel::BACKGROUND_SIDEBAR_WIDTH;
+use super::color::{draw_color_to_hex, draw_color_to_rgba_u8};
+use super::pen_weight::{HighlighterMode, PenWeight};
+use super::selection::action_bounds_with_padding;
+use super::state::EditorState;
+use super::types::{
+    tool_button_index, AnnotationAction, ArrowStyle, BackgroundAlignment, BackgroundStyle,
+    CropAspectRatio, DrawColor, EditorError, Tool, ViewTransform,
+};
+
+#[derive(Debug, Clone, Copy)]
+pub struct AnnotateRuntimeConfig {
+    pub inverse_arrow_direction: bool,
+    pub smooth_drawing: bool,
+    pub draw_object_shadow: bool,
+    pub auto_expand_canvas: bool,
+    pub show_color_names: bool,
+    pub always_on_top: bool,
+}
+
+impl AnnotateRuntimeConfig {
+    pub fn from_app_config(config: &crate::config::AppConfig) -> Self {
+        Self {
+            inverse_arrow_direction: config.annotate_inverse_arrow,
+            smooth_drawing: config.annotate_smooth_drawing,
+            draw_object_shadow: config.annotate_draw_shadow,
+            auto_expand_canvas: config.annotate_auto_expand,
+            show_color_names: config.annotate_show_color_names,
+            always_on_top: config.annotate_always_on_top,
+        }
+    }
+}
+
+/// Stroke sample the pen/highlighter thickness rows and popovers use.
+pub(super) fn build_arrow_thickness_preview(
+    weight: super::pen_weight::PenWeight,
+    light: bool,
+) -> DrawingArea {
+    let preview = DrawingArea::new();
+    preview.set_content_width(22);
+    preview.set_content_height(16);
+    preview.set_draw_func(move |_, context, width, height| {
+        // Match the pen stroke scale so inspector previews match drawn ink.
+        let stroke_width = weight.pen_stroke_width();
+        if light {
+            context.set_source_rgba(29.0 / 255.0, 33.0 / 255.0, 41.0 / 255.0, 0.92);
+        } else {
+            context.set_source_rgba(241.0 / 255.0, 241.0 / 255.0, 243.0 / 255.0, 0.92);
+        }
+        context.set_line_cap(gtk4::cairo::LineCap::Round);
+        context.set_line_width(stroke_width);
+        let center_y = f64::from(height) / 2.0;
+        context.move_to(3.0, center_y);
+        context.line_to(f64::from(width) - 3.0, center_y);
+        let _ = context.stroke();
+    });
+    preview
+}
+
+fn stroke_size_option_index(stroke_size: f64) -> usize {
+    match stroke_size.round() as i32 {
+        2 => 0,
+        4 => 1,
+        7 => 2,
+        12 => 3,
+        _ => 1,
+    }
+}
+
+fn pen_weight_option_index(stroke_size: f64) -> usize {
+    PenWeight::nearest_for_pen_stroke(stroke_size).index()
+}
+
+fn highlighter_weight_option_index(stroke_size: f64) -> usize {
+    PenWeight::nearest_for_highlighter_stroke(stroke_size).index()
+}
+
+fn selected_action_kind(action: &AnnotationAction) -> &'static str {
+    match action {
+        AnnotationAction::Pen { .. } => "Pen Stroke",
+        AnnotationAction::Highlighter { .. } => "Highlighter",
+        AnnotationAction::Circle { .. } => "Circle",
+        AnnotationAction::Line { .. } => "Line",
+        AnnotationAction::Arrow { .. } => "Arrow",
+        AnnotationAction::Box { .. } => "Box",
+        AnnotationAction::Text { .. } => "Text",
+        AnnotationAction::Number { .. } => "Number Marker",
+        AnnotationAction::Obfuscate { .. } => "Obfuscate Region",
+        AnnotationAction::Focus { .. } => "Focus Region",
+    }
+}
+
+fn selected_action_detail(action: &AnnotationAction) -> String {
+    match action {
+        AnnotationAction::Pen {
+            points,
+            color,
+            stroke_size,
+        } => format!(
+            "{} points · {}px · #{}",
+            points.len(),
+            *stroke_size as i32,
+            draw_color_to_hex(*color)
+        ),
+        AnnotationAction::Highlighter {
+            points,
+            color,
+            stroke_size,
+        } => format!(
+            "{} points · {}px · #{}",
+            points.len(),
+            *stroke_size as i32,
+            draw_color_to_hex(*color)
+        ),
+        AnnotationAction::Circle {
+            color, stroke_size, ..
+        }
+        | AnnotationAction::Box {
+            color, stroke_size, ..
+        }
+        | AnnotationAction::Line {
+            color, stroke_size, ..
+        } => format!("{}px · #{}", *stroke_size as i32, draw_color_to_hex(*color)),
+        AnnotationAction::Arrow {
+            color,
+            stroke_size,
+            style,
+            ..
+        } => format!(
+            "{} · {}px · #{}",
+            t(style.display_name()),
+            *stroke_size as i32,
+            draw_color_to_hex(*color)
+        ),
+        AnnotationAction::Text {
+            text, color, font, ..
+        } => {
+            let empty = t("Empty");
+            format!(
+                "{}pt {} · #{} · {}",
+                font.size as i32,
+                font.family,
+                draw_color_to_hex(*color),
+                if text.is_empty() {
+                    empty.as_str()
+                } else {
+                    text.as_str()
+                }
+            )
+        }
+        AnnotationAction::Number {
+            number,
+            color,
+            style,
+            size,
+            ..
+        } => format!(
+            "{} · {} · #{}",
+            style.format(*number),
+            t(size.label()),
+            draw_color_to_hex(*color)
+        ),
+        AnnotationAction::Obfuscate { method, amount, .. } => {
+            format!(
+                "{} · {}%",
+                t(method.display_name()),
+                (*amount * 100.0).round() as i32
+            )
+        }
+        AnnotationAction::Focus { intensity, .. } => crate::i18n::tfmt(
+            "Intensity {percent}%",
+            &[("percent", &(*intensity * 100.0).round().to_string())],
+        ),
+    }
+}
+
+fn selected_action_geometry(action: &AnnotationAction) -> String {
+    action_bounds_with_padding(action, 0.0)
+        .map(|rect| {
+            format!(
+                "X {} · Y {} · {} x {}",
+                rect.x, rect.y, rect.width, rect.height
+            )
+        })
+        .unwrap_or_else(|| "Geometry unavailable".to_string())
+}
+
+use super::ui_support::{
+    arrow_style_toolbar_icon, install_editor_css, prefers_dark_glass_theme,
+    prefers_reduced_transparency, recommended_window_size_with_extra_width, set_active_tool_button,
+    tool_icon_widget, toolbar_icon_size, EDITOR_MIN_WINDOW_WIDTH,
+};
+
+const TEXT_SIZE_OPTIONS: [i32; 12] = [12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72];
+const TEXT_FONT_FAMILIES: [&str; 5] = ["Sans", "Serif", "Monospace", "Fantasy", "Cursive"];
+const OBFUSCATE_METHOD_OPTIONS: [(super::types::ObfuscateMethod, &str); 3] = [
+    (super::types::ObfuscateMethod::Pixelate, "Pixelate"),
+    (super::types::ObfuscateMethod::Blur, "Blur"),
+    (super::types::ObfuscateMethod::Blackout, "Blackout"),
+];
+
+fn sync_arrow_option_selection(list: &GtkBox, selected_index: usize) {
+    let mut child_opt = list.first_child();
+    let mut index = 0usize;
+    while let Some(child) = child_opt {
+        child_opt = child.next_sibling();
+        let Ok(button) = child.downcast::<Button>() else {
+            continue;
+        };
+
+        if index == selected_index {
+            button.add_css_class("editor-arrow-inspector-option-active");
+        } else {
+            button.remove_css_class("editor-arrow-inspector-option-active");
+        }
+
+        if let Some(content) = button.child() {
+            if let Ok(row) = content.downcast::<GtkBox>() {
+                if let Some(check_icon) = row.last_child() {
+                    if let Ok(widget) = check_icon.downcast::<gtk4::Widget>() {
+                        widget.set_visible(index == selected_index);
+                    }
+                }
+            }
+        }
+
+        index += 1;
+    }
+}
+
+fn sync_text_option_selection(list: &GtkBox, selected_index: Option<usize>) {
+    let mut child_opt = list.first_child();
+    let mut index = 0usize;
+    while let Some(child) = child_opt {
+        child_opt = child.next_sibling();
+        let Ok(button) = child.downcast::<Button>() else {
+            continue;
+        };
+
+        let is_active = selected_index == Some(index);
+        if is_active {
+            button.add_css_class("editor-text-inspector-option-active");
+        } else {
+            button.remove_css_class("editor-text-inspector-option-active");
+        }
+
+        if let Some(content) = button.child() {
+            if let Ok(row) = content.downcast::<GtkBox>() {
+                if let Some(check_icon) = row.last_child() {
+                    if let Ok(widget) = check_icon.downcast::<gtk4::Widget>() {
+                        widget.set_visible(is_active);
+                    }
+                }
+            }
+        }
+
+        index += 1;
+    }
+}
+
+fn sync_obfuscate_option_selection(list: &GtkBox, selected_index: usize) {
+    let mut child_opt = list.first_child();
+    let mut index = 0usize;
+    while let Some(child) = child_opt {
+        child_opt = child.next_sibling();
+        let Ok(button) = child.downcast::<Button>() else {
+            continue;
+        };
+
+        if index == selected_index {
+            button.add_css_class("editor-obfuscate-inspector-option-active");
+        } else {
+            button.remove_css_class("editor-obfuscate-inspector-option-active");
+        }
+
+        if let Some(content) = button.child() {
+            if let Ok(row) = content.downcast::<GtkBox>() {
+                if let Some(check_icon) = row.last_child() {
+                    if let Ok(widget) = check_icon.downcast::<gtk4::Widget>() {
+                        widget.set_visible(index == selected_index);
+                    }
+                }
+            }
+        }
+
+        index += 1;
+    }
+}
+
+mod arrow_bar;
+mod background_assets;
+pub mod background_panel;
+mod canvas;
+mod canvas_layout;
+mod canvas_render;
+mod chrome;
+mod color_control;
+pub mod color_picker;
+pub mod colors_panel;
+#[allow(dead_code)]
+mod cursor;
+mod custom_color;
+mod effects;
+mod empty_state;
+mod events;
+mod floating_bar;
+mod focus_bar;
+mod footer;
+mod highlighter_bar;
+mod inspectors;
+mod look_chip;
+mod motion_host;
+pub(in crate::capture::editor::window) mod motion_mode;
+// Cast light painter is shared with the static preview/export paths.
+pub(crate) mod motion_render;
+mod motion_timeline;
+mod number_bar;
+mod obfuscate_bar;
+mod picker_placement;
+mod static_transform_panel;
+mod stroke_bar;
+mod studio_mark;
+mod text_bar;
+mod toolbar;
+mod toolbar_controls;
+
+use background_assets::BackgroundAssetCaches;
+use inspectors::InspectorParts;
+
+#[allow(dead_code)]
+pub mod icon_names {
+    pub use shipped::*;
+    include!(concat!(env!("OUT_DIR"), "/icon_names.rs"));
+}
+
+pub fn open_image_editor(path: PathBuf) -> Result<(), EditorError> {
+    if !path.exists() {
+        return Err(EditorError::MissingFile(path));
+    }
+
+    crate::usage_telemetry::record_editor_opened();
+
+    let app = Application::builder()
+        .application_id(crate::app_identity::app_id())
+        .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
+        .build();
+
+    app.connect_activate(move |application| {
+        setup_image_loading_shell(application, Some(path.clone()));
+    });
+
+    crate::graceful_close::close_windows_on_sigterm(&app, || true);
+    let _ = app.run_with_args::<String>(&[]);
+    Ok(())
+}
+
+/// Open the image editor without a pre-selected file.
+/// Shows a drop-zone / file-picker window so the user can bring their own image.
+pub fn open_image_editor_empty() -> Result<(), EditorError> {
+    crate::usage_telemetry::record_editor_opened();
+
+    let app = Application::builder()
+        .application_id(crate::app_identity::app_id())
+        .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
+        .build();
+
+    app.connect_activate(move |application| {
+        setup_image_loading_shell(application, None);
+    });
+
+    crate::graceful_close::close_windows_on_sigterm(&app, || true);
+    let _ = app.run_with_args::<String>(&[]);
+    Ok(())
+}
+
+#[allow(unused_imports)]
+pub(super) use cursor::cursor_name_for_view_point;
+
+fn env_var_contains_case_insensitive(key: &str, needle: &str) -> bool {
+    std::env::var(key)
+        .map(|value| value.to_lowercase().contains(&needle.to_lowercase()))
+        .unwrap_or(false)
+}
+
+fn is_gnome_wayland_session() -> bool {
+    std::env::var_os("WAYLAND_DISPLAY").is_some()
+        && (env_var_contains_case_insensitive("XDG_CURRENT_DESKTOP", "gnome")
+            || env_var_contains_case_insensitive("DESKTOP_SESSION", "gnome"))
+}
+
+fn next_tracked_window_id(role: &str) -> String {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    format!("{role}-{stamp}")
+}
+
+fn intern_atom<C: Connection>(conn: &C, atom_name: &[u8]) -> Result<u32, String> {
+    conn.intern_atom(false, atom_name)
+        .map_err(|e| e.to_string())?
+        .reply()
+        .map_err(|e| e.to_string())
+        .map(|reply| reply.atom)
+}
+
+fn send_net_wm_state_client_message<C: Connection>(
+    conn: &C,
+    root: xproto::Window,
+    window: xproto::Window,
+    net_wm_state_atom: u32,
+    action: u32,
+    first_property: u32,
+    second_property: u32,
+) -> Result<(), String> {
+    let client_message = xproto::ClientMessageEvent::new(
+        32,
+        window,
+        net_wm_state_atom,
+        [action, first_property, second_property, 1, 0],
+    );
+
+    conn.send_event(
+        false,
+        root,
+        xproto::EventMask::SUBSTRUCTURE_REDIRECT | xproto::EventMask::SUBSTRUCTURE_NOTIFY,
+        client_message,
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+fn request_x11_state(
+    window: &ApplicationWindow,
+    state_atom_name: &[u8],
+    enable: bool,
+) -> Result<(), String> {
+    let surface = window
+        .surface()
+        .ok_or_else(|| "missing GTK surface".to_string())?;
+    let x11_surface = surface
+        .downcast::<X11Surface>()
+        .map_err(|_| "surface is not X11".to_string())?;
+
+    let xid = u32::try_from(x11_surface.xid())
+        .map_err(|_| "X11 window id is out of range".to_string())?;
+    let (conn, screen_num) = x11rb::connect(None).map_err(|e| e.to_string())?;
+    let root = conn
+        .setup()
+        .roots
+        .get(screen_num)
+        .map(|screen| screen.root)
+        .ok_or_else(|| "missing X11 root window".to_string())?;
+
+    let net_wm_state = intern_atom(&conn, b"_NET_WM_STATE")?;
+    let state_atom = intern_atom(&conn, state_atom_name)?;
+    let action = if enable { 1 } else { 0 };
+    send_net_wm_state_client_message(&conn, root, xid, net_wm_state, action, state_atom, 0)?;
+    conn.flush().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn set_window_always_on_top(
+    window: &ApplicationWindow,
+    tracked_id: &str,
+    enabled: bool,
+    title: &str,
+    namespace: &str,
+) {
+    if is_gnome_wayland_session() {
+        if enabled {
+            crate::gnome_integration::emit_tracked_window_opened(
+                tracked_id,
+                std::process::id(),
+                title,
+                "annotate-editor",
+                namespace,
+            );
+        } else {
+            crate::gnome_integration::emit_tracked_window_closed(tracked_id);
+        }
+    }
+
+    let _ = request_x11_state(window, b"_NET_WM_STATE_ABOVE", enabled);
+    let _ = request_x11_state(window, b"_NET_WM_STATE_STICKY", enabled);
+}
+
+pub fn setup_editor_window(app: &Application, path: PathBuf) {
+    setup_editor_window_full(app, path, false, None, None);
+}
+
+/// Show a minimal, interactive load shell before constructing the full static
+/// and Motion editors.  The old empty-editor path built every inspector twice:
+/// once for the empty canvas and again after decoding the selected image.  A
+/// lean shell lets GTK paint immediately while the worker reads the image,
+/// then the normal editor is built exactly once with the decoded pixels.
+fn setup_image_loading_shell(app: &Application, initial_image_path: Option<PathBuf>) {
+    crate::capture::editor::ui_support::apply_theme_to_gtk();
+    install_editor_css();
+    crate::recording::editor::ui_support::install_recording_editor_css();
+    // Match the normal editor's established default size. The loading shell
+    // is reused for the final editor, so it must never impose its own width.
+    let (default_width, default_height) = recommended_window_size_with_extra_width(0, 0, 280);
+
+    // Use the editor's own chrome from the first frame; a compact close
+    // control below keeps the loading shell dismissible without constructing
+    // the full toolbar.
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title(t("ApexShot Editor"))
+        .icon_name(crate::app_identity::icon_name())
+        .default_width(default_width)
+        .default_height(default_height)
+        .decorated(false)
+        .build();
+    window.add_css_class("editor-window");
+    window.set_size_request(EDITOR_MIN_WINDOW_WIDTH, -1);
+
+    let root_overlay = Overlay::new();
+    root_overlay.add_css_class("editor-root");
+    if prefers_dark_glass_theme() {
+        root_overlay.add_css_class("editor-theme-dark");
+    } else {
+        root_overlay.add_css_class("editor-theme-light");
+    }
+
+    let canvas_with_toolbar = Overlay::new();
+    canvas_with_toolbar.set_hexpand(true);
+    canvas_with_toolbar.set_vexpand(true);
+    let canvas = GtkBox::new(Orientation::Vertical, 0);
+    canvas.set_hexpand(true);
+    canvas.set_vexpand(true);
+    canvas.add_css_class("editor-canvas");
+    canvas_with_toolbar.set_child(Some(&canvas));
+    root_overlay.set_child(Some(&canvas_with_toolbar));
+
+    let close = super::ui_support::traffic_light_button("traffic-light-red", &t("Close"));
+    close.remove_css_class("recent-captures-wm-btn");
+    close.remove_css_class("recent-captures-wm-close");
+    close.add_css_class("recording-editor-traffic-btn");
+    close.set_halign(gtk4::Align::End);
+    close.set_valign(gtk4::Align::Start);
+    close.set_margin_top(12);
+    close.set_margin_end(12);
+    close.connect_clicked({
+        let window = window.clone();
+        move |_| window.close()
+    });
+    root_overlay.add_overlay(&close);
+
+    empty_state::install_empty_drop_zone(
+        app,
+        &window,
+        &canvas_with_toolbar,
+        &root_overlay,
+        initial_image_path,
+    );
+    window.set_child(Some(&root_overlay));
+    window.present();
+}
+
+fn load_editor_image(path: &std::path::Path) -> Result<image::RgbaImage, String> {
+    if let Ok(Some(original)) = crate::annotations::load_original_image(path) {
+        return Ok(original);
+    }
+
+    image::open(path)
+        .map(|image| image.to_rgba8())
+        .map_err(|error| error.to_string())
+}
+
+/// `empty_drop_zone = true` opens the exact same editor window but with a
+/// transparent placeholder canvas and a "Drop an image here" overlay; picking
+/// or dropping a file loads the editor with that file in the same window.
+/// `reuse_window` rebuilds the editor content inside an existing window
+/// instead of creating a new one (used when loading a file into the empty
+/// editor, mirroring how the video editor loads videos).
+fn setup_editor_window_full(
+    app: &Application,
+    path: PathBuf,
+    empty_drop_zone: bool,
+    reuse_window: Option<ApplicationWindow>,
+    loaded_image: Option<image::RgbaImage>,
+) {
+    use std::sync::Once;
+    static INIT_ICONS: Once = Once::new();
+    INIT_ICONS.call_once(|| {
+        relm4_icons::initialize_icons(icon_names::GRESOURCE_BYTES, icon_names::RESOURCE_PREFIX);
+    });
+
+    install_editor_css();
+    crate::recording::editor::ui_support::install_recording_editor_css();
+    let annotate_config =
+        AnnotateRuntimeConfig::from_app_config(&crate::config::load_config().sanitized());
+
+    let drawing_area_placeholder = Rc::new(RefCell::new(
+        None::<glib::object::WeakRef<gtk4::DrawingArea>>,
+    ));
+
+    // Check if we have a saved original (for non-destructive re-editing)
+    let image = if let Some(image) = loaded_image {
+        image
+    } else if empty_drop_zone {
+        // Transparent placeholder canvas until the user drops/opens a file.
+        image::RgbaImage::new(1280, 800)
+    } else {
+        match load_editor_image(&path) {
+            Ok(image) => image,
+            Err(e) => {
+                eprintln!("Failed to load image for editing: {e}");
+                app.quit();
+                return;
+            }
+        }
+    };
+
+    let (img_width, img_height) = image.dimensions();
+    // One persisted open per window that actually has an image. The
+    // empty-drop-zone shell does not count until a file loads into it.
+    let editor_open_count = if empty_drop_zone {
+        0
+    } else {
+        crate::studio_nudges::bump_editor_open()
+    };
+    let state = Arc::new(Mutex::new(EditorState::new(image)));
+    {
+        let mut st = state.lock().unwrap();
+        st.inverse_arrow_direction = annotate_config.inverse_arrow_direction;
+        st.smooth_drawing_enabled = annotate_config.smooth_drawing;
+        st.draw_object_shadow = annotate_config.draw_object_shadow;
+        st.auto_expand_canvas = annotate_config.auto_expand_canvas;
+
+        // Apply persisted editor preferences (tool, color, stroke, text, etc.)
+        // so the editor reopens with the user's last-used settings.
+        // Done before annotation loading so per-image background settings from
+        // annotation files can override the preference defaults.
+        super::preferences::load_editor_prefs().apply_to_state(&mut st);
+
+        // Load existing annotations if available (skipped in empty mode:
+        // the placeholder has no real path, so no annotation/persistence
+        // state should be tied to it)
+        match if empty_drop_zone {
+            Ok(None)
+        } else {
+            crate::annotations::load_annotations(&path)
+        } {
+            Ok(Some(annotation_file)) => {
+                // Per-image composition: padding, both shadows and the rest are
+                // part of this image's saved record, not the global prefs.
+                st.apply_persisted_background(&annotation_file.background);
+                st.static_image_transform = annotation_file.static_image_transform.sanitized();
+
+                // Load annotations into state
+                for ann in &annotation_file.annotations {
+                    let action = crate::annotations::serializable_to_action(ann);
+                    st.actions.push(action);
+                }
+                // Update next_number based on existing number annotations
+                let max_number = st
+                    .actions
+                    .iter()
+                    .filter_map(|a| match a {
+                        AnnotationAction::Number { number, .. } => Some(*number),
+                        _ => None,
+                    })
+                    .max()
+                    .unwrap_or(0);
+                st.next_number = max_number + 1;
+
+                // Rebuild effect layer to render loaded annotations
+                st.rebuild_effect_layer();
+            }
+            Ok(None) => {
+                // No existing annotations, start fresh
+            }
+            Err(crate::annotations::AnnotationError::HashMismatch) => {
+                eprintln!(
+                    "[editor] Warning: Image was modified externally, annotations may not align"
+                );
+            }
+            Err(e) => {
+                eprintln!("[editor] Warning: Failed to load annotations: {e}");
+            }
+        }
+
+        // No text detection on the empty transparent placeholder.
+        if !empty_drop_zone {
+            let detector = st.text_detector.clone();
+            let ready_flag = st.text_detection_ready.clone();
+            st.text_detection_handle = Some(super::text_detect::spawn_text_detection(
+                Arc::clone(&st.base_image),
+                detector,
+                ready_flag,
+            ));
+        }
+    }
+    let session_baseline = {
+        let st = state.lock().unwrap();
+        image_session_snapshot(&st)
+    };
+    let transform = Arc::new(Mutex::new(ViewTransform::for_image(
+        img_width as f64,
+        img_height as f64,
+    )));
+    let zoom_level = Rc::new(Cell::new(1.0_f64));
+
+    let (default_width, default_height) =
+        recommended_window_size_with_extra_width(img_width as i32, img_height as i32, 280);
+
+    // Session guard: window-level signal handlers from a previous session on
+    // a reused window (e.g. the empty editor's close-request -> app.quit())
+    // must become no-ops once this new session takes over.
+    thread_local! {
+        static ACTIVE_EDITOR_SESSION: RefCell<Option<Rc<Cell<bool>>>> =
+            const { RefCell::new(None) };
+    }
+    let session_alive = Rc::new(Cell::new(true));
+    ACTIVE_EDITOR_SESSION.with(|slot| {
+        if let Some(previous) = slot.borrow_mut().replace(session_alive.clone()) {
+            previous.set(false);
+        }
+    });
+
+    let window = if let Some(existing) = reuse_window {
+        // Loading a file into the already-open (empty) editor window:
+        // reuse it so the window never closes/flashes. Remove stale
+        // window-level controllers from the empty session so they can't
+        // consume key events or drops meant for the new editor session.
+        let controllers = existing.observe_controllers();
+        let mut stale = Vec::new();
+        for i in 0..controllers.n_items() {
+            if let Some(obj) = controllers.item(i) {
+                if let Ok(controller) = obj.downcast::<gtk4::EventController>() {
+                    if controller.is::<gtk4::EventControllerKey>() || controller.is::<DropTarget>()
+                    {
+                        stale.push(controller);
+                    }
+                }
+            }
+        }
+        for controller in stale {
+            existing.remove_controller(&controller);
+        }
+        existing.set_title(Some(&t("ApexShot Editor")));
+        existing
+    } else {
+        ApplicationWindow::builder()
+            .application(app)
+            .title(t("ApexShot Editor"))
+            .icon_name(crate::app_identity::icon_name())
+            .default_width(default_width)
+            .default_height(default_height)
+            .decorated(false)
+            .build()
+    };
+    window.add_css_class("editor-window");
+    window.set_size_request(EDITOR_MIN_WINDOW_WIDTH, -1);
+
+    let root = GtkBox::new(Orientation::Vertical, 0);
+    root.set_overflow(gtk4::Overflow::Hidden);
+
+    let prefers_dark = prefers_dark_glass_theme();
+    let reduced_transparency = prefers_reduced_transparency();
+
+    let toolbar::ToolbarBaseParts {
+        root: toolbar,
+        traffic_close,
+        traffic_minimize,
+        traffic_zoom,
+        select_btn,
+        crop_btn,
+        draw_btn,
+        arrow_btn,
+        line_btn,
+        box_btn,
+        circle_btn,
+        text_btn,
+        number_btn,
+        highlighter_btn,
+        obfuscate_btn,
+        focus_btn,
+        sep_1,
+        sep_2,
+    } = toolbar::build_toolbar_base(toolbar::ToolbarBaseIconNames {
+        draw: icon_names::custom::PENCIL_SYMBOLIC,
+        arrow: icon_names::custom::ARROW2_TOP_RIGHT_SYMBOLIC,
+        line: icon_names::custom::FUNCTION_LINEAR_SYMBOLIC,
+        box_: icon_names::custom::SQUARE_OUTLINE_THIN_SYMBOLIC,
+        circle: icon_names::custom::CIRCLE_OUTLINE_THIN_SYMBOLIC,
+        text: icon_names::custom::FONT_X_GENERIC_SYMBOLIC,
+        number: icon_names::NUMBER_CIRCLE_1_REGULAR,
+        highlighter: icon_names::custom::MARKER_SYMBOLIC,
+        obfuscate: icon_names::custom::BLUR_ALT_SYMBOLIC,
+        focus: icon_names::custom::BACKGROUND_APP_RECTANGULAR_SYMBOLIC,
+        obfuscate_pixelate: icon_names::VIEW_GRID,
+        obfuscate_blur_secure: icon_names::BLUR,
+        obfuscate_blur_smooth: icon_names::BLUR,
+        obfuscate_blackout: icon_names::MEDIA_PLAYBACK_STOP,
+    });
+
+    let canvas_queue_draw_signal: Rc<dyn Fn()> = Rc::new({
+        let drawing_area_placeholder = drawing_area_placeholder.clone();
+        move || {
+            if let Some(weak) = drawing_area_placeholder.borrow().as_ref() {
+                if let Some(area) = weak.upgrade() {
+                    area.queue_draw();
+                }
+            }
+        }
+    });
+
+    // Deferred background-fill writer: the toolbar color paths are built
+    // before the Motion session exists, so they resolve the setter (single
+    // source of truth) at click time.
+    let background_fill_slot: Rc<RefCell<Option<Rc<dyn Fn(DrawColor)>>>> =
+        Rc::new(RefCell::new(None));
+    let color_picker_parts = color_picker::build_color_picker(
+        state.clone(),
+        canvas_queue_draw_signal,
+        annotate_config.show_color_names,
+        background_fill_slot.clone(),
+    );
+    let color_popover = color_picker_parts.popover;
+    let color_buttons = color_picker_parts.color_buttons;
+    let color_picker_dot = color_picker_parts.color_picker_dot;
+    let color_class_names = color_picker_parts.color_class_names;
+    let eyedropper_btn = color_picker_parts.eyedropper_btn;
+    let sync_picker_for_active_tool = color_picker_parts.sync_for_active_tool;
+    let sync_picker_from_color = color_picker_parts.sync_picker_from_color;
+    let apply_picker_color_to_editor = color_picker_parts.apply_picker_color;
+    let apply_picker_color_for_active_tool = color_picker_parts.apply_picker_color_for_active_tool;
+    let set_picker_target = color_picker_parts.set_target;
+    let set_picker_target_for_active_tool: Rc<dyn Fn()> = Rc::new({
+        let state = state.clone();
+        let set_picker_target = set_picker_target.clone();
+        move || {
+            let target = if state.lock().unwrap().selected_tool == Tool::Background {
+                color_picker::PickerTarget::Background
+            } else {
+                color_picker::PickerTarget::Drawing
+            };
+            set_picker_target(target);
+        }
+    });
+    let set_picker_panel_visibility = color_picker_parts.set_picker_panel_visibility;
+    let custom_slot_colors = color_picker_parts.custom_slot_colors;
+    let refresh_custom_color_slots = color_picker_parts.refresh_custom_color_slots;
+    let register_color_panel_sync = color_picker_parts.register_external_sync;
+    let sidebar_eyedropper_activation = Rc::new(RefCell::new(None::<Rc<dyn Fn()>>));
+
+    let toolbar::ToolbarModeParts {
+        root: center_group,
+        toolbar_mode_stack,
+        color_status,
+        color_status_swatch,
+        color_status_label,
+        size_group,
+        size_slider,
+        text_size_group,
+        text_size_label,
+        text_size_list: toolbar_text_size_list,
+        font_family_group,
+        font_family_label,
+        font_family_list: toolbar_font_family_list,
+        obfuscate_method_group,
+        obfuscate_method_button,
+        obfuscate_method_popover: _,
+        obfuscate_method_list: _toolbar_obfuscate_method_list,
+        pen_weight_button,
+        pen_weight_popover: _,
+        pen_weight_list: _toolbar_pen_weight_list,
+        pen_weight_group,
+        number_options_popover: _,
+        number_options_list: _toolbar_number_options_list,
+        number_start_entry: _toolbar_number_start_entry,
+        number_inc_btn: _toolbar_number_inc_btn,
+        number_dec_btn: _toolbar_number_dec_btn,
+        number_size_button,
+        number_size_popover: _,
+        number_size_list: _toolbar_number_size_list,
+        number_options_group,
+        arrow_style_group,
+        arrow_style_button,
+        arrow_style_popover: _,
+        arrow_style_list: _toolbar_arrow_style_list,
+        stroke_size_group,
+        stroke_size_button,
+        stroke_size_popover: _,
+        stroke_size_list: _toolbar_stroke_size_list,
+    } = toolbar::build_toolbar_mode_controls(
+        &crop_btn,
+        &select_btn,
+        &draw_btn,
+        &box_btn,
+        &circle_btn,
+        &arrow_btn,
+        &line_btn,
+        &text_btn,
+        icon_names::TEXT_ITALIC_REGULAR,
+        &obfuscate_btn,
+        &focus_btn,
+        &number_btn,
+        &highlighter_btn,
+        &sep_1,
+        &sep_2,
+    );
+    toolbar.append(&center_group);
+
+    let toolbar::ToolbarRightParts {
+        root: sidebar_utility_controls,
+        history_group,
+        undo_btn,
+        redo_btn,
+        delete_selected_btn,
+    } = toolbar::build_toolbar_right_controls(
+        &color_status,
+        icon_names::custom::EDIT_UNDO_SYMBOLIC,
+        icon_names::custom::EDIT_UNDO_RTL_SYMBOLIC,
+        icon_names::custom::USER_TRASH_SYMBOLIC,
+        &traffic_minimize,
+        &traffic_zoom,
+        &traffic_close,
+    );
+
+    let arrow_style_list = GtkBox::new(Orientation::Vertical, 0);
+    for style in ArrowStyle::ALL {
+        let btn_box = GtkBox::new(Orientation::Horizontal, 8);
+        btn_box.set_margin_start(8);
+        btn_box.set_margin_end(8);
+        btn_box.set_margin_top(4);
+        btn_box.set_margin_bottom(4);
+
+        let style_icon = arrow_style_toolbar_icon(style);
+        let icon = tool_icon_widget(style_icon.clone(), toolbar_icon_size(&style_icon));
+        let label_widget = Label::new(Some(&t(style.display_name())));
+        label_widget.set_hexpand(true);
+        label_widget.set_xalign(0.0);
+        let check_icon = Image::from_icon_name(icon_names::custom::CHECK_SYMBOLIC);
+        check_icon.set_pixel_size(12);
+        check_icon.set_visible(style == ArrowStyle::Standard);
+        check_icon.add_css_class("editor-arrow-inspector-check");
+
+        btn_box.append(&icon);
+        btn_box.append(&label_widget);
+        btn_box.append(&check_icon);
+
+        let btn = Button::builder()
+            .has_frame(false)
+            .css_classes([
+                "editor-popover-list-item",
+                "flat",
+                "editor-arrow-inspector-option",
+            ])
+            .child(&btn_box)
+            .build();
+        if style == ArrowStyle::Standard {
+            btn.add_css_class("editor-arrow-inspector-option-active");
+        }
+
+        arrow_style_list.append(&btn);
+    }
+
+    let arrow_thickness_list = GtkBox::new(Orientation::Vertical, 0);
+    for (label, _size, weight) in [
+        ("Thin", 2.0_f64, PenWeight::Small),
+        ("Medium", 4.0_f64, PenWeight::Medium),
+        ("Thick", 7.0_f64, PenWeight::Large),
+        ("Very Thick", 12.0_f64, PenWeight::ExtraLarge),
+    ] {
+        let btn_box = GtkBox::new(Orientation::Horizontal, 8);
+        btn_box.set_margin_start(8);
+        btn_box.set_margin_end(8);
+        btn_box.set_margin_top(4);
+        btn_box.set_margin_bottom(4);
+
+        let icon = build_arrow_thickness_preview(weight, !prefers_dark);
+        let label_widget = Label::new(Some(&t(label)));
+        label_widget.set_hexpand(true);
+        label_widget.set_xalign(0.0);
+        let check_icon = Image::from_icon_name(icon_names::custom::CHECK_SYMBOLIC);
+        check_icon.set_pixel_size(12);
+        check_icon.set_visible(weight == PenWeight::Medium);
+        check_icon.add_css_class("editor-arrow-inspector-check");
+
+        btn_box.append(&icon);
+        btn_box.append(&label_widget);
+        btn_box.append(&check_icon);
+
+        let btn = Button::builder()
+            .has_frame(false)
+            .css_classes([
+                "editor-popover-list-item",
+                "flat",
+                "editor-arrow-inspector-option",
+            ])
+            .child(&btn_box)
+            .build();
+        if weight == PenWeight::Medium {
+            btn.add_css_class("editor-arrow-inspector-option-active");
+        }
+
+        arrow_thickness_list.append(&btn);
+    }
+
+    let arrow_behavior_group = GtkBox::new(Orientation::Vertical, 0);
+    arrow_behavior_group.add_css_class("editor-inspector-toggle-row");
+    let inverse_direction_toggle = CheckButton::with_label(&t("Reverse direction"));
+    arrow_behavior_group.append(&inverse_direction_toggle);
+
+    let pen_inspector_list = GtkBox::new(Orientation::Vertical, 0);
+    let line_inspector_list = GtkBox::new(Orientation::Vertical, 0);
+    let highlighter_inspector_list = GtkBox::new(Orientation::Vertical, 0);
+
+    let detect_text_row = GtkBox::new(Orientation::Horizontal, 8);
+    detect_text_row.set_margin_start(8);
+    detect_text_row.set_margin_end(8);
+    detect_text_row.set_margin_top(4);
+    detect_text_row.set_margin_bottom(4);
+    let detect_text_label = Label::new(Some(&t("Detect text")));
+    detect_text_label.set_hexpand(true);
+    detect_text_label.set_xalign(0.0);
+    let detect_text_check = Image::from_icon_name(icon_names::custom::CHECK_SYMBOLIC);
+    detect_text_check.set_pixel_size(12);
+    detect_text_check.add_css_class("editor-arrow-inspector-check");
+    detect_text_row.append(&detect_text_label);
+    detect_text_row.append(&detect_text_check);
+    let detect_text_button = Button::builder()
+        .has_frame(false)
+        .css_classes([
+            "editor-popover-list-item",
+            "flat",
+            "editor-arrow-inspector-option",
+            "editor-arrow-inspector-option-active",
+        ])
+        .child(&detect_text_row)
+        .build();
+    highlighter_inspector_list.append(&detect_text_button);
+
+    for weight in PenWeight::ALL {
+        let make_button = || {
+            let btn_box = GtkBox::new(Orientation::Horizontal, 8);
+            btn_box.set_margin_start(8);
+            btn_box.set_margin_end(8);
+            btn_box.set_margin_top(4);
+            btn_box.set_margin_bottom(4);
+
+            let icon = build_arrow_thickness_preview(weight, !prefers_dark);
+            let label_widget = Label::new(Some(&t(weight.label())));
+            label_widget.set_hexpand(true);
+            label_widget.set_xalign(0.0);
+            let check_icon = Image::from_icon_name(icon_names::custom::CHECK_SYMBOLIC);
+            check_icon.set_pixel_size(12);
+            check_icon.set_visible(weight == PenWeight::Medium);
+            check_icon.add_css_class("editor-arrow-inspector-check");
+
+            btn_box.append(&icon);
+            btn_box.append(&label_widget);
+            btn_box.append(&check_icon);
+
+            let btn = Button::builder()
+                .has_frame(false)
+                .css_classes([
+                    "editor-popover-list-item",
+                    "flat",
+                    "editor-arrow-inspector-option",
+                ])
+                .child(&btn_box)
+                .build();
+            if weight == PenWeight::Medium {
+                btn.add_css_class("editor-arrow-inspector-option-active");
+            }
+            btn
+        };
+
+        pen_inspector_list.append(&make_button());
+        highlighter_inspector_list.append(&make_button());
+    }
+    for (label, _size, weight) in [
+        ("Thin", 2.0_f64, PenWeight::Small),
+        ("Medium", 4.0_f64, PenWeight::Medium),
+        ("Thick", 7.0_f64, PenWeight::Large),
+        ("Very Thick", 12.0_f64, PenWeight::ExtraLarge),
+    ] {
+        let btn_box = GtkBox::new(Orientation::Horizontal, 8);
+        btn_box.set_margin_start(8);
+        btn_box.set_margin_end(8);
+        btn_box.set_margin_top(4);
+        btn_box.set_margin_bottom(4);
+
+        let icon = build_arrow_thickness_preview(weight, !prefers_dark);
+        let label_widget = Label::new(Some(&t(label)));
+        label_widget.set_hexpand(true);
+        label_widget.set_xalign(0.0);
+        let check_icon = Image::from_icon_name(icon_names::custom::CHECK_SYMBOLIC);
+        check_icon.set_pixel_size(12);
+        check_icon.set_visible(weight == PenWeight::Medium);
+        check_icon.add_css_class("editor-arrow-inspector-check");
+
+        btn_box.append(&icon);
+        btn_box.append(&label_widget);
+        btn_box.append(&check_icon);
+
+        let btn = Button::builder()
+            .has_frame(false)
+            .css_classes([
+                "editor-popover-list-item",
+                "flat",
+                "editor-arrow-inspector-option",
+            ])
+            .child(&btn_box)
+            .build();
+        if weight == PenWeight::Medium {
+            btn.add_css_class("editor-arrow-inspector-option-active");
+        }
+
+        line_inspector_list.append(&btn);
+    }
+
+    let text_size_list = GtkBox::new(Orientation::Vertical, 0);
+    let font_family_list = GtkBox::new(Orientation::Vertical, 0);
+    let obfuscate_method_list = GtkBox::new(Orientation::Vertical, 0);
+
+    let number_options_list = GtkBox::new(Orientation::Vertical, 0);
+    number_options_list.set_margin_start(4);
+    number_options_list.set_margin_end(4);
+    number_options_list.set_margin_top(4);
+    number_options_list.set_margin_bottom(4);
+    for style in super::numbering_style::NumberingStyle::ALL {
+        let btn_box = GtkBox::new(Orientation::Horizontal, 8);
+        btn_box.set_margin_start(8);
+        btn_box.set_margin_end(8);
+        btn_box.set_margin_top(4);
+        btn_box.set_margin_bottom(4);
+
+        let label = Label::new(Some(&t(style.label())));
+        label.set_hexpand(true);
+        label.set_xalign(0.0);
+
+        let check_icon = Image::from_icon_name(icon_names::custom::CHECK_SYMBOLIC);
+        check_icon.set_pixel_size(12);
+        check_icon.set_visible(style == super::numbering_style::NumberingStyle::default());
+        check_icon.add_css_class("editor-number-style-check");
+
+        btn_box.append(&label);
+        btn_box.append(&check_icon);
+
+        let btn = Button::builder()
+            .has_frame(false)
+            .css_classes([
+                "editor-popover-list-item",
+                "flat",
+                "editor-number-style-option",
+            ])
+            .child(&btn_box)
+            .build();
+        if style == super::numbering_style::NumberingStyle::default() {
+            btn.add_css_class("editor-number-style-option-active");
+        }
+        number_options_list.append(&btn);
+    }
+
+    let number_start_entry = Entry::new();
+    number_start_entry.set_width_chars(5);
+    number_start_entry.set_max_width_chars(5);
+    number_start_entry.set_text("1");
+    number_start_entry.set_editable(false);
+    number_start_entry.add_css_class("editor-number-start-entry");
+    let number_inc_btn = Button::with_label("+");
+    number_inc_btn.add_css_class("editor-number-start-stepper");
+    let number_dec_btn = Button::with_label("-");
+    number_dec_btn.add_css_class("editor-number-start-stepper");
+
+    let number_start_row = GtkBox::new(Orientation::Horizontal, 8);
+    number_start_row.add_css_class("editor-number-start-row");
+    let number_start_label = Label::new(Some(&t("Start with:")));
+    number_start_label.add_css_class("editor-number-start-label");
+    number_start_label.set_hexpand(true);
+    number_start_label.set_xalign(0.0);
+    number_start_row.append(&number_start_label);
+    number_start_row.append(&number_dec_btn);
+    number_start_row.append(&number_start_entry);
+    number_start_row.append(&number_inc_btn);
+
+    let number_size_list = GtkBox::new(Orientation::Vertical, 0);
+    for size in super::numbering_style::NumberSize::ALL {
+        let btn_box = GtkBox::new(Orientation::Horizontal, 8);
+        btn_box.set_margin_start(8);
+        btn_box.set_margin_end(8);
+        btn_box.set_margin_top(4);
+        btn_box.set_margin_bottom(4);
+
+        let label = Label::new(Some(&t(size.label())));
+        label.set_hexpand(true);
+        label.set_xalign(0.0);
+
+        let check_icon = Image::from_icon_name(icon_names::custom::CHECK_SYMBOLIC);
+        check_icon.set_pixel_size(12);
+        check_icon.set_visible(size == super::numbering_style::NumberSize::default());
+        check_icon.add_css_class("editor-number-size-check");
+
+        btn_box.append(&label);
+        btn_box.append(&check_icon);
+
+        let btn = Button::builder()
+            .has_frame(false)
+            .css_classes([
+                "editor-popover-list-item",
+                "flat",
+                "editor-number-size-option",
+            ])
+            .child(&btn_box)
+            .build();
+        if size == super::numbering_style::NumberSize::default() {
+            btn.add_css_class("editor-number-size-option-active");
+        }
+        number_size_list.append(&btn);
+    }
+
+    let footer_parts = footer::build_footer(
+        icon_names::custom::COPY_SYMBOLIC,
+        icon_names::custom::CLOUD_OUTLINE_THIN_SYMBOLIC,
+    );
+    let zoom_button = footer_parts.zoom_button;
+    let zoom_label = footer_parts.zoom_label;
+    let zoom_header_label = footer_parts.zoom_header_label;
+    let zoom_popup = footer_parts.zoom_popup;
+    if prefers_dark {
+        zoom_popup.add_css_class("editor-theme-dark");
+    } else {
+        zoom_popup.add_css_class("editor-theme-light");
+    }
+    let zoom_minus_btn = footer_parts.zoom_minus_btn;
+    let zoom_plus_btn = footer_parts.zoom_plus_btn;
+    let zoom_in_btn = footer_parts.zoom_in_btn;
+    let zoom_out_btn = footer_parts.zoom_out_btn;
+    let fit_to_screen_btn = footer_parts.fit_to_screen_btn;
+    let zoom_to_selection_btn = footer_parts.zoom_to_selection_btn;
+    let copy_btn = footer_parts.copy_btn;
+    let upload_btn = footer_parts.upload_btn;
+    let save_btn = footer_parts.save_btn;
+    let save_spinner = footer_parts.save_spinner;
+    copy_btn.add_css_class("editor-sidebar-action-button");
+    upload_btn.add_css_class("editor-sidebar-action-button");
+    if empty_drop_zone {
+        copy_btn.set_sensitive(false);
+        upload_btn.set_sensitive(false);
+        save_btn.set_sensitive(false);
+    }
+
+    // The Background tool runs on the shared Motion runtime: seed it from the
+    // restored per-image state before the appearance panels are built and the
+    // static sync starts, so a saved background is never discarded (single
+    // shared background, no double layer, no added fill).
+    let restored_background_padding = state.lock().unwrap().background_padding;
+    let motion_host = motion_host::MotionHost::new(
+        &window,
+        prefers_dark,
+        empty_drop_zone,
+        restored_background_padding,
+    );
+    {
+        let st = state.lock().unwrap();
+        motion_host
+            .session()
+            .runtime
+            .borrow_mut()
+            .motion
+            .appearance
+            .source_upscale = st.source_upscale;
+        // Fresh images (None) stay on None so Motion looks like Static;
+        // images with a saved background import it so both start in sync.
+        if st.background_style != BackgroundStyle::None {
+            let session = motion_host.session();
+            let mut runtime = session.runtime.borrow_mut();
+            let (appearance, frame, scene_shadow) = {
+                let motion = &mut runtime.motion;
+                (
+                    &mut motion.appearance,
+                    &mut motion.frame,
+                    &mut motion.scene_shadow,
+                )
+            };
+            background_panel::sync_static_appearance_to_motion(
+                &st,
+                appearance,
+                frame,
+                scene_shadow,
+            );
+            runtime.refresh_motion_surfaces();
+        }
+    }
+    // Restore persisted Motion edits last, so they win over the Static
+    // background import above: a saved zoom/text/appearance setup is the
+    // user's authored intent for this image, not a default to seed.
+    if !empty_drop_zone {
+        let session = motion_host.session();
+        let mut runtime = session.runtime.borrow_mut();
+        super::motion_project::restore_into(&mut runtime.motion, &path);
+        runtime.refresh_motion_surfaces();
+    }
+    *background_fill_slot.borrow_mut() = Some(Rc::new({
+        let session = motion_host.session();
+        move |color: DrawColor| {
+            let mut runtime = session.runtime.borrow_mut();
+            runtime.begin_motion_edit();
+            runtime.motion.appearance.background_fill_type =
+                crate::recording::editor::model::MotionBackgroundFillType::Color;
+            runtime.motion.appearance.background_color = [color.r, color.g, color.b, color.a];
+        }
+    }));
+    let last_inspector = motion_host.last_inspector();
+    let in_motion = motion_host.in_motion();
+    // The Export tooltip carries the free-trial count, so it follows the
+    // current mode: Motion always needs Studio, Static only when its
+    // appearance does.
+    {
+        let state = state.clone();
+        let in_motion = in_motion.clone();
+        crate::studio_trial::attach_export_tooltip(&save_btn, move || {
+            if in_motion.get() {
+                crate::studio_entitlement::capabilities_for_motion_export()
+            } else {
+                state.lock().unwrap().studio_capabilities()
+            }
+        });
+    }
+
+    let tracked_window_id = next_tracked_window_id("annotate-editor");
+    let window_title = "ApexShot Editor";
+    let window_namespace = "apexshot-annotate-editor";
+
+    let canvas::CanvasShellParts {
+        root: canvas,
+        drawing_area,
+        canvas_overlay,
+        canvas_scroller,
+        canvas_eyedropper_ring,
+    } = canvas::build_canvas_shell(
+        img_width as i32,
+        img_height as i32,
+        canvas::EYEDROPPER_LOUPE_SIZE,
+    );
+    let crop_controls = toolbar::build_crop_controls(&state, &drawing_area);
+    let crop_control_bar = crop_controls.root.clone();
+    let crop_apply_btn = crop_controls.apply.clone();
+    let crop_cancel_btn = crop_controls.cancel.clone();
+    canvas_overlay.add_overlay(&crop_control_bar);
+    // The zoom controls are added to the canvas pane later so they remain fixed
+    // while the image scrolls and scales.
+
+    let render_caches = canvas_render::CanvasRenderCaches::new();
+    // The Studio preview mark's licence cache, shared by the canvas and the
+    // Studio card retries that follow an activation.
+    let studio_mark = studio_mark::StudioMark::new();
+
+    let BackgroundAssetCaches { wallpaper_cache } =
+        background_assets::install_background_asset_loading(&drawing_area);
+
+    // Async Effects Pipeline (channels, worker, polling, watchdog, rebuild callback).
+    let rebuild_effects_async = effects::install_async_effects_pipeline(&state, &drawing_area);
+
+    // Static Appearance shares the Motion builder and session. The crop tool
+    // stays in the toolbar and its actions remain image-local.
+    // Appearance edits repaint the canvas at pointer rate (a gradient-stop
+    // drag, a slider, a preset click) while no canvas drag is running, so the
+    // interactive burst is what keeps those frames on the cheap image filter
+    // and lands the crisp one when they stop.
+    let interactive_preview = canvas_render::InteractivePreview::new(Rc::new({
+        let drawing_area = drawing_area.clone();
+        move || drawing_area.queue_draw()
+    }));
+    // The panel captures this forwarder before the toolbar wiring exists.
+    let background_auto_select_slot: Rc<RefCell<Option<Rc<dyn Fn()>>>> =
+        Rc::new(RefCell::new(None));
+    let background_interact_forwarder: Rc<dyn Fn()> = Rc::new({
+        let slot = background_auto_select_slot.clone();
+        let interactive_preview = interactive_preview.clone();
+        move || {
+            // Every interaction that reaches this forwarder repaints the
+            // preview, so the burst is marked before the tool switch: the
+            // switch's own early-return must not skip it.
+            interactive_preview.touch();
+            if let Some(switch) = slot.borrow().as_ref() {
+                switch();
+            }
+        }
+    });
+    let static_transform_sync_slot: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+    let sync_static_transform: Rc<dyn Fn()> = Rc::new({
+        let slot = static_transform_sync_slot.clone();
+        move || {
+            if let Some(sync) = slot.borrow().as_ref() {
+                sync();
+            }
+        }
+    });
+    let background_inspector = background_panel::build_shared_background_panel(
+        &window,
+        &motion_host.session(),
+        &drawing_area,
+        &state,
+        Some(background_interact_forwarder.clone()),
+        &static_transform_sync_slot,
+    );
+    let static_appearance_slot = Rc::new(RefCell::new(background_inspector.clone()));
+
+    let open_color_picker: Rc<dyn Fn()> = Rc::new({
+        let set_picker_target_for_active_tool = set_picker_target_for_active_tool.clone();
+        let color_popover = color_popover.downgrade();
+        let color_status = color_status.clone();
+        move || {
+            // The Colors panel edits whichever colour the active tool owns, so
+            // its popover points the shared picker there before it opens.
+            set_picker_target_for_active_tool();
+            if let Some(popover) = color_popover.upgrade() {
+                // One popover, many anchors: reparent under the Colors chip
+                // when the bar triggers last owned it.
+                if popover
+                    .parent()
+                    .is_none_or(|parent| parent != *color_status.upcast_ref::<gtk4::Widget>())
+                {
+                    if popover.parent().is_some() {
+                        popover.unparent();
+                    }
+                    popover.set_position(gtk4::PositionType::Bottom);
+                    popover.set_pointing_to(None);
+                    popover.set_parent(&color_status);
+                }
+                popover.popup();
+            }
+        }
+    });
+    let colors_panel_parts = colors_panel::build_colors_panel(
+        state.clone(),
+        apply_picker_color_for_active_tool.clone(),
+        custom_slot_colors.clone(),
+        refresh_custom_color_slots.clone(),
+        Rc::new({
+            let sidebar_eyedropper_activation = sidebar_eyedropper_activation.clone();
+            move || {
+                if let Some(activate) = sidebar_eyedropper_activation.borrow().as_ref() {
+                    activate();
+                }
+            }
+        }),
+        open_color_picker,
+    );
+    let colors_inspector = colors_panel_parts.root;
+    let sync_colors_panel_for_active_tool = colors_panel_parts.sync_for_active_tool;
+    let refresh_colors_panel_custom_slots = colors_panel_parts.refresh_custom_slots;
+    let toolbar_color_css_provider = gtk4::CssProvider::new();
+    if let Some(display) = gdk::Display::default() {
+        gtk4::style_context_add_provider_for_display(
+            &display,
+            &toolbar_color_css_provider,
+            gtk4::STYLE_PROVIDER_PRIORITY_USER,
+        );
+    }
+    let sync_toolbar_color_status: Rc<dyn Fn()> = Rc::new({
+        let state = state.clone();
+        let color_status_label = color_status_label.clone();
+        let _color_status_swatch = color_status_swatch.clone();
+        let toolbar_color_css_provider = toolbar_color_css_provider.clone();
+        move || {
+            // The chip reports the drawing colour the annotation tools paint
+            // with, so it keeps showing the colour the editor remembers even
+            // while the Background tool owns the canvas fill.
+            let active_color = state.lock().unwrap().selected_color;
+
+            color_status_label.set_label(&format!("#{}", draw_color_to_hex(active_color)));
+            let (r, g, b, _) = draw_color_to_rgba_u8(active_color);
+            let alpha = active_color.a.clamp(0.0, 1.0);
+            let css = format!(
+                "#editor-toolbar-color-status-swatch {{ background: rgba({r}, {g}, {b}, {alpha:.3}); }}"
+            );
+            toolbar_color_css_provider.load_from_data(&css);
+        }
+    });
+    sync_toolbar_color_status();
+
+    let sync_shared_colors_for_active_tool: Rc<dyn Fn()> = Rc::new({
+        let sync_toolbar_color_status = sync_toolbar_color_status.clone();
+        let sync_picker_for_active_tool = sync_picker_for_active_tool.clone();
+        let sync_colors_panel_for_active_tool = sync_colors_panel_for_active_tool.clone();
+        move || {
+            sync_toolbar_color_status();
+            sync_picker_for_active_tool();
+            sync_colors_panel_for_active_tool();
+        }
+    });
+    register_color_panel_sync(sync_shared_colors_for_active_tool.clone());
+
+    let placeholder_inspector = GtkBox::new(Orientation::Vertical, 12);
+    placeholder_inspector.add_css_class("editor-inspector-placeholder-shell");
+    placeholder_inspector.set_width_request(BACKGROUND_SIDEBAR_WIDTH);
+    placeholder_inspector.set_hexpand(false);
+    placeholder_inspector.set_vexpand(true);
+
+    let placeholder_title = Label::new(Some(&t("Inspector")));
+    placeholder_title.add_css_class("editor-inspector-title");
+    placeholder_title.set_xalign(0.0);
+
+    let placeholder = Label::new(Some(&t("Tool options coming soon")));
+    placeholder.add_css_class("editor-inspector-placeholder");
+    placeholder.set_wrap(true);
+    placeholder.set_xalign(0.0);
+
+    placeholder_inspector.append(&placeholder_title);
+    placeholder_inspector.append(&placeholder);
+
+    let select_status_label = Label::new(None);
+    select_status_label.add_css_class("editor-select-inspector-status");
+    select_status_label.set_xalign(0.0);
+    select_status_label.set_wrap(true);
+    select_status_label.set_max_width_chars(20);
+
+    let select_detail_label = Label::new(None);
+    select_detail_label.add_css_class("editor-select-inspector-detail");
+    select_detail_label.set_xalign(0.0);
+    select_detail_label.set_wrap(true);
+    select_detail_label.set_max_width_chars(20);
+
+    let select_geometry_label = Label::new(None);
+    select_geometry_label.add_css_class("editor-select-inspector-metric");
+    select_geometry_label.set_xalign(0.0);
+    select_geometry_label.set_wrap(true);
+    select_geometry_label.set_max_width_chars(20);
+
+    let select_hint_label = Label::new(Some(
+        "Click an object to select it. Drag the selected object to move it, use visible handles to resize, or press Delete to remove it.",
+    ));
+    select_hint_label.add_css_class("editor-select-inspector-hint");
+    select_hint_label.set_xalign(0.0);
+    select_hint_label.set_wrap(true);
+    select_hint_label.set_max_width_chars(20);
+
+    let sync_select_inspector: Rc<dyn Fn()> = Rc::new({
+        let state = state.clone();
+        let select_status_label = select_status_label.clone();
+        let select_detail_label = select_detail_label.clone();
+        let select_geometry_label = select_geometry_label.clone();
+        move || {
+            let selected = {
+                let st = state.lock().unwrap();
+                st.selected_action().cloned()
+            };
+
+            if let Some(action) = selected {
+                select_status_label.set_label(selected_action_kind(&action));
+                select_detail_label.set_label(&selected_action_detail(&action));
+                select_geometry_label.set_label(&selected_action_geometry(&action));
+            } else {
+                select_status_label.set_label(&t("No object selected"));
+                select_detail_label
+                    .set_label(&t("Select any annotation on the canvas to inspect it."));
+                select_geometry_label.set_label(&t("No geometry"));
+            }
+        }
+    });
+
+    if let Some(parent) = text_size_list.parent() {
+        if let Ok(popover) = parent.downcast::<Popover>() {
+            popover.set_child(Option::<&gtk4::Widget>::None);
+        }
+    }
+    if let Some(parent) = font_family_list.parent() {
+        if let Ok(popover) = parent.downcast::<Popover>() {
+            popover.set_child(Option::<&gtk4::Widget>::None);
+        }
+    }
+    if let Some(parent) = arrow_style_list.parent() {
+        if let Ok(popover) = parent.downcast::<Popover>() {
+            popover.set_child(Option::<&gtk4::Widget>::None);
+        }
+    }
+    if let Some(parent) = number_options_list.parent() {
+        if let Ok(popover) = parent.downcast::<Popover>() {
+            popover.set_child(Option::<&gtk4::Widget>::None);
+        }
+    }
+    if let Some(parent) = number_size_list.parent() {
+        if let Ok(popover) = parent.downcast::<Popover>() {
+            popover.set_child(Option::<&gtk4::Widget>::None);
+        }
+    }
+    if let Some(parent) = number_size_button.parent() {
+        if let Ok(container) = parent.downcast::<GtkBox>() {
+            container.remove(&number_size_button);
+        }
+    }
+
+    text_size_group.set_visible(false);
+    font_family_group.set_visible(false);
+    number_options_group.set_visible(false);
+    arrow_style_group.set_visible(false);
+
+    let InspectorParts {
+        inspector_tabs,
+        motion_tabs,
+        motion_tab_btn,
+        text_tab_btn,
+        appearance_tab_btn,
+        watermark_tab_btn,
+        background_tab_btn,
+        colors_tab_btn,
+        inspector,
+        inspector_stack,
+    } = inspectors::build_tool_inspectors(inspectors::InspectorContentInputs {
+        select_status_label: &select_status_label,
+        select_detail_label: &select_detail_label,
+        select_geometry_label: &select_geometry_label,
+        select_hint_label: &select_hint_label,
+        pen_inspector_list: &pen_inspector_list,
+        arrow_style_list: &arrow_style_list,
+        arrow_thickness_list: &arrow_thickness_list,
+        arrow_behavior_group: &arrow_behavior_group,
+        line_inspector_list: &line_inspector_list,
+        text_size_list: &text_size_list,
+        font_family_list: &font_family_list,
+        obfuscate_method_list: &obfuscate_method_list,
+        number_options_list: &number_options_list,
+        number_start_row: &number_start_row,
+        number_size_list: &number_size_list,
+        highlighter_inspector_list: &highlighter_inspector_list,
+        sidebar_utility_controls: &sidebar_utility_controls,
+        background_inspector: &background_inspector,
+        colors_inspector: &colors_inspector,
+        placeholder_inspector: &placeholder_inspector,
+        motion_inspector: &motion_host.parts.panels.inspector,
+        motion_appearance_inspector: &motion_host.parts.panels.appearance_inspector,
+        motion_watermark_inspector: &motion_host.parts.panels.watermark_inspector,
+        motion_text_inspector: &motion_host.parts.panels.text_inspector,
+        copy_btn: &copy_btn,
+        upload_btn: &upload_btn,
+        save_btn: &save_btn,
+        save_spinner: &save_spinner,
+    });
+
+    // Canvas fills the pane (checkerboard). Toolbar + drag strip float on top;
+    // image content is inset below the strip so it never covers the tools.
+    let canvas_with_toolbar = Overlay::new();
+    canvas_with_toolbar.set_hexpand(true);
+    canvas_with_toolbar.set_vexpand(true);
+    canvas.set_hexpand(true);
+    canvas.set_vexpand(true);
+    let canvas_stack = Stack::new();
+    canvas_stack.set_hexpand(true);
+    canvas_stack.set_vexpand(true);
+    canvas_stack.add_named(&canvas, Some(motion_mode::STATIC_PAGE));
+    canvas_stack.add_named(
+        &motion_host.parts.shell.page,
+        Some(motion_mode::MOTION_PAGE),
+    );
+    canvas_stack.set_visible_child_name(motion_mode::STATIC_PAGE);
+    canvas_with_toolbar.set_child(Some(&canvas_stack));
+
+    let workspace = GtkBox::new(Orientation::Horizontal, 0);
+    workspace.set_hexpand(true);
+    workspace.set_vexpand(true);
+    workspace.append(&canvas_with_toolbar);
+    workspace.append(&inspector);
+
+    *drawing_area_placeholder.borrow_mut() = Some(drawing_area.downgrade());
+
+    // Vertical space docked tool bars claim from the canvas (see `DockedBarInset`).
+    // Docked tool bars reflow the canvas: they claim a band above it through this
+    // shared inset (the layout and the draw transform both read it), so the image
+    // moves down while a bar is docked and returns when it goes away.
+    let docked_inset = super::ui_support::DockedBarInset::new();
+    let dock_refs = floating_bar::DockRefs {
+        scroller: canvas_scroller.clone(),
+        drawing_area: drawing_area.clone(),
+    };
+    toolbar::install_crop_controls_tick(
+        &crop_controls,
+        &drawing_area,
+        &state,
+        &dock_refs,
+        &docked_inset,
+    );
+
+    // Competing option menus: a bar's menu trigger closes the other bars'
+    // menus and the shared colour popover before opening.
+    let option_menus = toolbar_controls::MenuTracker::default();
+    option_menus.register(&color_popover);
+
+    {
+        let option_menus = option_menus.clone();
+        let escape = gtk4::EventControllerKey::new();
+        escape.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        escape.connect_key_pressed(move |_, key, _, _| {
+            if key == gdk::Key::Escape && option_menus.any_open() {
+                option_menus.close_all();
+                return glib::Propagation::Stop;
+            }
+            glib::Propagation::Proceed
+        });
+        window.add_controller(escape);
+    }
+
+    let open_drawing_color_picker: Rc<dyn Fn()> = Rc::new({
+        let color_popover = color_popover.clone();
+        let color_status = color_status.clone();
+        let set_picker_target = set_picker_target.clone();
+        let sync_shared_colors_for_active_tool = sync_shared_colors_for_active_tool.clone();
+        let option_menus = option_menus.clone();
+        move || {
+            if color_popover.is_visible() {
+                color_popover.popdown();
+                return;
+            }
+            option_menus.close_all();
+            set_picker_target(color_picker::PickerTarget::Drawing);
+            sync_shared_colors_for_active_tool();
+            if color_popover
+                .parent()
+                .is_none_or(|parent| parent != *color_status.upcast_ref::<gtk4::Widget>())
+            {
+                if color_popover.parent().is_some() {
+                    color_popover.unparent();
+                }
+                color_popover.set_position(gtk4::PositionType::Bottom);
+                color_popover.set_pointing_to(None);
+                color_popover.set_valign(gtk4::Align::Center);
+                color_popover.set_parent(color_status.upcast_ref::<gtk4::Widget>());
+            }
+            color_popover.popup();
+        }
+    });
+
+    let apply_drawing_color: Rc<dyn Fn(DrawColor)> = Rc::new({
+        let state = state.clone();
+        let set_picker_target = set_picker_target.clone();
+        let apply_picker_color_to_editor = apply_picker_color_to_editor.clone();
+        let drawing_area = drawing_area.downgrade();
+        move |color| {
+            set_picker_target(color_picker::PickerTarget::Drawing);
+            {
+                let mut st = state.lock().unwrap();
+                st.set_selected_action_color(color);
+            }
+            apply_picker_color_to_editor(color);
+            if let Some(area) = drawing_area.upgrade() {
+                area.queue_draw();
+            }
+        }
+    });
+    let picker_placement = Rc::new(picker_placement::PickerPlacementContext {
+        drawing_area: drawing_area.downgrade(),
+        overlay: canvas_overlay.downgrade(),
+        scroller: canvas_scroller.downgrade(),
+        state: state.clone(),
+        transform: transform.clone(),
+    });
+    // When a docked bar hides, its menus must not stay open on a dead anchor.
+    let close_popovers_in: Rc<dyn Fn(&GtkBox)> = Rc::new({
+        let color_popover = color_popover.clone();
+        let option_menus = option_menus.clone();
+        move |bar: &GtkBox| {
+            option_menus.close_all();
+            // The popover's parent is the bar trigger that last opened it;
+            // that trigger's own parent is the bar itself.
+            let anchored_here = color_popover
+                .parent()
+                .and_then(|trigger| trigger.parent())
+                .is_some_and(|owner| owner == *bar);
+            if anchored_here {
+                color_popover.popdown();
+            }
+        }
+    });
+
+    // Docked text bar (colour + font + size) below the main toolbar, like the
+    // other tool bars. Shows while Text is armed, with a text selected, or
+    // editing. Clicking an existing text with Text/Select re-selects it, which
+    // is how the bar comes back for an older text.
+    let text_bar = text_bar::build_text_bar(
+        &state,
+        &font_family_group,
+        &text_size_group,
+        apply_drawing_color.clone(),
+        Some(picker_placement.clone()),
+        &option_menus,
+    );
+    canvas_overlay.add_overlay(&text_bar.root);
+    text_bar::install_text_bar_tick(
+        &text_bar,
+        &drawing_area,
+        &state,
+        &dock_refs,
+        &docked_inset,
+        &close_popovers_in,
+    );
+
+    // Floating number bar (mirrors the pen/highlighter bars): one contextual bar
+    // that stays docked above the canvas while the Number tool is armed or the
+    // Select tool holds a number marker, so it never covers the drawing.
+    // Clicking an existing marker with the Number tool re-selects it, which is
+    // how it comes back.
+    let number_bar = number_bar::build_number_bar(
+        &state,
+        &drawing_area,
+        apply_drawing_color.clone(),
+        Some(picker_placement.clone()),
+        &option_menus,
+    );
+    canvas_overlay.add_overlay(&number_bar.root);
+    number_bar::install_number_bar_tick(
+        &number_bar,
+        &drawing_area,
+        &state,
+        &dock_refs,
+        &docked_inset,
+        &close_popovers_in,
+    );
+
+    // Floating highlighter bar: colour, mode (detect text / freehand), stroke
+    // presets. Docked while the tool is armed, and while the Select tool has a
+    // stroke selected, so it never parks over a long freehand bounding box.
+    let highlighter_bar = highlighter_bar::build_highlighter_bar(
+        &state,
+        &drawing_area,
+        &window,
+        apply_drawing_color.clone(),
+        Some(picker_placement.clone()),
+        &option_menus,
+    );
+    canvas_overlay.add_overlay(&highlighter_bar.root);
+    highlighter_bar::install_highlighter_bar_tick(
+        &highlighter_bar,
+        &drawing_area,
+        &state,
+        &dock_refs,
+        &docked_inset,
+        &close_popovers_in,
+    );
+
+    // Floating arrow bar: colour, visual style menu, reverse, stroke presets.
+    // Docked while the tool is armed, and while the Select tool has an arrow
+    // selected.
+    let arrow_bar = arrow_bar::build_arrow_bar(
+        &state,
+        &drawing_area,
+        apply_drawing_color.clone(),
+        Some(picker_placement.clone()),
+        &option_menus,
+    );
+    canvas_overlay.add_overlay(&arrow_bar.root);
+    arrow_bar::install_arrow_bar_tick(
+        &arrow_bar,
+        &drawing_area,
+        &state,
+        &dock_refs,
+        &docked_inset,
+        &close_popovers_in,
+    );
+
+    // Floating stroke bar: colour + compact stroke presets for the pen, line,
+    // box, and circle tools (and for those annotations under Select).
+    let stroke_bar = stroke_bar::build_stroke_bar(
+        &state,
+        &drawing_area,
+        apply_drawing_color.clone(),
+        Some(picker_placement.clone()),
+        &option_menus,
+        Some(Rc::new({
+            let window = window.clone();
+            let state = state.clone();
+            move || {
+                let st = state.lock().unwrap();
+                if st.selected_tool == Tool::Pen {
+                    cursor::update_pen_cursor(&window, &st);
+                }
+            }
+        })),
+    );
+    canvas_overlay.add_overlay(&stroke_bar.root);
+    stroke_bar::install_stroke_bar_tick(
+        &stroke_bar,
+        &drawing_area,
+        &state,
+        &dock_refs,
+        &docked_inset,
+        &close_popovers_in,
+    );
+
+    // Obfuscate method picker in the second toolbar, intensity slider by the rect.
+    let obfuscate_bar = obfuscate_bar::build_obfuscate_bar(
+        &state,
+        &drawing_area,
+        &obfuscate_method_button,
+        &obfuscate_method_list,
+        &size_slider,
+        &rebuild_effects_async,
+        &option_menus,
+    );
+    canvas_overlay.add_overlay(&obfuscate_bar.method_bar);
+    canvas_overlay.add_overlay(&obfuscate_bar.slider_bar);
+    obfuscate_bar::install_obfuscate_bar_tick(
+        &obfuscate_bar,
+        &drawing_area,
+        &state,
+        &transform,
+        &size_slider,
+        &dock_refs,
+        &docked_inset,
+        &close_popovers_in,
+    );
+
+    // Floating focus bar: a docked "Focus" label like the other option bars,
+    // plus the intensity slider anchored below the active rect.
+    let focus_bar =
+        focus_bar::build_focus_bar(&state, &drawing_area, &size_slider, &rebuild_effects_async);
+    canvas_overlay.add_overlay(&focus_bar.label_bar);
+    canvas_overlay.add_overlay(&focus_bar.slider_bar);
+    focus_bar::install_focus_bar_tick(
+        &focus_bar,
+        &drawing_area,
+        &state,
+        &transform,
+        &size_slider,
+        &dock_refs,
+        &docked_inset,
+    );
+
+    // The Studio trial card hangs just below the floating toolbar, and below a
+    // docked tool bar when one is up, centred on the toolbar. Both live in
+    // overlays above the canvas, so the anchor reports the toolbar's centre and
+    // the free band's top in `canvas_overlay` coordinates; the card rides that
+    // same overlay and only ever moves its own margins.
+    let trial_toast_anchor = Some(crate::studio_trial_toast::Anchor::new(
+        canvas_overlay.clone(),
+        {
+            let overlay = canvas_overlay.clone();
+            let main_toolbar = toolbar.clone();
+            let motion_toolbar = motion_host.parts.shell.static_toolbar.clone();
+            let anchor_dock_refs = floating_bar::DockRefs {
+                scroller: canvas_scroller.clone(),
+                drawing_area: drawing_area.clone(),
+            };
+            // Only the bars that dock in the chrome band belong here: the
+            // obfuscate/focus slider bars follow their rect and must not push
+            // the card down.
+            let docked_bars = vec![
+                crop_control_bar.clone(),
+                text_bar.root.clone(),
+                number_bar.root.clone(),
+                highlighter_bar.root.clone(),
+                arrow_bar.root.clone(),
+                stroke_bar.root.clone(),
+                obfuscate_bar.method_bar.clone(),
+                focus_bar.label_bar.clone(),
+            ];
+            Rc::new(move || {
+                // Motion swaps the toolbar, so anchor to whichever page is up.
+                let toolbar = if main_toolbar.is_mapped() {
+                    &main_toolbar
+                } else if motion_toolbar.is_mapped() {
+                    &motion_toolbar
+                } else {
+                    return None;
+                };
+                let origin =
+                    toolbar.compute_point(&overlay, &gtk4::graphene::Point::new(0.0, 0.0))?;
+                let toolbar_width = f64::from(toolbar.width());
+                if toolbar_width <= 0.0 {
+                    return None;
+                }
+                let center_x = f64::from(origin.x()) + toolbar_width / 2.0;
+                let mut top_y = f64::from(origin.y()) + f64::from(toolbar.height());
+                // `dock_position` is where an actively docked bar sits this
+                // frame; a bar following its element would not match it.
+                let (_, docked_top) = floating_bar::dock_position(&anchor_dock_refs, 1.0);
+                for bar in &docked_bars {
+                    if !floating_bar::bar_is_shown(bar) {
+                        continue;
+                    }
+                    let bar_top = f64::from(bar.margin_top());
+                    if (bar_top - docked_top).abs() > 4.0 {
+                        continue;
+                    }
+                    let bar_bottom = bar_top + f64::from(bar.height());
+                    top_y = top_y.max(bar_bottom);
+                }
+                Some((center_x, top_y + floating_bar::DOCK_PAD))
+            })
+        },
+    ));
+
+    color_status.set_tooltip_text(Some(&t("Colors")));
+    color_status.set_cursor_from_name(Some("pointer"));
+    {
+        let open = open_drawing_color_picker.clone();
+        let chip_click = gtk4::GestureClick::new();
+        chip_click.connect_pressed(move |_, _, _, _| {
+            open();
+        });
+        color_status.add_controller(chip_click);
+    }
+
+    // Wire the toolbar font/size popover lists (built dead in toolbar.rs) like the inspector lists.
+    {
+        let state_c = state.clone();
+        let drawing_area_c = drawing_area.clone();
+        let text_size_label_c = text_size_label.clone();
+        let inspector_list_c = text_size_list.clone();
+        let mut idx = 0usize;
+        let mut child_opt = toolbar_text_size_list.first_child();
+        while let Some(child) = child_opt {
+            child_opt = child.next_sibling();
+            let Ok(btn) = child.downcast::<Button>() else {
+                continue;
+            };
+            let size = TEXT_SIZE_OPTIONS.get(idx).copied().unwrap_or(24);
+            idx += 1;
+            let state_b = state_c.clone();
+            let drawing_area_b = drawing_area_c.clone();
+            let label_b = text_size_label_c.clone();
+            let list_b = inspector_list_c.clone();
+            let toolbar_list_b = toolbar_text_size_list.clone();
+            btn.connect_clicked(move |b| {
+                if let Some(popover) = b.ancestor(Popover::static_type()) {
+                    popover.downcast::<Popover>().unwrap().popdown();
+                }
+                label_b.set_label(&format!("{}pt", size));
+                let mut st = state_b.lock().unwrap();
+                let changed = st.set_text_size(size as f64);
+                let has_active_text = st.active_text_input.is_some();
+                if !changed && st.active_text_input.is_none() && st.selected_action_index.is_none()
+                {
+                    st.text_size = size as f64;
+                }
+                drop(st);
+                sync_text_option_selection(
+                    &list_b,
+                    TEXT_SIZE_OPTIONS.iter().position(|c| *c == size),
+                );
+                sync_text_option_selection(
+                    &toolbar_list_b,
+                    TEXT_SIZE_OPTIONS.iter().position(|c| *c == size),
+                );
+                if has_active_text {
+                    drawing_area_b.grab_focus();
+                }
+                drawing_area_b.queue_draw();
+            });
+        }
+    }
+    {
+        let state_c = state.clone();
+        let drawing_area_c = drawing_area.clone();
+        let font_family_label_c = font_family_label.clone();
+        let inspector_list_c = font_family_list.clone();
+        let mut idx = 0usize;
+        let mut child_opt = toolbar_font_family_list.first_child();
+        while let Some(child) = child_opt {
+            child_opt = child.next_sibling();
+            let Ok(btn) = child.downcast::<Button>() else {
+                continue;
+            };
+            let family = TEXT_FONT_FAMILIES.get(idx).copied().unwrap_or("Sans");
+            idx += 1;
+            let family_str = family.to_string();
+            let state_b = state_c.clone();
+            let drawing_area_b = drawing_area_c.clone();
+            let label_b = font_family_label_c.clone();
+            let list_b = inspector_list_c.clone();
+            let toolbar_list_b = toolbar_font_family_list.clone();
+            btn.connect_clicked(move |b| {
+                if let Some(popover) = b.ancestor(Popover::static_type()) {
+                    popover.downcast::<Popover>().unwrap().popdown();
+                }
+                label_b.set_label(&family_str);
+                let mut st = state_b.lock().unwrap();
+                let changed = st.set_selected_text_font_family(family_str.clone());
+                let has_active_text = st.active_text_input.is_some();
+                if st.active_text_input.is_some() || !changed {
+                    st.text_font_family = family_str.clone();
+                }
+                drop(st);
+                sync_text_option_selection(
+                    &list_b,
+                    TEXT_FONT_FAMILIES
+                        .iter()
+                        .position(|c| *c == family_str.as_str()),
+                );
+                sync_text_option_selection(
+                    &toolbar_list_b,
+                    TEXT_FONT_FAMILIES
+                        .iter()
+                        .position(|c| *c == family_str.as_str()),
+                );
+                if has_active_text {
+                    drawing_area_b.grab_focus();
+                }
+                drawing_area_b.queue_draw();
+            });
+        }
+    }
+
+    {
+        let (size_index, family_index) = {
+            let st = state.lock().unwrap();
+            (
+                TEXT_SIZE_OPTIONS
+                    .iter()
+                    .position(|candidate| *candidate as f64 == st.text_size),
+                TEXT_FONT_FAMILIES
+                    .iter()
+                    .position(|candidate| *candidate == st.text_font_family.as_str()),
+            )
+        };
+        sync_text_option_selection(&toolbar_text_size_list, size_index);
+        sync_text_option_selection(&toolbar_font_family_list, family_index);
+    }
+
+    if let Some(popover) = toolbar_text_size_list
+        .ancestor(Popover::static_type())
+        .and_then(|widget| widget.downcast::<Popover>().ok())
+    {
+        let list = toolbar_text_size_list.downgrade();
+        let state = state.clone();
+        popover.connect_map(move |_| {
+            let Some(list) = list.upgrade() else {
+                return;
+            };
+            let size = {
+                let st = state.lock().unwrap();
+                st.selected_text_action_size().unwrap_or(st.text_size)
+            };
+            sync_text_option_selection(
+                &list,
+                TEXT_SIZE_OPTIONS
+                    .iter()
+                    .position(|candidate| *candidate as f64 == size),
+            );
+        });
+    }
+    if let Some(popover) = toolbar_font_family_list
+        .ancestor(Popover::static_type())
+        .and_then(|widget| widget.downcast::<Popover>().ok())
+    {
+        let list = toolbar_font_family_list.downgrade();
+        let state = state.clone();
+        popover.connect_map(move |_| {
+            let Some(list) = list.upgrade() else {
+                return;
+            };
+            let family = {
+                let st = state.lock().unwrap();
+                st.selected_text_font_family()
+                    .unwrap_or_else(|| st.text_font_family.clone())
+            };
+            sync_text_option_selection(
+                &list,
+                TEXT_FONT_FAMILIES
+                    .iter()
+                    .position(|candidate| *candidate == family.as_str()),
+            );
+        });
+    }
+
+    let sync_inspector_thickness_controls: Rc<dyn Fn()> = Rc::new({
+        let state = state.clone();
+        let pen_inspector_list = pen_inspector_list.clone();
+        let arrow_style_list = arrow_style_list.clone();
+        let arrow_thickness_list = arrow_thickness_list.clone();
+        let line_inspector_list = line_inspector_list.clone();
+        let highlighter_inspector_list = highlighter_inspector_list.clone();
+        let inverse_direction_toggle = inverse_direction_toggle.clone();
+        move || {
+            let st = state.lock().unwrap();
+            let selected_style_value = st.selected_arrow_style().unwrap_or(st.arrow_style);
+            let selected_style = ArrowStyle::ALL
+                .iter()
+                .position(|style| *style == selected_style_value)
+                .unwrap_or(0);
+            let selected_stroke_size = st.selected_action_stroke_size().unwrap_or(st.stroke_size);
+            let selected_thickness = stroke_size_option_index(selected_stroke_size);
+            let selected_pen_thickness = match st.selected_tool {
+                Tool::Pen => pen_weight_option_index(
+                    st.selected_action_stroke_size()
+                        .unwrap_or_else(|| st.pen_weight.pen_stroke_width()),
+                ),
+                _ => pen_weight_option_index(selected_stroke_size),
+            };
+            sync_arrow_option_selection(&pen_inspector_list, selected_pen_thickness);
+            sync_arrow_option_selection(&arrow_style_list, selected_style);
+            sync_arrow_option_selection(&arrow_thickness_list, selected_thickness);
+            sync_arrow_option_selection(&line_inspector_list, selected_thickness);
+            let selected_highlighter_option = match st.highlighter_mode {
+                HighlighterMode::TextAware => 0,
+                HighlighterMode::Freehand => {
+                    1 + highlighter_weight_option_index(
+                        st.selected_action_stroke_size()
+                            .unwrap_or_else(|| st.pen_weight.highlighter_stroke_width()),
+                    )
+                }
+            };
+            sync_arrow_option_selection(&highlighter_inspector_list, selected_highlighter_option);
+            inverse_direction_toggle.set_active(st.inverse_arrow_direction);
+        }
+    });
+
+    let update_toolbar_for_tool_base = toolbar::build_toolbar_tool_updater(
+        &toolbar_mode_stack,
+        &inspector_tabs,
+        &background_tab_btn,
+        &colors_tab_btn,
+        &text_size_group,
+        &font_family_group,
+        &obfuscate_method_group,
+        &pen_weight_group,
+        &number_options_group,
+        &arrow_style_group,
+        &stroke_size_group,
+        &canvas_scroller,
+    );
+    let update_toolbar_for_tool: Rc<dyn Fn(Tool)> = Rc::new({
+        let update_toolbar_for_tool_base = update_toolbar_for_tool_base.clone();
+        let sync_inspector_thickness_controls = sync_inspector_thickness_controls.clone();
+        let inspector_stack = inspector_stack.clone();
+        let last_inspector = last_inspector.clone();
+        let in_motion = in_motion.clone();
+        move |tool| {
+            update_toolbar_for_tool_base(tool);
+            // Static mode keeps the Appearance panel docked: tool changes must
+            // not swap in the retired per-tool inspector docks.
+            if !in_motion.get() {
+                inspector_stack.set_visible_child_name("background");
+                *last_inspector.borrow_mut() = "background".to_string();
+            }
+            if matches!(
+                tool,
+                Tool::Pen | Tool::Arrow | Tool::Line | Tool::Highlighter
+            ) {
+                sync_inspector_thickness_controls();
+            }
+        }
+    });
+
+    let set_active_inspector_surface: Rc<dyn Fn(&str)> = Rc::new({
+        let inspector_stack = inspector_stack.clone();
+        let background_tab_btn = background_tab_btn.clone();
+        let colors_tab_btn = colors_tab_btn.clone();
+        let last_inspector = last_inspector.clone();
+        let in_motion = in_motion.clone();
+        move |surface| {
+            if !in_motion.get() && surface != motion_mode::MOTION_PAGE {
+                *last_inspector.borrow_mut() = surface.to_string();
+            }
+            let show_background =
+                !matches!(surface, "colors" | "placeholder" | "select" | "motion");
+            let show_colors = surface == "colors";
+            inspector_stack.set_visible_child_name(surface);
+            if show_background {
+                background_tab_btn.add_css_class("active-inspector-tab");
+            } else {
+                background_tab_btn.remove_css_class("active-inspector-tab");
+            }
+            if show_colors {
+                colors_tab_btn.add_css_class("active-inspector-tab");
+            } else {
+                colors_tab_btn.remove_css_class("active-inspector-tab");
+            }
+        }
+    });
+
+    background_tab_btn.connect_clicked({
+        let state = state.clone();
+        let set_active_inspector_surface = set_active_inspector_surface.clone();
+        move |_| {
+            let surface = match state.lock().unwrap().selected_tool {
+                Tool::Background => Some("background"),
+                Tool::Select => Some("select"),
+                Tool::Pen => Some("pen"),
+                Tool::Arrow => Some("arrow"),
+                Tool::Line => Some("line"),
+                Tool::Text => Some("text"),
+                Tool::Number => Some("number"),
+                Tool::Highlighter => Some("highlighter"),
+                _ => None,
+            };
+            if let Some(surface) = surface {
+                set_active_inspector_surface(surface);
+            }
+        }
+    });
+
+    colors_tab_btn.connect_clicked({
+        let state = state.clone();
+        let set_active_inspector_surface = set_active_inspector_surface.clone();
+        let sync_colors_panel_for_active_tool = sync_colors_panel_for_active_tool.clone();
+        move |_| {
+            let selected_tool = state.lock().unwrap().selected_tool;
+            if matches!(
+                selected_tool,
+                Tool::Background
+                    | Tool::Pen
+                    | Tool::Arrow
+                    | Tool::Line
+                    | Tool::Box
+                    | Tool::Circle
+                    | Tool::Text
+                    | Tool::Number
+                    | Tool::Highlighter
+                    | Tool::Obfuscate
+                    | Tool::Focus
+            ) {
+                sync_colors_panel_for_active_tool();
+                set_active_inspector_surface("colors");
+            }
+        }
+    });
+
+    let canvas_padding = canvas::CANVAS_PADDING;
+
+    let (selected_text_size, selected_font_family) = {
+        let st = state.lock().unwrap();
+        (
+            st.selected_text_action_size()
+                .map(|size| size as i32)
+                .unwrap_or(st.text_size as i32),
+            st.selected_text_font_family()
+                .unwrap_or_else(|| st.text_font_family.clone()),
+        )
+    };
+
+    while let Some(child) = text_size_list.first_child() {
+        text_size_list.remove(&child);
+    }
+    for size in TEXT_SIZE_OPTIONS {
+        let label = format!("{}pt", size);
+        let btn_box = GtkBox::new(Orientation::Horizontal, 8);
+        btn_box.set_margin_start(0);
+        btn_box.set_margin_end(0);
+        btn_box.set_margin_top(0);
+        btn_box.set_margin_bottom(0);
+
+        let label_widget = Label::new(Some(&label));
+        label_widget.set_hexpand(true);
+        label_widget.set_xalign(0.0);
+
+        let check_icon = Image::from_icon_name(icon_names::custom::CHECK_SYMBOLIC);
+        check_icon.set_pixel_size(12);
+        check_icon.set_visible(size == selected_text_size);
+        check_icon.add_css_class("editor-text-inspector-check");
+
+        btn_box.append(&label_widget);
+        btn_box.append(&check_icon);
+
+        let btn = Button::builder()
+            .has_frame(false)
+            .css_classes([
+                "editor-popover-list-item",
+                "flat",
+                "editor-text-inspector-option",
+            ])
+            .child(&btn_box)
+            .build();
+        btn.set_size_request(-1, 32);
+        if size == selected_text_size {
+            btn.add_css_class("editor-text-inspector-option-active");
+        }
+        let state = state.clone();
+        let text_size_label = text_size_label.clone();
+        let text_size_list_sync = text_size_list.clone();
+        let toolbar_size_list_sync = toolbar_text_size_list.clone();
+        let drawing_area = drawing_area.clone();
+        btn.connect_clicked(move |b| {
+            if let Some(popover) = b.ancestor(Popover::static_type()) {
+                popover.downcast::<Popover>().unwrap().popdown();
+            }
+            text_size_label.set_label(&format!("{}pt", size));
+            let mut st = state.lock().unwrap();
+            let changed = st.set_text_size(size as f64);
+            let has_active_text = st.active_text_input.is_some();
+            if !changed && st.active_text_input.is_none() && st.selected_action_index.is_none() {
+                st.text_size = size as f64;
+            }
+            drop(st);
+            sync_text_option_selection(
+                &text_size_list_sync,
+                TEXT_SIZE_OPTIONS
+                    .iter()
+                    .position(|candidate| *candidate == size),
+            );
+            sync_text_option_selection(
+                &toolbar_size_list_sync,
+                TEXT_SIZE_OPTIONS
+                    .iter()
+                    .position(|candidate| *candidate == size),
+            );
+            if has_active_text {
+                drawing_area.grab_focus();
+            }
+            drawing_area.queue_draw();
+        });
+        text_size_list.append(&btn);
+    }
+
+    while let Some(child) = font_family_list.first_child() {
+        font_family_list.remove(&child);
+    }
+    for family in TEXT_FONT_FAMILIES {
+        let btn_box = GtkBox::new(Orientation::Horizontal, 8);
+        btn_box.set_margin_start(0);
+        btn_box.set_margin_end(0);
+        btn_box.set_margin_top(0);
+        btn_box.set_margin_bottom(0);
+
+        let label_widget = Label::new(Some(family));
+        label_widget.set_hexpand(true);
+        label_widget.set_xalign(0.0);
+
+        let check_icon = Image::from_icon_name(icon_names::custom::CHECK_SYMBOLIC);
+        check_icon.set_pixel_size(12);
+        check_icon.set_visible(family == selected_font_family);
+        check_icon.add_css_class("editor-text-inspector-check");
+
+        btn_box.append(&label_widget);
+        btn_box.append(&check_icon);
+
+        let btn = Button::builder()
+            .has_frame(false)
+            .css_classes([
+                "editor-popover-list-item",
+                "flat",
+                "editor-text-inspector-option",
+            ])
+            .child(&btn_box)
+            .build();
+        btn.set_size_request(-1, 32);
+        if family == selected_font_family {
+            btn.add_css_class("editor-text-inspector-option-active");
+        }
+        let state = state.clone();
+        let font_family_label = font_family_label.clone();
+        let font_family_list_sync = font_family_list.clone();
+        let toolbar_family_list_sync = toolbar_font_family_list.clone();
+        let drawing_area = drawing_area.clone();
+        let family_str = family.to_string();
+        btn.connect_clicked(move |b| {
+            if let Some(popover) = b.ancestor(Popover::static_type()) {
+                popover.downcast::<Popover>().unwrap().popdown();
+            }
+            font_family_label.set_label(&family_str);
+            let mut st = state.lock().unwrap();
+            let changed = st.set_selected_text_font_family(family_str.clone());
+            let has_active_text = st.active_text_input.is_some();
+            if st.active_text_input.is_some() || !changed {
+                st.text_font_family = family_str.clone();
+            }
+            drop(st);
+            sync_text_option_selection(
+                &font_family_list_sync,
+                TEXT_FONT_FAMILIES
+                    .iter()
+                    .position(|candidate| *candidate == family_str.as_str()),
+            );
+            sync_text_option_selection(
+                &toolbar_family_list_sync,
+                TEXT_FONT_FAMILIES
+                    .iter()
+                    .position(|candidate| *candidate == family_str.as_str()),
+            );
+            if has_active_text {
+                drawing_area.grab_focus();
+            }
+            drawing_area.queue_draw();
+        });
+        font_family_list.append(&btn);
+    }
+
+    while let Some(child) = obfuscate_method_list.first_child() {
+        obfuscate_method_list.remove(&child);
+    }
+    let selected_obfuscate_method = {
+        let st = state.lock().unwrap();
+        st.obfuscate_method()
+    };
+    for (index, (method, label)) in OBFUSCATE_METHOD_OPTIONS.iter().enumerate() {
+        let btn_box = GtkBox::new(Orientation::Horizontal, 8);
+        btn_box.set_margin_start(8);
+        btn_box.set_margin_end(8);
+        btn_box.set_margin_top(4);
+        btn_box.set_margin_bottom(4);
+
+        let label_widget = Label::new(Some(&t(label)));
+        label_widget.set_hexpand(true);
+        label_widget.set_xalign(0.0);
+
+        let check_icon = Image::from_icon_name(icon_names::custom::CHECK_SYMBOLIC);
+        check_icon.set_pixel_size(12);
+        check_icon.set_visible(*method == selected_obfuscate_method);
+        check_icon.add_css_class("editor-obfuscate-inspector-check");
+
+        btn_box.append(&label_widget);
+        btn_box.append(&check_icon);
+
+        let btn = Button::builder()
+            .has_frame(false)
+            .css_classes([
+                "editor-popover-list-item",
+                "flat",
+                "editor-obfuscate-inspector-option",
+            ])
+            .child(&btn_box)
+            .build();
+        if *method == selected_obfuscate_method {
+            btn.add_css_class("editor-obfuscate-inspector-option-active");
+        }
+
+        let state = state.clone();
+        let drawing_area = drawing_area.clone();
+        let obfuscate_method_list_sync = obfuscate_method_list.clone();
+        let rebuild_obfuscate_inspector = rebuild_effects_async.clone();
+        btn.connect_clicked(move |_| {
+            {
+                let mut st = state.lock().unwrap();
+                st.set_obfuscate_method(*method);
+            }
+            sync_obfuscate_option_selection(&obfuscate_method_list_sync, index);
+            rebuild_obfuscate_inspector();
+            drawing_area.queue_draw();
+        });
+
+        obfuscate_method_list.append(&btn);
+    }
+
+    let eyedropper = events::EyedropperBundle::new(canvas_eyedropper_ring.clone());
+    let eyedropper_mode = eyedropper.mode.clone();
+    let eyedropper_from_sidebar = eyedropper.from_sidebar.clone();
+    let eyedropper_point = eyedropper.point.clone();
+    let eyedropper_rendered = eyedropper.rendered.clone();
+
+    *sidebar_eyedropper_activation.borrow_mut() = Some(Rc::new({
+        let color_popover = color_popover.clone();
+        let state = state.clone();
+        let set_picker_target_for_active_tool = set_picker_target_for_active_tool.clone();
+        let eyedropper_mode = eyedropper_mode.clone();
+        let eyedropper_from_sidebar = eyedropper_from_sidebar.clone();
+        let eyedropper_point = eyedropper_point.clone();
+        let eyedropper_rendered = eyedropper_rendered.clone();
+        let canvas_eyedropper_ring = canvas_eyedropper_ring.clone();
+        let drawing_area = drawing_area.clone();
+        let window = window.downgrade();
+        move || {
+            // Sampling from the sidebar lands in the active tool's colour.
+            set_picker_target_for_active_tool();
+            eyedropper_from_sidebar.set(true);
+            color_picker::activate_eyedropper(
+                &color_popover,
+                state.clone(),
+                eyedropper_mode.clone(),
+                eyedropper_point.clone(),
+                eyedropper_rendered.clone(),
+                &canvas_eyedropper_ring,
+                &drawing_area,
+                Rc::new({
+                    let window = window.clone();
+                    move || {
+                        if let Some(window) = window.upgrade() {
+                            cursor::set_window_cursor_name(&window, Some("crosshair"));
+                        }
+                    }
+                }),
+            );
+        }
+    }));
+
+    {
+        let state_text_blink = state.clone();
+        let drawing_area_text_blink = drawing_area.downgrade();
+        glib::timeout_add_local(std::time::Duration::from_millis(500), move || {
+            let has_active_text = {
+                let mut st = state_text_blink.lock().unwrap();
+                if st.active_text_input.is_none() {
+                    false
+                } else {
+                    st.tick_cursor_blink();
+                    true
+                }
+            };
+            if has_active_text {
+                if let Some(area) = drawing_area_text_blink.upgrade() {
+                    area.queue_draw();
+                }
+            }
+            glib::ControlFlow::Continue
+        });
+    }
+
+    canvas_eyedropper_ring.set_draw_func({
+        let eyedropper_point_draw = eyedropper_point.clone();
+        let eyedropper_rendered_draw = eyedropper_rendered.clone();
+        move |_, context, width, height| {
+            let Some(point) = *eyedropper_point_draw.borrow() else {
+                return;
+            };
+
+            let rendered = eyedropper_rendered_draw.borrow();
+            let Some(rendered) = rendered.as_ref() else {
+                return;
+            };
+
+            canvas::draw_eyedropper_loupe(context, width, height, rendered, point);
+        }
+    });
+
+    root.append(&workspace);
+
+    // Keep window-wide transient UI above the editor layout.
+    let root_overlay = Overlay::new();
+    root_overlay.add_css_class("editor-root");
+    root_overlay.add_css_class(if prefers_dark {
+        "editor-theme-dark"
+    } else {
+        "editor-theme-light"
+    });
+    if reduced_transparency {
+        root_overlay.add_css_class("editor-reduced-transparency");
+    }
+    root_overlay.set_overflow(gtk4::Overflow::Hidden);
+    root_overlay.set_child(Some(&root));
+
+    // The first-run look chip. Applying the look rewrites the shared Motion
+    // runtime, so rebuild the docked Background inspector from it afterwards:
+    // a panel built before the click would still show the old fill and frame.
+    let refresh_background_inspector: Rc<dyn Fn()> = Rc::new({
+        let window = window.downgrade();
+        let session = motion_host.session();
+        let preview = drawing_area.clone();
+        let state = state.clone();
+        let interact = background_interact_forwarder.clone();
+        let slot = static_appearance_slot.clone();
+        let stack = inspector_stack.clone();
+        let sync_slot = static_transform_sync_slot.clone();
+        let in_motion = in_motion.clone();
+        move || {
+            let Some(window) = window.upgrade() else {
+                return;
+            };
+            let previous = slot.borrow().clone();
+            let fresh = background_panel::build_shared_background_panel(
+                &window,
+                &session,
+                &preview,
+                &state,
+                Some(interact.clone()),
+                &sync_slot,
+            );
+            fresh.set_visible(true);
+            stack.remove(&previous);
+            stack.add_named(&fresh, Some("background"));
+            *slot.borrow_mut() = fresh;
+            if !in_motion.get() && stack.visible_child_name().as_deref() == Some("background") {
+                stack.set_visible_child_name("background");
+            }
+        }
+    });
+    // The chip applies a whole look (fill, frame, shadow and pose), so after
+    // any of its clicks the docked inspector is rebuilt from the shared
+    // runtime, the Background tool takes the canvas back, and the Transform
+    // sliders are re-seated: the same end state a panel interaction leaves.
+    let refresh_look_chip: Rc<dyn Fn()> = {
+        let interact = background_interact_forwarder.clone();
+        let sync_static_transform = sync_static_transform.clone();
+        Rc::new(move || {
+            refresh_background_inspector();
+            interact();
+            sync_static_transform();
+        })
+    };
+    let look_chip = if empty_drop_zone {
+        None
+    } else {
+        look_chip::build_look_chip(
+            &motion_host.session(),
+            &state,
+            &drawing_area,
+            editor_open_count,
+            refresh_look_chip,
+        )
+    };
+
+    let window_chrome = chrome::install_window_chrome(chrome::WindowChromeInputs {
+        canvas_with_toolbar: &canvas_with_toolbar,
+        root_overlay: &root_overlay,
+        window: &window,
+        toolbar: &toolbar,
+        static_toolbar: &motion_host.parts.shell.static_toolbar,
+        zoom_minus_btn: &zoom_minus_btn,
+        zoom_button: &zoom_button,
+        zoom_plus_btn: &zoom_plus_btn,
+        motion_btn: &motion_host.parts.shell.motion_btn,
+        history_group: &history_group,
+        zoom_popup: &zoom_popup,
+        look_chip: look_chip.as_ref(),
+    });
+    motion_host.install(motion_host::MotionHostInstallInputs {
+        window: &window,
+        root_overlay: &root_overlay,
+        canvas_stack: &canvas_stack,
+        window_chrome,
+        inspector_tabs: &inspector_tabs,
+        motion_tabs: &motion_tabs,
+        inspector_stack: &inspector_stack,
+        motion_tab_btn: &motion_tab_btn,
+        text_tab_btn: &text_tab_btn,
+        appearance_tab_btn: &appearance_tab_btn,
+        watermark_tab_btn: &watermark_tab_btn,
+        state: &state,
+        empty_drop_zone,
+        static_preview: &drawing_area,
+        static_appearance_slot: static_appearance_slot.clone(),
+        static_appearance_interact: Some(background_interact_forwarder.clone()),
+        static_transform_sync_slot: static_transform_sync_slot.clone(),
+    });
+
+    if empty_drop_zone {
+        let initial_image_path = path.is_file().then_some(path.clone());
+        empty_state::install_empty_drop_zone(
+            app,
+            &window,
+            &canvas_with_toolbar,
+            &root_overlay,
+            initial_image_path,
+        );
+    }
+
+    window.set_child(Some(&root_overlay));
+
+    let update_canvas_content_size = canvas_layout::install_canvas_layout(
+        &state,
+        &drawing_area,
+        &canvas_scroller,
+        &zoom_level,
+        &zoom_label,
+        &zoom_header_label,
+        canvas_padding,
+        &docked_inset,
+    );
+
+    // Eyedropper
+    color_picker::connect_eyedropper_activation(
+        &eyedropper_btn,
+        &color_popover,
+        state.clone(),
+        eyedropper_mode.clone(),
+        eyedropper_point.clone(),
+        eyedropper_rendered.clone(),
+        &canvas_eyedropper_ring,
+        &drawing_area,
+        Rc::new({
+            let window = window.downgrade();
+            move || {
+                if let Some(window) = window.upgrade() {
+                    cursor::set_window_cursor_name(&window, Some("crosshair"));
+                }
+            }
+        }),
+    );
+
+    let sync_size_control: Rc<dyn Fn()> = Rc::new({
+        let state = state.clone();
+        let size_group = size_group.clone();
+        let size_slider = size_slider.clone();
+        let text_size_label = text_size_label.clone();
+        let font_family_label = font_family_label.clone();
+        let text_size_list = text_size_list.clone();
+        let font_family_list = font_family_list.clone();
+        let obfuscate_method_list = obfuscate_method_list.clone();
+        move || {
+            // Extract all needed data BEFORE any GTK operations to avoid deadlock
+            let (mode, value, text_size, font_family, obfuscate_method) = {
+                let st = state.lock().unwrap();
+                (
+                    st.active_size_control_mode(),
+                    st.active_size_value().unwrap_or_default(),
+                    st.text_size,
+                    st.text_font_family.clone(),
+                    st.obfuscate_method(),
+                )
+            };
+
+            text_size_label.set_label(&format!("{}pt", text_size as i32));
+            font_family_label.set_label(&font_family);
+            sync_text_option_selection(
+                &text_size_list,
+                TEXT_SIZE_OPTIONS
+                    .iter()
+                    .position(|candidate| *candidate == text_size as i32),
+            );
+            sync_text_option_selection(
+                &font_family_list,
+                TEXT_FONT_FAMILIES
+                    .iter()
+                    .position(|candidate| *candidate == font_family.as_str()),
+            );
+            if let Some(selected_method) = OBFUSCATE_METHOD_OPTIONS
+                .iter()
+                .position(|(method, _)| *method == obfuscate_method)
+            {
+                sync_obfuscate_option_selection(&obfuscate_method_list, selected_method);
+            }
+
+            // Now perform GTK operations WITHOUT holding the lock
+            size_group.set_visible(true);
+
+            let Some(mode) = mode else {
+                size_group.add_css_class("size-group-inactive");
+                size_slider
+                    .set_tooltip_text(Some(&t("Current tool does not support size changes")));
+                size_slider.set_sensitive(false);
+                return;
+            };
+
+            size_group.remove_css_class("size-group-inactive");
+            size_slider.set_sensitive(true);
+
+            use super::color::{MAX_STROKE_SIZE, MIN_STROKE_SIZE};
+            use super::types::SizeControlMode;
+            match mode {
+                SizeControlMode::Stroke => {
+                    size_slider.set_range(MIN_STROKE_SIZE, MAX_STROKE_SIZE);
+                    size_slider.set_value(value);
+                    size_slider.set_tooltip_text(Some(&t("Stroke size")));
+                }
+                SizeControlMode::Obfuscate => {
+                    use super::color::{MAX_OBFUSCATE_AMOUNT, MIN_OBFUSCATE_AMOUNT};
+                    // Blackout has no intensity — hide the slider.
+                    // For all other methods, enable it with the per-method current value.
+                    let method = {
+                        let st = state.lock().unwrap();
+                        st.obfuscate_method
+                    };
+                    if matches!(method, super::types::ObfuscateMethod::Blackout) {
+                        size_group.set_visible(true);
+                        size_group.add_css_class("size-group-inactive");
+                        size_slider.set_sensitive(false);
+                        size_slider.set_tooltip_text(Some(&t("Blackout has no intensity control")));
+                    } else {
+                        size_group.set_visible(true);
+                        size_group.remove_css_class("size-group-inactive");
+                        size_slider.set_sensitive(true);
+                        size_slider.set_range(MIN_OBFUSCATE_AMOUNT, MAX_OBFUSCATE_AMOUNT);
+                        size_slider.set_value(value);
+                        let tooltip = match method {
+                            super::types::ObfuscateMethod::Pixelate => "Pixelate intensity",
+                            super::types::ObfuscateMethod::Blur => "Blur intensity",
+                            super::types::ObfuscateMethod::Blackout => "Blackout",
+                        };
+                        size_slider.set_tooltip_text(Some(tooltip));
+                    }
+                }
+                SizeControlMode::Focus => {
+                    use super::color::{MAX_FOCUS_INTENSITY, MIN_FOCUS_INTENSITY};
+                    size_group.set_visible(true);
+                    size_group.remove_css_class("size-group-inactive");
+                    size_slider.set_sensitive(true);
+                    size_slider.set_range(MIN_FOCUS_INTENSITY, MAX_FOCUS_INTENSITY);
+                    size_slider.set_value(value);
+                    size_slider.set_tooltip_text(Some(&t("Focus background intensity")));
+                }
+            }
+        }
+    });
+    sync_size_control();
+    // Shared Appearance sync: Static preview/export read EditorState, so copy
+    // Motion-runtime styling across each frame without changing crop geometry.
+    // ponytail: one sync point, not per-callback dual-write.
+    {
+        let motion_session = motion_host.session();
+        let state_sync = state.clone();
+        drawing_area.add_tick_callback(move |_, _| {
+            let (appearance, frame, scene_shadow) = {
+                let rt = motion_session.runtime.borrow();
+                (
+                    rt.motion.appearance.clone(),
+                    rt.motion.frame.clone(),
+                    rt.motion.scene_shadow.clone(),
+                )
+            };
+            if let Ok(mut st) = state_sync.try_lock() {
+                background_panel::sync_motion_appearance_to_static(
+                    &appearance,
+                    &frame,
+                    &scene_shadow,
+                    &mut st,
+                );
+            }
+            glib::ControlFlow::Continue
+        });
+    }
+    let initial_tool = state.lock().unwrap().selected_tool;
+    sync_select_inspector();
+    update_toolbar_for_tool(initial_tool);
+
+    canvas_render::install_canvas_draw_func(canvas_render::CanvasDrawInputs {
+        state: &state,
+        transform: &transform,
+        drawing_area: &drawing_area,
+        zoom_level: &zoom_level,
+        undo_btn: &undo_btn,
+        redo_btn: &redo_btn,
+        delete_selected_btn: &delete_selected_btn,
+        canvas_padding,
+        prefers_dark,
+        docked_inset: &docked_inset,
+        caches: &render_caches,
+        interactive_preview: &interactive_preview,
+        wallpaper_cache: &wallpaper_cache,
+        motion_runtime: &motion_host.session().runtime,
+        studio_mark: &studio_mark,
+    });
+
+    // Order must match `tool_button_index` in types.rs (used by click handlers + shortcuts).
+    let tool_buttons = vec![
+        crop_btn.clone(),        // 0 Crop
+        select_btn.clone(),      // 1 Select
+        draw_btn.clone(),        // 2 Pen
+        box_btn.clone(),         // 3 Box
+        circle_btn.clone(),      // 4 Circle
+        arrow_btn.clone(),       // 5 Arrow
+        line_btn.clone(),        // 6 Line
+        text_btn.clone(),        // 7 Text
+        obfuscate_btn.clone(),   // 8 Obfuscate
+        number_btn.clone(),      // 9 Number
+        highlighter_btn.clone(), // 10 Highlighter
+        focus_btn.clone(),       // 11 Focus
+    ];
+
+    // Highlight whatever tool preferences restored (Background is only the default).
+    set_active_tool_button(&tool_buttons, tool_button_index(initial_tool));
+
+    // Appearance interaction returns Static to its neutral mode. A stale tool
+    // would otherwise draw on the canvas while the user is inspecting styling.
+    *background_auto_select_slot.borrow_mut() = Some(Rc::new({
+        let state = state.clone();
+        let tool_buttons = tool_buttons.clone();
+        let update_toolbar_for_tool = update_toolbar_for_tool.clone();
+        let sync_shared_colors = sync_shared_colors_for_active_tool.clone();
+        let sync_size_control = sync_size_control.clone();
+        let rebuild_effects_async = rebuild_effects_async.clone();
+        let drawing_area = drawing_area.clone();
+        let window = window.clone();
+        let in_motion = in_motion.clone();
+        move || {
+            if in_motion.get() {
+                return;
+            }
+            let rebuild = state
+                .lock()
+                .unwrap()
+                .set_tool_without_rebuild(Tool::Background);
+            if rebuild {
+                rebuild_effects_async();
+            }
+            set_active_tool_button(&tool_buttons, usize::MAX);
+            update_toolbar_for_tool(Tool::Background);
+            sync_shared_colors();
+            sync_size_control();
+            cursor::set_window_cursor_name(&window, Some("default"));
+            drawing_area.queue_draw();
+        }
+    }));
+
+    crop_apply_btn.connect_clicked({
+        let state = state.clone();
+        let motion_session = motion_host.session();
+        let drawing_area = drawing_area.downgrade();
+        let update_canvas_content_size = update_canvas_content_size.clone();
+        let crop_cancel_btn = crop_cancel_btn.clone();
+        move |_| {
+            let motion_before = motion_session.motion_state();
+            let (applied, crop, old_width, old_height) = {
+                let mut st = state.lock().unwrap();
+                let crop = st.crop_rect;
+                let width = st.base_image.width();
+                let height = st.base_image.height();
+                (st.apply_pending_crop(), crop, width, height)
+            };
+            if applied {
+                state.lock().unwrap().restart_text_detection();
+                if let Some(crop) = crop {
+                    motion_session.rebase_source_coordinates_for_crop(crop, old_width, old_height);
+                    motion_session.capture_snapshot(&state.lock().unwrap());
+                    state.lock().unwrap().attach_motion_history_to_latest_crop(
+                        motion_before,
+                        motion_session.motion_state(),
+                    );
+                }
+                update_canvas_content_size();
+                crop_cancel_btn.emit_clicked();
+            }
+            if let Some(area) = drawing_area.upgrade() {
+                area.queue_draw();
+            }
+        }
+    });
+
+    crop_cancel_btn.connect_clicked({
+        let state = state.clone();
+        let tool_buttons = tool_buttons.clone();
+        let update_toolbar_for_tool = update_toolbar_for_tool.clone();
+        let sync_picker = sync_shared_colors_for_active_tool.clone();
+        let sync_size_control = sync_size_control.clone();
+        let drawing_area = drawing_area.downgrade();
+        let window = window.clone();
+        move |_| {
+            state
+                .lock()
+                .unwrap()
+                .set_tool_without_rebuild(Tool::Background);
+            set_active_tool_button(&tool_buttons, usize::MAX);
+            update_toolbar_for_tool(Tool::Background);
+            sync_picker();
+            sync_size_control();
+            cursor::set_window_cursor_name(&window, Some("default"));
+            if let Some(area) = drawing_area.upgrade() {
+                area.queue_draw();
+            }
+        }
+    });
+
+    let sync_motion_crop_history: Rc<dyn Fn()> = Rc::new({
+        let state = state.clone();
+        let motion_session = motion_host.session();
+        let motion_preview = motion_host.parts.shell.preview.clone();
+        let motion_ruler = motion_host.parts.timeline.ruler.clone();
+        let motion_track = motion_host.parts.timeline.motion_track.clone();
+        let motion_text_track = motion_host.parts.timeline.text_track.clone();
+        let motion_playhead = motion_host.parts.timeline.playhead_overlay.clone();
+        move || {
+            let (motion_change, restart_text_detection) = {
+                let mut st = state.lock().unwrap();
+                (
+                    st.take_motion_history_state(),
+                    st.take_text_detection_restart(),
+                )
+            };
+            if let Some(change) = motion_change {
+                motion_session.restore_crop_history_state(&state.lock().unwrap(), change);
+                motion_preview.queue_draw();
+                motion_ruler.queue_draw();
+                motion_track.queue_draw();
+                motion_text_track.queue_draw();
+                motion_playhead.queue_draw();
+            }
+            if restart_text_detection {
+                state.lock().unwrap().restart_text_detection();
+            }
+        }
+    });
+
+    events::wire_editor_events(events::EventContext {
+        studio_mark: studio_mark.clone(),
+        app: app.clone(),
+        window: window.clone(),
+        path: path.clone(),
+        session_alive: session_alive.clone(),
+        state: state.clone(),
+        transform: transform.clone(),
+        sync_static_transform: sync_static_transform.clone(),
+        drawing_area: drawing_area.clone(),
+        tool_buttons: tool_buttons.clone(),
+        select_btn: select_btn.clone(),
+        crop_btn: crop_btn.clone(),
+        crop_apply_btn: crop_apply_btn.clone(),
+        crop_cancel_btn: crop_cancel_btn.clone(),
+        sync_motion_crop_history: sync_motion_crop_history.clone(),
+        undo_motion_history: Rc::new({
+            let session = motion_host.session();
+            move || session.runtime.borrow_mut().undo_motion()
+        }),
+        redo_motion_history: Rc::new({
+            let session = motion_host.session();
+            move || session.runtime.borrow_mut().redo_motion()
+        }),
+        draw_btn: draw_btn.clone(),
+        arrow_btn: arrow_btn.clone(),
+        line_btn: line_btn.clone(),
+        box_btn: box_btn.clone(),
+        circle_btn: circle_btn.clone(),
+        text_btn: text_btn.clone(),
+        number_btn: number_btn.clone(),
+        highlighter_btn: highlighter_btn.clone(),
+        obfuscate_btn: obfuscate_btn.clone(),
+        focus_btn: focus_btn.clone(),
+        traffic_close: traffic_close.clone(),
+        traffic_minimize: traffic_minimize.clone(),
+        traffic_zoom: traffic_zoom.clone(),
+        canvas_overlay: canvas_overlay.clone(),
+        trial_toast_anchor: trial_toast_anchor.clone(),
+        canvas_scroller: canvas_scroller.clone(),
+        zoom_button: zoom_button.clone(),
+        zoom_label: zoom_label.clone(),
+        zoom_header_label: zoom_header_label.clone(),
+        zoom_popup: zoom_popup.clone(),
+        zoom_minus_btn: zoom_minus_btn.clone(),
+        zoom_plus_btn: zoom_plus_btn.clone(),
+        zoom_in_btn: zoom_in_btn.clone(),
+        zoom_out_btn: zoom_out_btn.clone(),
+        fit_to_screen_btn: fit_to_screen_btn.clone(),
+        zoom_to_selection_btn: zoom_to_selection_btn.clone(),
+        zoom_level: zoom_level.clone(),
+        copy_btn: copy_btn.clone(),
+        upload_btn: upload_btn.clone(),
+        color_buttons: color_buttons.clone(),
+        color_picker_dot: color_picker_dot.clone(),
+        color_class_names: color_class_names.clone(),
+        size_slider: size_slider.clone(),
+        text_size_label: text_size_label.clone(),
+        font_family_label: font_family_label.clone(),
+        text_size_list: text_size_list.clone(),
+        font_family_list: font_family_list.clone(),
+        undo_btn: undo_btn.clone(),
+        redo_btn: redo_btn.clone(),
+        delete_selected_btn: delete_selected_btn.clone(),
+        save_btn: save_btn.clone(),
+        save_spinner: save_spinner.clone(),
+        eyedropper: eyedropper.clone(),
+        update_toolbar_for_tool: update_toolbar_for_tool.clone(),
+        update_canvas_content_size: update_canvas_content_size.clone(),
+        sync_picker_for_active_tool: sync_shared_colors_for_active_tool.clone(),
+        sync_picker_from_color: sync_picker_from_color.clone(),
+        apply_picker_color_to_editor: apply_picker_color_to_editor.clone(),
+        add_color_to_custom_slots: Rc::new({
+            let custom_slot_colors = custom_slot_colors.clone();
+            let refresh_custom_color_slots = refresh_custom_color_slots.clone();
+            let refresh_colors_panel_custom_slots = refresh_colors_panel_custom_slots.clone();
+            move |color: DrawColor| {
+                let mut custom_colors = custom_slot_colors.borrow_mut();
+                if let Some(slot_index) = custom_colors.iter().position(Option::is_none) {
+                    custom_colors[slot_index] = Some(color);
+                    super::color::save_persisted_custom_slot_colors(custom_colors.as_slice());
+                    drop(custom_colors);
+                    refresh_custom_color_slots();
+                    refresh_colors_panel_custom_slots();
+                }
+            }
+        }),
+        set_picker_panel_visibility: set_picker_panel_visibility.clone(),
+        sync_select_inspector: sync_select_inspector.clone(),
+        sync_size_control: sync_size_control.clone(),
+        rebuild_effects_async: rebuild_effects_async.clone(),
+        obfuscate_method_button: obfuscate_method_button.clone(),
+        obfuscate_method_list: obfuscate_method_list.clone(),
+        pen_weight_button: pen_weight_button.clone(),
+        pen_weight_list: pen_inspector_list.clone(),
+        highlighter_weight_list: highlighter_inspector_list.clone(),
+        number_options_list: number_options_list.clone(),
+        number_start_entry: number_start_entry.clone(),
+        number_inc_btn: number_inc_btn.clone(),
+        number_dec_btn: number_dec_btn.clone(),
+        number_size_button: number_size_button.clone(),
+        number_size_list: number_size_list.clone(),
+        arrow_style_button: arrow_style_button.clone(),
+        arrow_style_list: arrow_style_list.clone(),
+        arrow_thickness_list: arrow_thickness_list.clone(),
+        inverse_direction_toggle: inverse_direction_toggle.clone(),
+        stroke_size_button: stroke_size_button.clone(),
+        stroke_size_list: line_inspector_list.clone(),
+        in_motion: in_motion.clone(),
+        export_motion: motion_host.export_callback(),
+    });
+
+    // Share the video editor's focus-out net: the Motion Appearance popover is
+    // the shared Custom fill popover, which is deliberately grabless and
+    // non-autohiding, so it relies on this sweep to come down when another app
+    // takes focus. Without it the card stays up over whatever window you switch to.
+    crate::recording::editor::window::sweep_popovers_on_deactivate(&window);
+    window.present();
+    crate::update_ui::present_if_needed(&root_overlay);
+    if annotate_config.always_on_top {
+        set_window_always_on_top(
+            &window,
+            &tracked_window_id,
+            true,
+            window_title,
+            window_namespace,
+        );
+    }
+
+    // Crash safety: the session is written beside the image while it is
+    // edited, not only on close. A write waits until the session has held
+    // still for one tick, so a drag in progress is never written, and runs on
+    // a worker so encoding the original never stalls the canvas.
+    let session_writes: Arc<Mutex<u64>> = Arc::new(Mutex::new(0));
+    let last_written = Rc::new(RefCell::new(session_baseline.clone()));
+    if !empty_drop_zone {
+        let state = state.clone();
+        let path = path.clone();
+        let window = window.downgrade();
+        let session_alive = session_alive.clone();
+        let baseline = session_baseline.clone();
+        let last_written = last_written.clone();
+        let writes = session_writes.clone();
+        let previous_tick = RefCell::new(session_baseline.clone());
+        glib::timeout_add_local(std::time::Duration::from_secs(2), move || {
+            if !session_alive.get() || window.upgrade().is_none() {
+                return glib::ControlFlow::Break;
+            }
+            let st = state.lock().unwrap();
+            let current = image_session_snapshot(&st);
+            let settled = *previous_tick.borrow() == current;
+            *previous_tick.borrow_mut() = current.clone();
+            if !settled || *last_written.borrow() == current {
+                return glib::ControlFlow::Continue;
+            }
+            let delete = session_write_deletes(&current, &baseline);
+            let job = ImageSessionWrite::capture(&path, &st, delete);
+            drop(st);
+            *last_written.borrow_mut() = current;
+            let generation = {
+                let mut latest = writes.lock().unwrap_or_else(|error| error.into_inner());
+                *latest += 1;
+                *latest
+            };
+            let writes = writes.clone();
+            std::thread::spawn(move || {
+                let latest = writes.lock().unwrap_or_else(|error| error.into_inner());
+                if *latest == generation {
+                    job.write();
+                }
+                drop(latest);
+            });
+            glib::ControlFlow::Continue
+        });
+    }
+    let state_prefs = state.clone();
+    let session_alive_prefs = session_alive.clone();
+    let path_persist = path.clone();
+    let motion_session_persist = motion_host.session();
+    let last_written_close = last_written.clone();
+    let session_writes_close = session_writes.clone();
+    window.connect_close_request(move |_| {
+        // Superseded session: don't save stale preferences on close.
+        if !session_alive_prefs.get() {
+            return glib::Propagation::Proceed;
+        }
+        if !empty_drop_zone {
+            persist_image_session_on_close(
+                &path_persist,
+                &state_prefs,
+                &session_baseline,
+                &last_written_close,
+                &session_writes_close,
+            );
+            // Motion edits live outside EditorState, so they persist
+            // separately. An untouched Motion session writes no sidecar.
+            let motion = motion_session_persist.runtime.borrow();
+            super::motion_project::persist_motion_session(&motion.motion, &path_persist);
+        }
+        crate::gnome_integration::emit_tracked_window_closed(&tracked_window_id);
+        let prefs = {
+            let st = state_prefs.lock().unwrap();
+            super::preferences::EditorPreferences::from_state(&st)
+        };
+        super::preferences::save_editor_prefs(&prefs);
+        glib::Propagation::Proceed
+    });
+}
+
+fn image_session_snapshot(state: &EditorState) -> crate::annotations::ImageSessionSnapshot {
+    let (shadow_profile, cast_light) = background_panel::persisted_shadows(state);
+    crate::annotations::ImageSessionSnapshot::from_editor(
+        state.base_image.width(),
+        state.base_image.height(),
+        &state.actions,
+        &state.background_style,
+        state.background_padding,
+        shadow_profile,
+        cast_light,
+        state.background_insert,
+        state.auto_balance,
+        state.background_alignment,
+        state.background_corner_radius,
+        state.background_aspect_ratio,
+        state.static_image_transform,
+        state.source_upscale,
+    )
+}
+
+/// One editable-session write, detached from `EditorState` so a worker thread
+/// can do the hashing and the PNG encoding of the original.
+struct ImageSessionWrite {
+    path: PathBuf,
+    /// Nothing left to re-edit: drop the sidecar instead of writing one.
+    delete: bool,
+    width: u32,
+    height: u32,
+    actions: Vec<AnnotationAction>,
+    base_image: Arc<image::RgbaImage>,
+    background_style: BackgroundStyle,
+    background_padding: f64,
+    shadow_profile: crate::annotations::ShadowProfileSettings,
+    cast_light: Option<crate::capture::editor::motion_project::MotionSceneShadowFile>,
+    background_insert: f64,
+    auto_balance: bool,
+    background_alignment: BackgroundAlignment,
+    background_corner_radius: f64,
+    background_aspect_ratio: CropAspectRatio,
+    static_image_transform: super::image_transform::StaticImageTransform,
+    source_upscale: super::upscale::SourceUpscale,
+}
+
+impl ImageSessionWrite {
+    fn capture(path: &std::path::Path, state: &EditorState, delete: bool) -> Self {
+        let (shadow_profile, cast_light) = background_panel::persisted_shadows(state);
+        Self {
+            path: path.to_path_buf(),
+            delete,
+            width: state.base_image.width(),
+            height: state.base_image.height(),
+            actions: state.actions.clone(),
+            base_image: Arc::clone(&state.base_image),
+            background_style: state.background_style.clone(),
+            background_padding: state.background_padding,
+            shadow_profile,
+            cast_light,
+            background_insert: state.background_insert,
+            auto_balance: state.auto_balance,
+            background_alignment: state.background_alignment,
+            background_corner_radius: state.background_corner_radius,
+            background_aspect_ratio: state.background_aspect_ratio,
+            static_image_transform: state.static_image_transform,
+            source_upscale: state.source_upscale,
+        }
+    }
+
+    fn write(self) {
+        if self.delete {
+            if crate::annotations::annotations_exist(&self.path) {
+                if let Err(error) = crate::annotations::delete_annotations(&self.path) {
+                    eprintln!("[editor] Warning: Failed to delete annotations: {error}");
+                }
+            }
+            return;
+        }
+        if let Err(error) = crate::annotations::save_annotations(
+            &self.path,
+            self.width,
+            self.height,
+            &self.actions,
+            &self.base_image,
+            &self.background_style,
+            self.background_padding,
+            self.shadow_profile,
+            self.cast_light,
+            self.background_insert,
+            self.auto_balance,
+            self.background_alignment,
+            self.background_corner_radius,
+            self.background_aspect_ratio,
+            self.static_image_transform,
+            self.source_upscale,
+        ) {
+            eprintln!("[editor] Warning: Failed to save annotations: {error}");
+        }
+    }
+}
+
+/// Whether a session with nothing left to re-edit should drop the sidecar,
+/// the same rule the close path has always used.
+fn session_write_deletes(
+    current: &crate::annotations::ImageSessionSnapshot,
+    baseline: &crate::annotations::ImageSessionSnapshot,
+) -> bool {
+    current.is_empty()
+        && current.canvas_width == baseline.canvas_width
+        && current.canvas_height == baseline.canvas_height
+}
+
+fn persist_image_session_on_close(
+    path: &std::path::Path,
+    state: &Arc<Mutex<EditorState>>,
+    baseline: &crate::annotations::ImageSessionSnapshot,
+    last_written: &RefCell<crate::annotations::ImageSessionSnapshot>,
+    writes: &Arc<Mutex<u64>>,
+) {
+    // Supersede any autosave that has not started, and wait out one that has.
+    let mut generation = writes.lock().unwrap_or_else(|error| error.into_inner());
+    *generation += 1;
+    let st = state.lock().unwrap();
+    let current = image_session_snapshot(&st);
+    if current == *last_written.borrow() {
+        return;
+    }
+    let delete = session_write_deletes(&current, baseline);
+    ImageSessionWrite::capture(path, &st, delete).write();
+    *last_written.borrow_mut() = current;
+    drop(generation);
+}
+
+#[cfg(test)]
+mod tests {
+
+    fn production_editor_window_source() -> String {
+        let mod_src = include_str!("mod.rs");
+        let inspectors_mod = include_str!("inspectors/mod.rs");
+        let inspectors_shell = include_str!("inspectors/shell.rs");
+        let inspectors_select = include_str!("inspectors/select.rs");
+        let inspectors_stroke = include_str!("inspectors/stroke.rs");
+        let inspectors_text = include_str!("inspectors/text.rs");
+        let inspectors_number = include_str!("inspectors/number.rs");
+        let inspectors_obfuscate = include_str!("inspectors/obfuscate.rs");
+        let background_assets_src = include_str!("background_assets.rs");
+        let canvas_layout_src = include_str!("canvas_layout.rs");
+        let effects_src = include_str!("effects.rs");
+        let chrome_src = include_str!("chrome.rs");
+        let empty_state_src = include_str!("empty_state.rs");
+        let canvas_render_src = include_str!("canvas_render.rs");
+        let mod_prod = mod_src.split("#[cfg(test)]").next().unwrap_or(mod_src);
+        let inspectors_prod = inspectors_mod
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or(inspectors_mod);
+        let background_assets_prod = background_assets_src
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or(background_assets_src);
+        let canvas_layout_prod = canvas_layout_src
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or(canvas_layout_src);
+        let effects_prod = effects_src
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or(effects_src);
+        let chrome_prod = chrome_src
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or(chrome_src);
+        let empty_state_prod = empty_state_src
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or(empty_state_src);
+        let canvas_render_prod = canvas_render_src
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or(canvas_render_src);
+        format!(
+            "{mod_prod}\n{inspectors_prod}\n{inspectors_shell}\n{inspectors_select}\n{inspectors_stroke}\n{inspectors_text}\n{inspectors_number}\n{inspectors_obfuscate}\n{background_assets_prod}\n{canvas_layout_prod}\n{effects_prod}\n{chrome_prod}\n{empty_state_prod}\n{canvas_render_prod}"
+        )
+    }
+
+    #[test]
+    fn toolbar_color_status_shows_the_remembered_drawing_color() {
+        let source = include_str!("mod.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production_source.contains("editor-toolbar-color-status-swatch")
+                && production_source.contains("color_status_label.set_label")
+                && production_source.contains("draw_color_to_hex(active_color)")
+                && production_source
+                    .contains("let active_color = state.lock().unwrap().selected_color;"),
+            "Toolbar color status should mirror the drawing color the editor remembers",
+        );
+    }
+
+    /// One picker serves both the toolbar chip and the Colors panel, so the
+    /// control that opens it names the colour it edits: the chip is the drawing
+    /// colour the tools paint with, the panel is the active tool's colour,
+    /// Background fill included.
+    #[test]
+    fn one_color_picker_serves_the_chip_and_the_panel_through_explicit_targets() {
+        let source = include_str!("mod.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        let picker_source = include_str!("color_picker.rs");
+        let picker_production = picker_source
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or(picker_source);
+        assert!(
+            production_source.contains("set_picker_target(color_picker::PickerTarget::Drawing);")
+                && production_source.contains("set_picker_target_for_active_tool()")
+                && production_source.contains("apply_picker_color_for_active_tool")
+                && picker_production.contains("pub enum PickerTarget {")
+                && picker_production.contains("PickerTarget::Background => active_tool_color(state),")
+                && picker_production.contains("picker_target.get() == PickerTarget::Background"),
+            "the toolbar chip must edit the drawing color while the Colors panel keeps the active tool's"
+        );
+    }
+
+    #[test]
+    fn toolbar_color_status_follows_colors_panel_palette_and_custom_color_updates() {
+        let mod_source = include_str!("mod.rs");
+        let mod_production_source = mod_source
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or(mod_source);
+        let colors_source = include_str!("colors_panel.rs");
+        let colors_production_source = colors_source
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or(colors_source);
+        assert!(
+            mod_production_source.contains("sync_toolbar_color_status();")
+                && colors_production_source.contains("apply_picker_color(DRAW_COLORS[index]);")
+                && colors_production_source.contains("apply_picker_color_click(color);"),
+            "Toolbar color status should follow palette and My colors selections from the Colors panel",
+        );
+    }
+
+    #[test]
+    fn toolbar_color_chip_toggles_the_shared_color_popover() {
+        let source = include_str!("mod.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        let picker_source = include_str!("color_picker.rs");
+        let picker_production = picker_source
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or(picker_source);
+        assert!(
+            production_source.contains("open_drawing_color_picker")
+                && production_source.contains("color_popover.unparent();")
+                && production_source.contains(
+                    "color_popover.set_parent(color_status.upcast_ref::<gtk4::Widget>());"
+                )
+                && production_source
+                    .contains("set_picker_target(color_picker::PickerTarget::Drawing);")
+                && production_source.contains("sync_shared_colors_for_active_tool();")
+                && production_source.contains("if color_popover.is_visible()")
+                && production_source.contains("color_popover.popdown();")
+                && picker_production.contains("pub popover: Popover")
+                && picker_production.contains(
+                    "build_color_popover(&t(\"Color picker\"), &picker, Some(&eyedropper_btn));"
+                )
+                && picker_production.contains("popover.popdown();")
+                && !production_source.contains("color_floating_card")
+                && !production_source.contains("add_overlay(&color_popover)"),
+            "The toolbar chip should toggle the shared Color-only popover anchored under the chip"
+        );
+    }
+
+    #[test]
+    fn editor_layout_includes_persistent_right_inspector_shell() {
+        let production_source = production_editor_window_source();
+        assert!(production_source.contains("editor-right-inspector"));
+    }
+
+    #[test]
+    fn editor_uses_full_top_bar_for_window_dragging() {
+        let production_source = production_editor_window_source();
+        assert!(
+            (production_source.contains("install_window_drag(&top_chrome, &window);")
+                || production_source.contains("install_window_drag(&top_chrome, window);"))
+                && (production_source
+                    .contains("install_top_bar_window_drag(&root_overlay, &window);")
+                    || production_source
+                        .contains("install_top_bar_window_drag(root_overlay, window);"))
+                && production_source.contains("editor-top-chrome")
+                && production_source.contains("canvas_with_toolbar.add_overlay(&top_chrome);")
+                && production_source.contains("EDITOR_TOP_CHROME_HEIGHT")
+                && !production_source.contains("install_window_drag(&toolbar, &window);"),
+            "toolbar drag strip should float over the checkerboard canvas, not replace it"
+        );
+    }
+
+    #[test]
+    fn editor_enforces_the_toolbar_safe_minimum_width() {
+        let source = include_str!("mod.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production_source.contains("window.set_size_request(EDITOR_MIN_WINDOW_WIDTH, -1);"),
+            "the editor window must not resize narrower than its toolbar-safe width"
+        );
+    }
+
+    #[test]
+    fn annotate_runtime_config_no_longer_contains_dock_icon_setting() {
+        let source = include_str!("mod.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(!production_source.contains("show_dock_icon"));
+        assert!(!production_source.contains("set_window_dock_visibility"));
+    }
+
+    #[test]
+    fn editor_layout_tracks_background_inspector_content() {
+        let source = include_str!("mod.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(production_source.contains("background_inspector"));
+    }
+
+    #[test]
+    fn editor_layout_uses_stack_for_inspector_surface_switching() {
+        let production_source = production_editor_window_source();
+        assert!(
+            production_source.contains("let inspector_stack = Stack::new();")
+                && production_source.contains("inspector_stack.set_hhomogeneous(false);")
+                && production_source.contains("const INSPECTOR_SIDEBAR_WIDTH: i32 = 320;")
+                && production_source.contains(
+                    "inspector_stack.set_width_request(INSPECTOR_SIDEBAR_WIDTH);"
+                )
+                && production_source.contains("input.background_inspector.set_visible(true);")
+                && production_source.contains("select_inspector.set_visible(true);")
+                && production_source.contains("pen_inspector.set_visible(true);")
+                && production_source.contains("arrow_inspector.set_visible(true);")
+                && production_source.contains("line_inspector.set_visible(true);")
+                && production_source.contains("text_inspector.set_visible(true);")
+                && production_source.contains("highlighter_inspector.set_visible(true);")
+                && production_source.contains("number_inspector.set_visible(true);")
+                && production_source.contains("input.colors_inspector.set_visible(true);")
+                && production_source.contains("input.placeholder_inspector.set_visible(true);")
+                && production_source.contains("inspector_stack.add_named(input.background_inspector, Some(\"background\"));")
+                && production_source.contains("inspector_stack.add_named(&select_inspector, Some(\"select\"));")
+                && production_source.contains("inspector_stack.add_named(&pen_inspector, Some(\"pen\"));")
+                && production_source.contains("inspector_stack.add_named(&arrow_inspector, Some(\"arrow\"));")
+                && production_source.contains("inspector_stack.add_named(&line_inspector, Some(\"line\"));")
+                && production_source.contains("inspector_stack.add_named(&text_inspector, Some(\"text\"));")
+                && production_source.contains("inspector_stack.add_named(&highlighter_inspector, Some(\"highlighter\"));")
+                && production_source.contains("inspector_stack.add_named(&number_inspector, Some(\"number\"));")
+                && production_source.contains("inspector_stack.add_named(input.colors_inspector, Some(\"colors\"));")
+                && production_source.contains("inspector_stack.add_named(input.placeholder_inspector, Some(\"placeholder\"));")
+                && production_source.contains("inspector_stack.set_visible_child_name(surface);"),
+            "Inspector surfaces should switch through a dedicated stack so tab changes keep one stable container",
+        );
+    }
+
+    #[test]
+    fn editor_startup_uses_selected_tool_instead_of_hardcoded_arrow() {
+        let source = include_str!("mod.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production_source.contains("let initial_tool = state.lock().unwrap().selected_tool;")
+                && production_source.contains("update_toolbar_for_tool(initial_tool);")
+                && production_source.contains(
+                    "set_active_tool_button(&tool_buttons, tool_button_index(initial_tool));",
+                )
+                && !production_source.contains("update_toolbar_for_tool(Tool::Arrow);")
+                && production_source.contains("set_active_tool_button(&tool_buttons, usize::MAX);")
+                && !production_source.contains("Tool::Background => 0,"),
+            "Editor startup should highlight the restored visible tool and keep neutral Appearance unhighlighted",
+        );
+    }
+
+    #[test]
+    fn static_tools_keep_the_appearance_inspector_docked() {
+        let source = include_str!("mod.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production_source.contains("if !in_motion.get() {")
+                && production_source
+                    .contains("inspector_stack.set_visible_child_name(\"background\");")
+                && production_source
+                    .contains("*last_inspector.borrow_mut() = \"background\".to_string();"),
+            "Static tool changes must pin the Appearance (Background) inspector and restore it after Motion",
+        );
+    }
+
+    /// The Appearance burst is seated on the forwarder because every
+    /// Appearance interaction already lands there — a gradient-stop drag, a
+    /// slider, or a preset click. Wiring it anywhere later (say, only in the
+    /// fill closures) would leave the other edits on the quality resample.
+    #[test]
+    fn appearance_interactions_mark_the_canvas_interactive() {
+        let source = include_str!("mod.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production_source.contains("canvas_render::InteractivePreview::new(")
+                && production_source.contains("interactive_preview.touch();")
+                && production_source.contains("interactive_preview: &interactive_preview,"),
+            "Appearance edits must mark the canvas interactive and hand the burst to the draw function",
+        );
+    }
+
+    #[test]
+    fn select_tool_has_real_inspector_content() {
+        let production_source = production_editor_window_source();
+        assert!(
+            production_source.contains("let (select_inspector, select_inspector_content) = build_tool_inspector();")
+                && production_source.contains("sync_select_inspector")
+                && production_source.contains("\"No object selected\"")
+                && production_source.contains("selected_action_kind(&action)")
+                && !production_source.contains("Tool::Select => Some(\"placeholder\")"),
+            "Select tool should render a real selection inspector instead of the generic placeholder",
+        );
+    }
+
+    #[test]
+    fn arrow_inspector_includes_style_thickness_and_behavior_sections() {
+        let production_source = production_editor_window_source();
+        assert!(
+            production_source.contains(
+                "let (arrow_inspector, arrow_inspector_content) = build_tool_inspector();"
+            ) && production_source.contains("\"Style\"")
+                && production_source.contains("\"Thickness\"")
+                && production_source.contains("\"Behavior\""),
+            "Arrow inspector should render Style, Thickness, and Behavior sections",
+        );
+    }
+
+    #[test]
+    fn arrow_inspector_reuses_existing_fixed_sidebar_width() {
+        let production_source = production_editor_window_source();
+        assert!(
+            production_source.contains("root.set_width_request(BACKGROUND_SIDEBAR_WIDTH);")
+                && !production_source.contains("ARROW_SIDEBAR_WIDTH"),
+            "Arrow inspector should reuse the shared fixed sidebar width instead of introducing a new width path",
+        );
+    }
+
+    #[test]
+    fn arrow_thickness_options_use_custom_stroke_previews() {
+        let source = include_str!("mod.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production_source.contains("pub(super) fn build_arrow_thickness_preview(")
+                && production_source.contains("weight: super::pen_weight::PenWeight,")
+                && production_source.contains("light: bool,")
+                && production_source.contains("let icon = build_arrow_thickness_preview(weight, !prefers_dark);")
+                && !production_source.contains("let icon = Image::from_icon_name(weight.icon_name());\n        icon.set_pixel_size(weight.icon_pixel_size());\n        let label_widget = Label::new(Some(&t(label)));"),
+            "Arrow thickness inspector options should use dedicated stroke previews instead of stock symbolic icons",
+        );
+    }
+
+    #[test]
+    fn arrow_inspector_style_and_thickness_rows_include_tick_indicators() {
+        let source = include_str!("mod.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production_source.contains("check_icon.add_css_class(\"editor-arrow-inspector-check\");")
+                && production_source.contains("btn.add_css_class(\"editor-arrow-inspector-option-active\");")
+                && production_source.contains("sync_arrow_option_selection(&arrow_style_list, selected_style);")
+                && production_source.contains("sync_arrow_option_selection(&arrow_thickness_list, selected_thickness);"),
+            "Arrow inspector rows should expose a visible selected tick for style and thickness options",
+        );
+    }
+
+    #[test]
+    fn pen_line_and_highlighter_inspectors_use_thickness_sections_with_arrow_row_styles() {
+        let production_source = production_editor_window_source();
+        assert!(
+            production_source.contains("let (pen_inspector, pen_inspector_content) = build_tool_inspector();")
+                && production_source.contains("let (line_inspector, line_inspector_content) = build_tool_inspector();")
+                && production_source.contains("let (highlighter_inspector, highlighter_inspector_content) = build_tool_inspector();")
+                && production_source.contains("&pen_inspector_content")
+                && production_source.contains("&line_inspector_content")
+                && production_source.contains("&highlighter_inspector_content")
+                && production_source.contains("\"Thickness\"")
+                && production_source.contains("input.pen_inspector_list.upcast_ref()")
+                && production_source.contains("input.line_inspector_list.upcast_ref()")
+                && production_source.contains("input.highlighter_inspector_list.upcast_ref()")
+                && production_source.contains("\"editor-arrow-inspector-option\"")
+                && production_source.contains("sync_arrow_option_selection(&pen_inspector_list, selected_pen_thickness);")
+                && production_source.contains("sync_arrow_option_selection(&line_inspector_list, selected_thickness);")
+                && production_source
+                    .contains("let detect_text_label = Label::new(Some(&t(\"Detect text\")));")
+                && production_source.contains("sync_arrow_option_selection(&highlighter_inspector_list, selected_highlighter_option);"),
+            "Pen, Line, and Highlighter inspectors should expose thickness sections using the same active row styling as the Arrow inspector",
+        );
+    }
+
+    #[test]
+    fn text_inspector_rows_use_label_plus_tick_layout_and_shared_sidebar_width() {
+        let production_source = production_editor_window_source();
+        assert!(
+            production_source.contains("check_icon.add_css_class(\"editor-text-inspector-check\");")
+                && production_source.contains("btn.add_css_class(\"editor-text-inspector-option-active\");")
+                && production_source.contains("sync_text_option_selection(\n                &text_size_list,")
+                && production_source.contains("sync_text_option_selection(\n                &font_family_list,")
+                && production_source.contains("root.set_width_request(BACKGROUND_SIDEBAR_WIDTH);")
+                && !production_source.contains("TEXT_SIDEBAR_WIDTH"),
+            "Text inspector rows should use explicit selected ticks while reusing the existing fixed sidebar width",
+        );
+    }
+
+    #[test]
+    fn obfuscate_inspector_renders_method_section_and_reuses_shared_sidebar_width() {
+        let production_source = production_editor_window_source();
+        assert!(
+            production_source.contains(
+                "let (obfuscate_inspector, obfuscate_inspector_content) = build_tool_inspector();"
+            ) && production_source.contains("\"Method\"")
+                && production_source
+                    .contains("sync_obfuscate_option_selection(&obfuscate_method_list")
+                && production_source.contains("root.set_width_request(BACKGROUND_SIDEBAR_WIDTH);")
+                && !production_source.contains("OBFUSCATE_SIDEBAR_WIDTH"),
+            "Obfuscate should render a Method section while reusing the shared fixed sidebar width",
+        );
+    }
+
+    #[test]
+    fn obfuscate_inspector_uses_a_fresh_list_instead_of_reusing_toolbar_popover_state() {
+        let source = include_str!("mod.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production_source.contains("let obfuscate_method_list = GtkBox::new(Orientation::Vertical, 0);")
+                && !production_source.contains("if let Some(parent) = obfuscate_method_list.parent() {"),
+            "Obfuscate should follow the migrated tool pattern and build a fresh inspector-owned list instead of reusing toolbar popover state",
+        );
+    }
+
+    #[test]
+    fn number_inspector_style_and_size_rows_use_matching_row_composition() {
+        let production_source = production_editor_window_source();
+        assert!(
+            production_source.contains("editor-number-style-check")
+                && production_source.contains("editor-number-size-check")
+                && production_source.contains("editor-number-style-option-active")
+                && production_source.contains("editor-number-size-option-active")
+                && production_source.contains("editor-number-style-option")
+                && production_source.contains("editor-number-size-option")
+                && production_source.contains("root.set_width_request(BACKGROUND_SIDEBAR_WIDTH);")
+                && !production_source.contains("NUMBER_SIDEBAR_WIDTH"),
+            "Number Style and Size rows should share the same inspector-native composition while reusing the shared sidebar width",
+        );
+    }
+
+    #[test]
+    fn number_inspector_includes_start_controls_in_the_sidebar() {
+        let production_source = production_editor_window_source();
+        assert!(
+            production_source.contains("let number_start_row = GtkBox::new(Orientation::Horizontal, 8);")
+                && production_source
+                    .contains("let number_start_label = Label::new(Some(&t(\"Start with:\")));")
+                && production_source.contains("number_start_row.append(&number_dec_btn);")
+                && production_source.contains("number_start_row.append(&number_start_entry);")
+                && production_source.contains("number_start_row.append(&number_inc_btn);")
+                && production_source.contains("append_inspector_section(\n        &number_inspector_content,\n        &t(\"Start\"),")
+                && production_source.contains("number_start_row.upcast_ref()"),
+            "Number inspector should expose the starting number controls inside the sidebar",
+        );
+    }
+
+    #[test]
+    fn focus_tool_routes_toolbar_slider_to_background_intensity() {
+        let source = include_str!("mod.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production_source.contains("SizeControlMode::Focus => {")
+                && production_source.contains("Focus background intensity")
+                && production_source.contains("size_slider.set_range(MIN_FOCUS_INTENSITY, MAX_FOCUS_INTENSITY);"),
+            "Focus should use the toolbar slider as a background intensity control in the live preview",
+        );
+    }
+
+    #[test]
+    fn obfuscate_inspector_and_slider_expose_a_single_blur_mode() {
+        let source = include_str!("mod.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production_source.contains("(super::types::ObfuscateMethod::Blur, \"Blur\")")
+                && !production_source.contains("Blur (Secure)")
+                && !production_source.contains("Blur (Smooth)")
+                && production_source
+                    .contains("super::types::ObfuscateMethod::Blur => \"Blur intensity\""),
+            "Obfuscate inspector and toolbar slider should expose one merged Blur mode",
+        );
+    }
+
+    #[test]
+    fn canvas_render_draw_func_is_installed_from_setup() {
+        let production_source = production_editor_window_source();
+        let mod_prod = include_str!("mod.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or("");
+        assert!(
+            mod_prod.contains("canvas_render::install_canvas_draw_func(")
+                && mod_prod.contains("CanvasRenderCaches::new()")
+                && !mod_prod
+                    .contains("drawing_area.set_draw_func(move |_, context, width, height| {")
+                && production_source.contains("pub(super) fn install_canvas_draw_func(")
+                && production_source.contains(
+                    "IMPORTANT: do not hold the state mutex while performing cairo drawing"
+                )
+                && production_source.contains("pub(super) struct CanvasRenderCaches"),
+            "PR 10.19 must install canvas draw via canvas_render; caches and draw body live there"
+        );
+    }
+
+    #[test]
+    fn motion_mode_is_wired_in_the_same_window() {
+        let source = include_str!("mod.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+        let motion_host = include_str!("motion_host.rs");
+        assert!(
+            production.contains("mod motion_host;")
+                && production.contains("MotionHost::new")
+                && production
+                    .contains("canvas_stack.add_named(&canvas, Some(motion_mode::STATIC_PAGE));")
+                && production.contains("&motion_host.parts.shell.page")
+                && production.contains("Some(motion_mode::MOTION_PAGE)")
+                && motion_host.contains("motion_mode::build_motion_mode")
+                && motion_host.contains("motion_mode::request_enter_motion")
+                && motion_host.contains("motion_mode::request_leave_motion")
+                && motion_host.contains("session.capture_snapshot")
+                && !production.contains("open_recording_editor"),
+            "Motion must swap the image-editor body in-process, not open the video editor"
+        );
+    }
+
+    #[test]
+    fn close_persists_annotations_and_does_not_flatten() {
+        let source = include_str!("mod.rs");
+        let start = source
+            .find("fn persist_image_session_on_close(")
+            .expect("image close persist helper");
+        let rest = &source[start + 1..];
+        let end = rest
+            .find("\nfn ")
+            .or_else(|| rest.find("\n#[cfg(test)]"))
+            .map(|i| start + 1 + i)
+            .unwrap_or(source.len());
+        let handler = &source[start..end];
+        assert!(
+            handler.contains("persist_image_session"),
+            "Image close must write the annotation sidecar"
+        );
+        assert!(
+            !handler.contains("save_edited_image"),
+            "Image close must not flatten the PNG"
+        );
+    }
+
+    #[test]
+    fn floating_bars_live_on_the_canvas_overlay_and_dock_above_the_image() {
+        let source = include_str!("mod.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+        let click = include_str!("events/click.rs");
+        let click_production = click.split("#[cfg(test)]").next().unwrap_or(click);
+        assert!(
+            production.contains("number_bar::build_number_bar(")
+                && production.contains("stroke_bar::build_stroke_bar(")
+                && production.contains("&option_menus,")
+                && production.contains("canvas_overlay.add_overlay(&number_bar.root);")
+                && production.contains("canvas_overlay.add_overlay(&stroke_bar.root);")
+                && production.contains("canvas_overlay.add_overlay(&highlighter_bar.root);")
+                && production.contains("canvas_overlay.add_overlay(&arrow_bar.root);")
+                && production.contains("canvas_overlay.add_overlay(&text_bar.root);")
+                && production.contains("canvas_overlay.add_overlay(&obfuscate_bar.method_bar);")
+                && production.contains("canvas_overlay.add_overlay(&obfuscate_bar.slider_bar);")
+                && production.contains("canvas_overlay.add_overlay(&focus_bar.label_bar);")
+                && production.contains("canvas_overlay.add_overlay(&focus_bar.slider_bar);")
+                && production.contains("let docked_inset = super::ui_support::DockedBarInset::new();")
+                && production.contains("let dock_refs = floating_bar::DockRefs {")
+                && production.contains("scroller: canvas_scroller.clone(),")
+                && production.contains("number_bar::install_number_bar_tick(")
+                && production.contains("&dock_refs,")
+                && production.contains("&docked_inset,")
+                && production.contains("docked_inset: &docked_inset,"),
+            "Every docked bar belongs on the canvas overlay and reserves its band through the shared inset"
+        );
+        assert!(
+            production.contains(
+                "canvas_padding + EDITOR_TOP_CHROME_HEIGHT + docked_bar_inset_px(&docked_inset)"
+            ) || include_str!("canvas_layout.rs").contains(
+                "canvas_padding + EDITOR_TOP_CHROME_HEIGHT + docked_bar_inset_px(&docked_inset)"
+            ),
+            "The layout must add the docked inset so the image moves down instead of being covered"
+        );
+        assert!(
+            click_production
+                .contains("select_number_action_at_point_with_scale(image_point, t.scale)")
+                && click_production.contains("st.add_number_marker(image_point);"),
+            "The Number tool must reselect an existing marker before placing a new one"
+        );
+    }
+
+    #[test]
+    fn live_text_option_rows_do_not_double_the_menu_row_inset() {
+        let source = include_str!("mod.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+        for marker in [
+            "for size in TEXT_SIZE_OPTIONS",
+            "for family in TEXT_FONT_FAMILIES",
+        ] {
+            let start = production.find(marker).expect(marker);
+            let body = &production[start..start + 2000];
+            assert!(
+                body.contains("btn_box.set_margin_start(0);")
+                    && body.contains("btn_box.set_margin_end(0);"),
+                "{marker} rows must not double the shared menu row inset"
+            );
+        }
+    }
+}

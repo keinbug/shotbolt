@@ -1,0 +1,14 @@
+Camera cutout person segmentation models
+========================================
+
+This distribution includes the MediaPipe general Selfie Segmentation model
+published by Google LLC under the Apache License, Version 2.0. The ONNX
+conversion and packaging are from SelfieSegmentationBarracuda by IKEP, via
+PINTO_model_zoo's 109_Selfie_Segmentation.
+
+The portrait segmentation model is also distributed under Apache-2.0.
+Copyright 2021 PaddlePaddle Authors, 2021-2026 Roy Shilkrot, and 2023-2026
+Kaito Udagawa.
+
+See LICENSE for the full licence text and README.md for the pinned source
+revisions, checksums, selection rules, and conversion details.

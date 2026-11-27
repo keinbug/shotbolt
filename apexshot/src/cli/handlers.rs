@@ -1,0 +1,851 @@
+use apexshot::config::{load_config, AppConfig};
+use apexshot::{
+    app_identity,
+    backend::{CaptureData, DisplayBackend, WaylandBackend, X11Backend},
+    capture::{save_capture, ImageFormat, SaveConfig},
+    capture_overlay::{
+        capture_area_via_cpp, capture_crosshair_via_cpp, capture_screen_via_cpp,
+        is_launch_blocked_error, quick_capture_via_cpp,
+        quick_capture_via_layer_shell_menu_on_main_thread, AreaCaptureResult,
+    },
+    hotkeys::ensure_desktop_entry_pub,
+    ocr::{extract_text_from_capture, extract_text_from_path, ContentSource, OcrConfig, OcrOutput},
+    preview_launch::{launch_preview_on_display, show_preview_direct_on_display},
+    recording::{
+        run_recording_with_controls, start_recording_until_interrupted, RecordError,
+        RecordingConfig, RecordingControlsParams, RecordingTarget, StopAction,
+    },
+};
+use std::path::PathBuf;
+
+pub(crate) fn capture_daemon_action(capture_type: &str) -> Option<&'static str> {
+    match capture_type {
+        "menu" | "quick" => Some("quick_capture"),
+        "area" => Some("capture_area"),
+        "crosshair" => Some("capture_crosshair"),
+        "previous-area" | "previous_area" => Some("capture_area"),
+        "screen" => Some("capture_screen"),
+        "window" => Some("capture_window"),
+        _ => None,
+    }
+}
+
+/// Map `apexshot record <type>` to a daemon D-Bus Trigger action name.
+/// Control actions can also be sent straight to the recording process when
+/// the daemon is unavailable; start actions fall back to an in-process path.
+pub(crate) fn record_daemon_action(record_type: &str) -> Option<&'static str> {
+    match record_type {
+        // NOTE: discontinued entries ("area", "ui") intentionally map to
+        // nothing so the CLI always takes the local path, which prints the
+        // discontinued error plus the usage menu. Routing them to the daemon
+        // would succeed silently with the message lost in the daemon journal.
+        "screen" => Some("record_screen"),
+        "window" => Some("record_window"),
+        // Must match `DaemonIpc::trigger` action names in daemon/mod.rs.
+        "stop" => Some("recording_stop_save"),
+        "pause" => Some("recording_pause"),
+        "resume" => Some("recording_resume"),
+        "toggle-pause" | "toggle_pause" | "pause-resume" => Some("recording_toggle_pause"),
+        "restart" => Some("recording_restart"),
+        "discard" => Some("recording_discard"),
+        _ => None,
+    }
+}
+
+pub(crate) fn is_record_control_action(record_type: &str) -> bool {
+    matches!(
+        record_type,
+        "stop"
+            | "pause"
+            | "resume"
+            | "toggle-pause"
+            | "toggle_pause"
+            | "pause-resume"
+            | "restart"
+            | "discard"
+    )
+}
+
+/// Send a control verb straight to a recording started without the daemon.
+///
+/// The recording process exposes its own `org.apexshot.RecordingControl`
+/// service, so pause/resume/restart/discard still work when no daemon owns
+/// the session. Returns `false` when no recording control service answers.
+pub(crate) fn send_external_record_control(record_type: &str) -> bool {
+    use apexshot::recording::{
+        send_external_recording_command, send_external_toggle_pause, RecordingControlCommand,
+    };
+    match record_type {
+        "stop" => send_external_recording_command(RecordingControlCommand::StopSave),
+        "pause" => send_external_recording_command(RecordingControlCommand::Pause),
+        "resume" => send_external_recording_command(RecordingControlCommand::Resume),
+        "toggle-pause" | "toggle_pause" | "pause-resume" => send_external_toggle_pause(),
+        "restart" => send_external_recording_command(RecordingControlCommand::Restart),
+        "discard" => send_external_recording_command(RecordingControlCommand::StopDiscard),
+        _ => false,
+    }
+}
+
+pub(crate) fn ensure_gio_desktop_env_for_capture() {
+    if let Some(desktop_path) = app_identity::desktop_file_for_portal() {
+        std::env::set_var("GIO_LAUNCHED_DESKTOP_FILE", desktop_path);
+        std::env::set_var(
+            "GIO_LAUNCHED_DESKTOP_FILE_PID",
+            std::process::id().to_string(),
+        );
+        return;
+    }
+
+    if std::env::var_os("WAYLAND_DISPLAY").is_none() {
+        return;
+    }
+
+    let app_id =
+        std::env::var("APEXSHOT_APP_ID").unwrap_or_else(|_| app_identity::app_id().to_string());
+
+    if let Ok(desktop_path) = ensure_desktop_entry_pub(&app_id) {
+        std::env::set_var("GIO_LAUNCHED_DESKTOP_FILE", &desktop_path);
+        std::env::set_var(
+            "GIO_LAUNCHED_DESKTOP_FILE_PID",
+            std::process::id().to_string(),
+        );
+    }
+}
+
+fn screenshot_save_config_from(app_config: &AppConfig) -> SaveConfig {
+    let format = match app_config.screenshot_format.as_str() {
+        "JPEG" => ImageFormat::Jpeg { quality: 85 },
+        "WebP" => ImageFormat::WebP,
+        _ => ImageFormat::Png,
+    };
+    let mut config = SaveConfig::default()
+        .with_format(format)
+        .with_cursor(app_config.screenshot_show_cursor);
+
+    if !app_config.screenshot_export_location.is_empty() {
+        config = config.with_output_dir(&app_config.screenshot_export_location);
+    }
+
+    config
+}
+
+pub(crate) fn run_capture(args: &[String]) {
+    ensure_gio_desktop_env_for_capture();
+
+    // Parse capture type
+    let capture_type = args[2].as_str();
+
+    // Parse options
+    let mut output_path: Option<PathBuf> = None;
+    let mut include_cursor = true;
+    let mut use_jpeg = false;
+    let mut jpeg_quality = 85;
+    let mut prefix: Option<String> = None;
+    let mut run_ocr = false;
+    let mut ocr_lang: Option<String> = None;
+    let mut ocr_min_conf: Option<i32> = None;
+    let mut ocr_clipboard = true;
+
+    let mut i = 3;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--output" => {
+                if i + 1 >= args.len() {
+                    eprintln!("Error: --output requires a path");
+                    std::process::exit(1);
+                }
+                output_path = Some(PathBuf::from(&args[i + 1]));
+                i += 2;
+            }
+            "--no-cursor" => {
+                include_cursor = false;
+                i += 1;
+            }
+            "--jpeg" => {
+                use_jpeg = true;
+                // Check if next arg is a number
+                if i + 1 < args.len() {
+                    if let Ok(q) = args[i + 1].parse::<u8>() {
+                        jpeg_quality = q;
+                        i += 2;
+                    } else {
+                        i += 1;
+                    }
+                } else {
+                    i += 1;
+                }
+            }
+            "--prefix" => {
+                if i + 1 >= args.len() {
+                    eprintln!("Error: --prefix requires text");
+                    std::process::exit(1);
+                }
+                prefix = Some(args[i + 1].clone());
+                i += 2;
+            }
+            "--ocr" => {
+                run_ocr = true;
+                i += 1;
+            }
+            "--lang" => {
+                if i + 1 >= args.len() {
+                    eprintln!("Error: --lang requires a language code");
+                    std::process::exit(1);
+                }
+                ocr_lang = Some(args[i + 1].clone());
+                i += 2;
+            }
+            "--min-conf" => {
+                if i + 1 >= args.len() {
+                    eprintln!("Error: --min-conf requires a number");
+                    std::process::exit(1);
+                }
+                let value: i32 = match args[i + 1].parse() {
+                    Ok(v) => v,
+                    Err(_) => {
+                        eprintln!("Error: --min-conf requires a valid number");
+                        std::process::exit(1);
+                    }
+                };
+                ocr_min_conf = Some(value);
+                i += 2;
+            }
+            "--no-clipboard" => {
+                ocr_clipboard = false;
+                i += 1;
+            }
+            _ => {
+                eprintln!("Error: unknown option '{}'", args[i]);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    let mut target_display = None;
+    let capture: CaptureData = match capture_type {
+        "screen" => match capture_screen_via_cpp() {
+            Ok(capture) => {
+                println!("Capturing full screen...");
+                capture
+            }
+            Err(err) if is_launch_blocked_error(&err) => {
+                eprintln!("{err}");
+                std::process::exit(1);
+            }
+            Err(err) => {
+                eprintln!("[capture] C++ fullscreen capture failed: {err}");
+                std::process::exit(1);
+            }
+        },
+        "area" | "menu" | "quick" => match if capture_type == "area" {
+            capture_area_via_cpp()
+        } else {
+            match quick_capture_via_layer_shell_menu_on_main_thread() {
+                Ok(Some(result)) => Ok(result),
+                Ok(None) => quick_capture_via_cpp(),
+                Err(error) => Err(error),
+            }
+        } {
+            Ok(AreaCaptureResult::Captured(capture)) => {
+                println!("Captured area...");
+                capture
+            }
+            Ok(AreaCaptureResult::CapturedOnDisplay(capture, display)) => {
+                println!("Captured display...");
+                target_display = Some(display);
+                capture
+            }
+            Ok(AreaCaptureResult::ScrollCaptured(capture)) => {
+                println!("Captured area (scroll)...");
+                capture
+            }
+            Ok(AreaCaptureResult::OcrRequested(capture)) => {
+                println!("Captured area (OCR requested)...");
+                run_ocr = true;
+                capture
+            }
+            Ok(AreaCaptureResult::RecordingRequested(request)) => {
+                // Run recording as a subprocess to fully isolate GTK/layer-shell
+                // state from the just-closed capture overlay.
+                let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("apexshot"));
+                let json = serde_json::to_string(&request).unwrap();
+                let status = std::process::Command::new(&exe)
+                    .arg("record-from-overlay")
+                    .arg(&json)
+                    .status()
+                    .expect("Failed to spawn recording subprocess");
+                std::process::exit(status.code().unwrap_or(1));
+            }
+            Ok(AreaCaptureResult::Cancelled) => {
+                eprintln!("Selection cancelled");
+                std::process::exit(0);
+            }
+            Err(err) if is_launch_blocked_error(&err) => {
+                eprintln!("{err}");
+                std::process::exit(1);
+            }
+            Err(err) => {
+                eprintln!("[capture] C++ area-init capture failed: {err}");
+                std::process::exit(1);
+            }
+        },
+        "crosshair" => match capture_crosshair_via_cpp() {
+            Ok(AreaCaptureResult::Captured(capture)) => {
+                println!("Captured crosshair area...");
+                capture
+            }
+            Ok(AreaCaptureResult::CapturedOnDisplay(capture, display)) => {
+                target_display = Some(display);
+                capture
+            }
+            Ok(AreaCaptureResult::Cancelled) => {
+                eprintln!("Selection cancelled");
+                std::process::exit(0);
+            }
+            Ok(_) => {
+                eprintln!("Error: crosshair capture returned unsupported result");
+                std::process::exit(1);
+            }
+            Err(err) if is_launch_blocked_error(&err) => {
+                eprintln!("{err}");
+                std::process::exit(1);
+            }
+            Err(err) => {
+                eprintln!("[capture] C++ crosshair capture failed: {err}");
+                std::process::exit(1);
+            }
+        },
+        "window" => {
+            eprintln!(
+                "Error: legacy direct window capture is disabled.\n\
+                 Use Quick Capture > Shot > Window instead."
+            );
+            crate::print_usage();
+            std::process::exit(1);
+        }
+        _ if WaylandBackend::is_supported() => {
+            eprintln!("Error: unknown capture type '{}'", capture_type);
+            crate::print_usage();
+            std::process::exit(1);
+        }
+        _ if X11Backend::is_supported() => {
+            println!("Using X11 backend...");
+
+            match capture_type {
+                "window" => {
+                    eprintln!(
+                        "Error: legacy direct window capture is disabled.\n\
+                         Use Quick Capture > Shot > Window instead."
+                    );
+                    crate::print_usage();
+                    std::process::exit(1);
+                }
+                _ => {
+                    eprintln!("Error: unknown capture type '{}'", capture_type);
+                    crate::print_usage();
+                    std::process::exit(1);
+                }
+            }
+        }
+        _ => {
+            eprintln!("Error: No supported display backend found");
+            eprintln!("This application requires X11 or Wayland");
+            std::process::exit(1);
+        }
+    };
+
+    println!("Captured: {}x{}", capture.width, capture.height);
+    println!(
+        "Format: {:?} ({} bpp)",
+        capture.format, capture.format.bits_per_pixel
+    );
+
+    // Build save config. The no-daemon path is also used immediately after an
+    // install, so it must honor screenshot settings just like the daemon does.
+    let app_config = load_config().sanitized();
+    let mut config = screenshot_save_config_from(&app_config);
+    if use_jpeg {
+        config = config.with_format(ImageFormat::Jpeg {
+            quality: jpeg_quality,
+        });
+    }
+    if !include_cursor {
+        config = config.with_cursor(false);
+    }
+    let include_cursor = config.include_cursor;
+
+    if capture.cursor.is_some() {
+        println!(
+            "Cursor: captured ({})",
+            if include_cursor {
+                "will include"
+            } else {
+                "will exclude"
+            }
+        );
+    }
+
+    if let Some(path) = output_path {
+        config = config.with_output_dir(path);
+    }
+
+    if let Some(p) = prefix {
+        config = config.with_prefix(p);
+    }
+
+    // Save the capture (skip for OCR-only mode)
+    let saved_path = if run_ocr {
+        println!("Running OCR...");
+        let mut ocr_config = OcrConfig::default().with_clipboard(ocr_clipboard);
+
+        if let Some(lang) = ocr_lang {
+            ocr_config = ocr_config.with_language(lang);
+        }
+
+        if let Some(conf) = ocr_min_conf {
+            ocr_config = ocr_config.with_min_confidence(conf);
+        }
+
+        match extract_text_from_capture(&capture, &ocr_config) {
+            Ok(result) => {
+                match &result.source {
+                    apexshot::ocr::ContentSource::QrCode => {
+                        println!("QR code detected and decoded!");
+                        println!("Content:");
+                        println!("{}", "-".repeat(40));
+                        println!("{}", result.text);
+                        println!("{}", "-".repeat(40));
+                    }
+                    apexshot::ocr::ContentSource::Ocr { confidence } => {
+                        println!("OCR successful!");
+                        println!("Confidence: {}%", confidence);
+                        println!("Extracted text:");
+                        println!("{}", "-".repeat(40));
+                        println!("{}", result.text);
+                        println!("{}", "-".repeat(40));
+                    }
+                }
+                if result.copied_to_clipboard {
+                    println!("Copied to clipboard");
+                }
+                notify_ocr_success(&result);
+            }
+            Err(e) => {
+                eprintln!("OCR failed: {}", e);
+                apexshot::utils::notify::desktop_notification(
+                    &apexshot::i18n::t("OCR failed"),
+                    &e.to_string(),
+                );
+                std::process::exit(1);
+            }
+        }
+
+        // OCR-only mode — exit after copying text to clipboard
+        return;
+    } else {
+        match save_capture(&capture, &config) {
+            Ok(path) => {
+                println!("Saved to: {}", path.display());
+                path
+            }
+            Err(e) => {
+                eprintln!("Error saving capture: {}", e);
+                std::process::exit(1);
+            }
+        }
+    };
+
+    // Hotkeys normally go through the daemon (which auto-uploads). When the
+    // daemon is down we fall back to this in-process path — still honor
+    // Settings → Cloud → "Upload after capture" so Ubuntu/GNOME keybindings
+    // don't silently skip cloud upload.
+    apexshot::cloud::upload::spawn_auto_upload_after_capture(saved_path.clone());
+
+    // Keep preview in a subprocess on desktops where that preserves the
+    // existing GTK isolation / shell tracking behavior. KDE Wayland uses a
+    // direct launch path to avoid extra taskbar/loading artifacts.
+    if let Err(e) = launch_preview_on_display(&saved_path, target_display) {
+        eprintln!("Warning: Failed to launch preview overlay: {}", e);
+        show_preview_direct_on_display(saved_path.clone(), target_display);
+    }
+}
+
+/// Save a CaptureData as a temp PNG for passing to the C++ overlay as background.
+/// Returns the path if successful, None on failure (overlay will run without background).
+pub(crate) fn save_temp_png(capture: &CaptureData) -> Option<std::path::PathBuf> {
+    use image::{ImageBuffer, Rgba};
+
+    let tmp = std::env::temp_dir().join(format!(
+        "apexshot_bg_{}.png",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    ));
+
+    let bytes_per_pixel = capture.format.bytes_per_pixel as usize;
+    let stride = capture.stride as usize;
+    let w = capture.width;
+    let h = capture.height;
+
+    use apexshot::backend::PixelFormat;
+    let is_bgr = capture.format == PixelFormat::BGR24
+        || capture.format == PixelFormat::BGR32
+        || capture.format == PixelFormat::BGRA32;
+
+    // Build RGBA pixel buffer from capture data
+    let mut rgba: Vec<u8> = Vec::with_capacity((w * h * 4) as usize);
+    for row in 0..h as usize {
+        let row_start = row * stride;
+        let row_end = row_start + w as usize * bytes_per_pixel;
+        let row_data = &capture.pixels[row_start..row_end.min(capture.pixels.len())];
+        for px in row_data.chunks(bytes_per_pixel) {
+            if px.len() >= 4 {
+                if is_bgr {
+                    rgba.push(px[2]); // R (from BGR byte[2])
+                    rgba.push(px[1]); // G
+                    rgba.push(px[0]); // B (from BGR byte[0])
+                    rgba.push(px[3]); // A
+                } else {
+                    rgba.push(px[0]); // R
+                    rgba.push(px[1]); // G
+                    rgba.push(px[2]); // B
+                    rgba.push(px[3]); // A
+                }
+            } else if px.len() == 3 {
+                if is_bgr {
+                    rgba.push(px[2]);
+                    rgba.push(px[1]);
+                    rgba.push(px[0]);
+                } else {
+                    rgba.push(px[0]);
+                    rgba.push(px[1]);
+                    rgba.push(px[2]);
+                }
+                rgba.push(255);
+            }
+        }
+    }
+
+    let img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_raw(w, h, rgba)?;
+    img.save(&tmp).ok()?;
+    Some(tmp)
+}
+
+pub(crate) fn run_ocr(args: &[String]) {
+    let image_path = &args[2];
+
+    // Parse OCR options
+    let mut ocr_lang: Option<String> = None;
+    let mut ocr_min_conf: Option<i32> = None;
+    let mut ocr_clipboard = true;
+
+    let mut i = 3;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--lang" => {
+                if i + 1 >= args.len() {
+                    eprintln!("Error: --lang requires a language code");
+                    std::process::exit(1);
+                }
+                ocr_lang = Some(args[i + 1].clone());
+                i += 2;
+            }
+            "--min-conf" => {
+                if i + 1 >= args.len() {
+                    eprintln!("Error: --min-conf requires a number");
+                    std::process::exit(1);
+                }
+                let value: i32 = match args[i + 1].parse() {
+                    Ok(v) => v,
+                    Err(_) => {
+                        eprintln!("Error: --min-conf requires a valid number");
+                        std::process::exit(1);
+                    }
+                };
+                ocr_min_conf = Some(value);
+                i += 2;
+            }
+            "--no-clipboard" => {
+                ocr_clipboard = false;
+                i += 1;
+            }
+            _ => {
+                eprintln!("Error: unknown option '{}'", args[i]);
+                crate::print_usage();
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // Build OCR config
+    let mut ocr_config = OcrConfig::default().with_clipboard(ocr_clipboard);
+
+    if let Some(lang) = ocr_lang {
+        ocr_config = ocr_config.with_language(lang);
+    }
+
+    if let Some(conf) = ocr_min_conf {
+        ocr_config = ocr_config.with_min_confidence(conf);
+    }
+
+    // Run OCR
+    println!("Running OCR on: {}", image_path);
+    match extract_text_from_path(image_path, &ocr_config) {
+        Ok(result) => {
+            match &result.source {
+                apexshot::ocr::ContentSource::QrCode => {
+                    println!("QR code detected and decoded!");
+                    println!("Content:");
+                    println!("{}", "-".repeat(40));
+                    println!("{}", result.text);
+                    println!("{}", "-".repeat(40));
+                }
+                apexshot::ocr::ContentSource::Ocr { confidence } => {
+                    println!("OCR successful!");
+                    println!("Confidence: {}%", confidence);
+                    println!("Extracted text:");
+                    println!("{}", "-".repeat(40));
+                    println!("{}", result.text);
+                    println!("{}", "-".repeat(40));
+                }
+            }
+            if result.copied_to_clipboard {
+                println!("Copied to clipboard");
+            }
+            notify_ocr_success(&result);
+        }
+        Err(e) => {
+            eprintln!("OCR failed: {}", e);
+            apexshot::utils::notify::desktop_notification(
+                &apexshot::i18n::t("OCR failed"),
+                &e.to_string(),
+            );
+            std::process::exit(1);
+        }
+    }
+}
+
+fn notify_ocr_success(result: &OcrOutput) {
+    let (title, body) = ocr_success_notification(result);
+    apexshot::utils::notify::desktop_notification(&title, &body);
+}
+
+fn ocr_success_notification(result: &OcrOutput) -> (String, String) {
+    match (&result.source, result.copied_to_clipboard) {
+        (ContentSource::QrCode, true) => (
+            apexshot::i18n::t("QR code decoded"),
+            apexshot::i18n::t("Content copied to clipboard"),
+        ),
+        (ContentSource::QrCode, false) => (
+            apexshot::i18n::t("QR code decoded"),
+            apexshot::i18n::t("Content extracted"),
+        ),
+        (ContentSource::Ocr { .. }, true) => (
+            apexshot::i18n::t("OCR complete"),
+            apexshot::i18n::t("Text copied to clipboard"),
+        ),
+        (ContentSource::Ocr { .. }, false) => (
+            apexshot::i18n::t("OCR complete"),
+            apexshot::i18n::t("Text extracted"),
+        ),
+    }
+}
+
+pub(crate) async fn run_record(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let record_type = args[2].as_str();
+    let mut output_path: Option<PathBuf> = None;
+    let mut overlay_stop = false;
+
+    let mut i = 3;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--output" => {
+                if i + 1 >= args.len() {
+                    eprintln!("Error: --output requires a path");
+                    std::process::exit(1);
+                }
+                output_path = Some(PathBuf::from(&args[i + 1]));
+                i += 2;
+            }
+            "--gif" => {
+                eprintln!(
+                    "Error: GIF recording is discontinued.\n\
+                     Recordings are saved as MP4. Use 'apexshot record screen' instead."
+                );
+                crate::print_usage();
+                std::process::exit(1);
+            }
+            "--overlay-stop" => {
+                overlay_stop = true;
+                i += 1;
+            }
+            _ => {
+                eprintln!("Error: unknown option '{}'", args[i]);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    let app_config = load_config().sanitized();
+    let mut config = RecordingConfig::from_app_config(&app_config, "mp4");
+    let window_recording = record_type == "window";
+    if window_recording {
+        config.target = RecordingTarget::Window;
+    }
+
+    // Configure output path
+    if let Some(p) = output_path {
+        config.output_path = p;
+    }
+
+    if record_type == "area" {
+        eprintln!(
+            "Error: area recording is discontinued.\n\
+             Use 'apexshot record screen' instead."
+        );
+        crate::print_usage();
+        std::process::exit(1);
+    } else if record_type == "ui" {
+        eprintln!(
+            "Error: recording UI is discontinued.\n\
+             Use 'apexshot record screen' instead."
+        );
+        crate::print_usage();
+        std::process::exit(1);
+    } else if !matches!(record_type, "screen" | "window") {
+        eprintln!(
+            "Error: recording type '{record_type}' not supported \
+             (use 'screen' or 'window', or control: stop|pause|resume|toggle-pause|restart|discard)"
+        );
+        crate::print_usage();
+        std::process::exit(1);
+    }
+
+    let _final_path = if overlay_stop || window_recording {
+        let params = RecordingControlsParams {
+            capture_x: 0,
+            capture_y: 0,
+            capture_w: 0,
+            capture_h: 0,
+            is_fullscreen: !window_recording,
+            show_timer: true,
+            use_shell_mask: false,
+            dim_screen: false,
+            countdown_enabled: app_config.rec_countdown,
+            countdown_seconds: 3,
+            session_id: None,
+        };
+
+        let controls_outcome =
+            match run_recording_with_controls(config, params, app_config.rec_controls).await {
+                Err(e)
+                    if e.downcast_ref::<RecordError>()
+                        .is_some_and(|e| matches!(e, RecordError::Cancelled)) =>
+                {
+                    eprintln!("Recording cancelled.");
+                    return Ok(());
+                }
+                other => other.map_err(|e| {
+                    Box::new(std::io::Error::other(e.to_string())) as Box<dyn std::error::Error>
+                })?,
+            };
+
+        match controls_outcome {
+            (path, StopAction::Discard) => {
+                let _ = std::fs::remove_file(&path);
+                return Ok(());
+            }
+            (path, StopAction::Save) => {
+                eprintln!("Recording saved: {:?}", path);
+                path
+            }
+        }
+    } else {
+        if app_config.rec_countdown {
+            let proceed = apexshot::recording::run_standalone_countdown()
+                .await
+                .map_err(|e| {
+                    Box::new(std::io::Error::other(e.to_string())) as Box<dyn std::error::Error>
+                })?;
+            if !proceed {
+                eprintln!("Recording cancelled.");
+                return Ok(());
+            }
+        }
+        match start_recording_until_interrupted(config).await {
+            Err(RecordError::Cancelled) => {
+                eprintln!("Recording cancelled.");
+                return Ok(());
+            }
+            other => other.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?,
+        }
+    };
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn output(source: ContentSource, copied_to_clipboard: bool) -> OcrOutput {
+        OcrOutput {
+            text: "example".to_string(),
+            source,
+            copied_to_clipboard,
+        }
+    }
+
+    #[test]
+    fn ocr_notification_reports_clipboard_outcome() {
+        assert_eq!(
+            ocr_success_notification(&output(ContentSource::Ocr { confidence: 90 }, true)),
+            (
+                "OCR complete".to_string(),
+                "Text copied to clipboard".to_string()
+            )
+        );
+        assert_eq!(
+            ocr_success_notification(&output(ContentSource::Ocr { confidence: 90 }, false)),
+            ("OCR complete".to_string(), "Text extracted".to_string())
+        );
+    }
+
+    #[test]
+    fn qr_notification_reports_clipboard_outcome() {
+        assert_eq!(
+            ocr_success_notification(&output(ContentSource::QrCode, true)),
+            (
+                "QR code decoded".to_string(),
+                "Content copied to clipboard".to_string()
+            )
+        );
+        assert_eq!(
+            ocr_success_notification(&output(ContentSource::QrCode, false)),
+            (
+                "QR code decoded".to_string(),
+                "Content extracted".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn fallback_capture_uses_screenshot_preferences() {
+        let app_config = AppConfig {
+            screenshot_export_location: "/tmp/screenshots".into(),
+            screenshot_format: "WebP".into(),
+            screenshot_show_cursor: false,
+            ..AppConfig::default()
+        };
+
+        let save_config = screenshot_save_config_from(&app_config);
+
+        assert_eq!(
+            save_config.output_dir.as_deref(),
+            Some(std::path::Path::new("/tmp/screenshots"))
+        );
+        assert_eq!(save_config.format, ImageFormat::WebP);
+        assert!(!save_config.include_cursor);
+    }
+}

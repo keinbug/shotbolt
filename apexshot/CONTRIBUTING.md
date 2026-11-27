@@ -1,0 +1,505 @@
+# Contributing to ApexShot
+
+Thank you for your interest in contributing to ApexShot! This document provides guidelines and instructions for contributing to the project.
+
+## Table of Contents
+
+- [Getting Started](#getting-started)
+- [Where Things Live](#where-things-live)
+- [Development Setup](#development-setup)
+- [Code Style](#code-style)
+- [Testing](#testing)
+- [Submitting Changes](#submitting-changes)
+- [Reporting Issues](#reporting-issues)
+- [Areas for Contribution](#areas-for-contribution)
+- [Communication](#communication)
+
+## Getting Started
+
+### Prerequisites
+
+- **Rust** (latest stable, install via [rustup](https://www.rust-lang.org/tools/install)).
+  The workflow expects the `rustfmt` and `clippy` components — `rustup
+  component add rustfmt clippy` if you don't already have them.
+  Using distro Rust instead of rustup works too: `sudo apt-get install -y
+  clippy rustfmt` (Ubuntu 24.04; newer releases name it `rust-clippy`),
+  `sudo dnf install -y clippy rustfmt` (Fedora), or
+  `sudo pacman -S --needed clippy rustfmt` (Arch).
+- **C++17 compiler** (`g++` or `clang`) and **CMake ≥ 3.16** for the
+  capture-overlay binary in `capture-overlay/`.
+- **GTK4** + **gtk4-layer-shell** development headers (the latter built
+  from source — see the GitHub Actions workflow for the exact recipe).
+- **GStreamer 1.0** with `plugins-base`, `plugins-good`, `plugins-bad`,
+  `libav`, `pipewire`, `pulseaudio` runtime plugins (used for the X11 recording
+  fallback).
+- **Qt5** (`qtbase5-dev`, `libqt5x11extras5-dev`).
+- **PipeWire**, **Tesseract**, **xkbcommon**, **libxtst**, **libwayland**,
+  **libdbus-1**, **pkg-config**.
+- **Node.js ≥ 20** is needed *only* if you want to run the JS syntax
+  check locally (`pnpm check:gnome` or `node --check gnome-extension/*.js`);
+  the GNOME-side tests themselves run inside GJS, not Node.
+
+The full list of run-time package names that ship via the `.deb` is in
+`Cargo.toml` under `[package.metadata.deb] depends = ...`. The full list
+of build-time `apt` packages used by CI is in
+[`.github/workflows/release.yml`](.github/workflows/release.yml).
+
+### Fork and Clone
+
+1. Fork the repository on GitHub
+2. Clone your fork locally:
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/apexshot.git
+   cd apexshot
+   ```
+3. Add the upstream repository:
+   ```bash
+   git remote add upstream https://github.com/apex-shot/apexshot.git
+   ```
+
+## Where Things Live
+
+ApexShot is a Rust application with two satellite codebases (a Qt5 C++
+overlay and a GNOME Shell extension) plus a browser-side scroll capture
+helper. If you're new to the repo, this map should help you find the
+right starting point for a change.
+
+| Subsystem                             | Lives in                                            | Notes |
+|---------------------------------------|-----------------------------------------------------|-------|
+| Rust binary entry point + CLI         | `src/main.rs`                                       | Dispatches `daemon`, `capture`, `record`, `edit`, `preview`, `settings` subcommands. |
+| Background daemon, hotkeys, tray      | `src/daemon/`, `src/hotkeys/`, `src/tray/`          | D-Bus triggers, system tray (`ksni`), global shortcut registration. |
+| Capture backends (X11 / Wayland)      | `src/backend/`                                      | Display, area, and crosshair screenshots prepare a monitor-only ScreenCast session before timers; Quick Capture Window shots select one window through a non-persistent ScreenCast session. Native X11 / wlr-screencopy remain available. Lower-level backend APIs also retain Screenshot portal fallbacks. |
+| Image editor + annotations            | `src/capture/editor/`                               | GTK4 + Cairo. Pen/highlighter rendering, color palette, selection, crop. |
+| Preview overlay                       | `src/capture/preview_overlay.rs`                    | Quick-access card after capture (drag, edit, copy, save). |
+| Recording pipeline                    | `src/recording/`                                    | Native PipeWire (`pipewire_engine.rs`) + ffmpeg on Wayland; GStreamer ximagesrc on X11. Video encoding, audio source discovery (`pactl`). |
+| OCR + QR                              | `src/ocr/`, `src/qr/`                               | Tesseract LSTM with multi-PSM voting, deskew, QR-first detection. |
+| Settings UI                           | `src/settings/`                                     | GTK4 preferences window, shortcut editor, recording options. |
+| Onboarding wizard                     | `src/onboarding/`                                   | First-run setup, GNOME extension installer (`ureq` download + `gnome-extensions`). |
+| Cross-cutting utilities               | `src/utils/`                                        | Clipboard, desktop env detection, scoped portal identity. |
+| Native interactive overlay (Qt5)      | `capture-overlay/src/`                              | Selection, recording controls; built automatically by `build.rs` (manual CMake still OK for debugging). |
+| Cloud upload destinations             | `src/cloud/`                                        | ApexShot Cloud + XBackBone; Settings → Cloud + `apexshot login`. |
+| Compositor helpers                    | `src/compositor/`                                   | Hyprland/Sway/Niri/River/COSMIC helpers. |
+| GNOME Shell extension                 | `gnome-extension/`                                  | Mask UI, recording controls dock, screenshot lock. ES modules + GJS tests. |
+| Native messaging host (browser)       | `native-host/`                                      | Bridge between Chrome/Chromium and the daemon. |
+| Chrome/Chromium extension             | `web-scroll-extension/`                             | Full-page scroll capture orchestration. |
+| Packaging (.deb)                      | `Cargo.toml [package.metadata.deb]`, `packaging/`   | Asset list, postinst/prerm, desktop file, icon, native-host manifest. |
+| Packaging (NixOS)                     | `flake.nix`, `flake.lock`, `packaging/nix/`          | Locked source build, GTK/Qt wrappers, assets, and declarative installation guide. |
+| CI                                    | `.github/workflows/release.yml`                     | Lint + build/test + tagged release. |
+| Architecture / module docs            | `docs/ARCHITECTURE.md`, `docs/MODULES.md`, `docs/DEVELOPER_GUIDE.md` | Deeper dives once you know the file you're touching. |
+
+A handful of cross-cutting conventions worth knowing up front:
+
+- **Restore-token caches** for the XDG ScreenCast portal live at
+  `~/.cache/apexshot/`. Monitor-based interactive screenshots use private
+  `still-monitor-<hash>.token` files scoped to app identity, desktop, chosen
+  output, and display topology. Quick Capture Window shots request one
+  window-only ScreenCast source without persistence or a restore token, so the
+  chooser appears each time. The Qt overlay delegates both session types to
+  the Rust helper rather than keeping its own cache. Lower-level backend APIs
+  retain `wayland-screencast-monitor.token` / `-window.token`; recording
+  deliberately does not restore a previous source. Tokens rotate after use,
+  and desktop consent—not a direct PermissionStore write—controls access.
+- **Drawing-area redraw throttle** for the editor is a single constant
+  (`DRAG_REDRAW_INTERVAL_US` in `src/capture/editor/color.rs`). Keep
+  per-frame work cheap — `draft_action()` runs on every redraw.
+- **Distro identification** follows the [os-release specification](https://www.freedesktop.org/software/systemd/man/latest/os-release.html):
+  use `/etc/os-release`, falling back to `/usr/lib/os-release` only when
+  missing; prefer `ID`, then consult `ID_LIKE` in its declared order.
+  A shared package-manager family is not proof of binary compatibility.
+  Validate package recipes against upstream sources and report source-build
+  checks separately from desktop runtime testing.
+
+## Development Setup
+
+### Building the Project
+
+```bash
+# Build in debug mode (faster compilation)
+cargo build
+
+# Build in release mode (optimized binary)
+cargo build --release
+```
+
+### Running the Application
+
+```bash
+# Run the daemon
+cargo run -- daemon
+
+# Run with specific command
+cargo run -- capture screen
+```
+
+### Building the Debian Package
+
+```bash
+# Build the .deb package (requires gtk4-layer-shell installed for linking)
+scripts/package-deb.sh
+
+# The package will be in target/debian/
+```
+
+### Building the Flatpak
+
+The local Flatpak package builds from `flatpak/org.apexshot.ApexShot.yml` and
+installs for the current user:
+
+```bash
+flatpak-builder --user --install --keep-build-dirs .flatpak-builder/build \
+  flatpak/org.apexshot.ApexShot.yml
+flatpak run org.apexshot.ApexShot
+```
+
+`flatpak/README.md` covers the first-time setup, the cache rules, and what
+`-Dlibdir=lib` is doing on the meson modules. Do not
+delete `.flatpak-builder/`: it holds the build cache that keeps the dependency
+modules (Qt 5, Tesseract, GStreamer) from recompiling.
+
+### Building the C++ capture overlay
+
+The interactive area / window / crosshair selector and the recording
+controls live in `capture-overlay/` as a separate Qt5 binary
+(`apexshot-capture`). It's built independently from Cargo:
+
+```bash
+cd capture-overlay
+cmake -S . -B build
+cmake --build build -j
+# Resulting binary: capture-overlay/build/apexshot-capture
+```
+
+When packaging the `.deb`, this binary is copied into
+`packaging/deb/apexshot-capture` (see the `release` job in
+`.github/workflows/release.yml`). For local development you can either:
+
+- Replace the system binary at `/usr/bin/apexshot-capture` with the
+  freshly built one, **or**
+- Set `APEXSHOT_CAPTURE_BIN=/path/to/build/apexshot-capture` so the Rust
+  side picks up your build (see `src/capture_overlay.rs::run_capture_binary`).
+
+### Building / iterating on the GNOME extension
+
+The extension is plain ES modules in `gnome-extension/`. Two workflows:
+
+```bash
+# Quick syntax check (the same one CI runs):
+pnpm check:gnome
+
+# Live-install into your session (works on GNOME 46 and 48–50):
+make -C gnome-extension install     # if a Makefile is present, otherwise:
+gnome-extensions pack gnome-extension --force \
+  --extra-source=cursor-classifier.js \
+  --extra-source=press-tracker.js \
+  --extra-source=shell-overlay.js \
+  --extra-source=window-list.js \
+  --extra-source=preview-stacking.js \
+  --extra-source=daemon-ownership.js \
+  --extra-source=capture-menu-placement.js
+gnome-extensions install --force apexshot-gnome-integration@apexshot.github.io.shell-extension.zip
+gnome-extensions enable apexshot-gnome-integration@apexshot.github.io
+```
+
+Then either log out / log in (Wayland) or press `Alt+F2` → `r` (X11) to
+restart the shell. Use `journalctl /usr/bin/gnome-shell -f | grep
+apexshot` to follow extension logs.
+
+### Packaging the GNOME extension for release
+
+```bash
+cd gnome-extension
+zip apexshot-gnome-integration.zip \
+  extension.js metadata.json \
+  cursor-classifier.js press-tracker.js shell-overlay.js window-list.js preview-stacking.js daemon-ownership.js capture-menu-placement.js
+```
+
+This is identical to what the release workflow does in
+`.github/workflows/release.yml`, so keep the two in sync if you add a
+new file.
+
+## Code Style
+
+The shared formatting baseline is captured by three files at the repo
+root, all of which CI honours:
+
+- [`rustfmt.toml`](rustfmt.toml) — stable rustfmt options.
+- [`.clang-format`](.clang-format) — Qt/KDE-leaning C++17 style for
+  `capture-overlay/`.
+- [`.editorconfig`](.editorconfig) — picked up automatically by most
+  editors; covers indent width, line endings, trailing whitespace.
+
+### Rust
+
+```bash
+cargo fmt --all                 # format
+cargo fmt --all -- --check      # CI gate (must pass before merge)
+cargo clippy --workspace --all-targets    # CI lint command; surfaces warnings
+```
+
+The CI lint job currently runs `cargo clippy` *without* `-D warnings`
+because the codebase still carries some pre-existing lints; new code
+should not add new warnings, and we'll flip the gate to `-D warnings`
+once the backlog is cleared.
+
+Other expectations:
+
+- Follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/).
+- Add doc comments to anything `pub`.
+- Prefer small, focused functions; avoid stacking `unwrap()`s in code
+  paths that can be triggered by user input.
+
+### C++ (capture-overlay)
+
+```bash
+clang-format -i capture-overlay/src/*.{cpp,h}
+```
+
+- Modern C++17, no exceptions in the hot path — return `bool` / out
+  parameters like the existing portal helpers in `ScreenCapture.cpp`.
+
+### JavaScript (GNOME extension)
+
+```bash
+pnpm check:gnome                    # CI-equivalent syntax check
+node --check gnome-extension/*.js    # same check without package scripts
+```
+
+- ES modules, modern (ES2022+) syntax — GNOME Shell ≥ 45 ships a recent
+  GJS.
+- Don't import Node-only APIs; the runtime is GJS and the imports are
+  `gi://...`.
+- Tests in `gnome-extension/tests/` use `printerr` and other GJS globals
+  and are intended to be run from inside GJS, not Node.
+
+## Testing
+
+### Running Tests
+
+```bash
+# Run all tests
+cargo test
+
+# Run tests with output
+cargo test -- --nocapture
+
+# Run specific test
+cargo test test_name
+```
+
+### Test expectations
+
+- The Rust workspace currently ships ~380 unit tests (`cargo test --lib`).
+  Keep that suite green; add tests next to the module you're changing
+  rather than in a separate location.
+- New behaviour deserves at least one happy-path test and one
+  failure-mode test. We use `pretty_assertions`, `test-case`, and
+  `mockall` from `[dev-dependencies]` — reach for them when they fit
+  rather than rolling your own helpers.
+- For the C++ overlay, a successful `cmake --build capture-overlay/build`
+  is the minimum smoke check; visual changes should be accompanied by
+  a before/after screenshot in the PR description.
+- For the GNOME extension, the GJS-targeted suite in
+  `gnome-extension/tests/` runs inside `gjs`, not Node — see the
+  *Building / iterating on the GNOME extension* section above. PRs that
+  only touch JS still need to pass the `node --check` step that CI runs.
+
+### Manual testing matrix
+
+The project is most thoroughly exercised on the configurations the
+maintainer runs day-to-day, but contributors are encouraged to verify
+elsewhere when they touch a related code path. As of today:
+
+| Surface                     | Tested                       | Best-effort                | Untested              |
+|-----------------------------|------------------------------|----------------------------|-----------------------|
+| Display server              | Wayland                      | X11                        | XWayland edge cases   |
+| Compositor                  | GNOME Shell 47–50, Hyprland  | Sway / wlroots-like        | KDE Plasma, Niri, river |
+| Distro                      | Ubuntu 24.04 / 25.10, Arch Linux | Debian / Pop!_OS through Ubuntu-compatible packaging; Fedora screenshots (KDE validated) | openSUSE, NixOS; full Fedora GNOME matrix |
+| Recording codecs            | VP9, H.264 (Ubuntu/Arch and similar) | VP8, H.265, Theora | Fedora: same portal/PipeWire path as other distros (newly enabled) |
+| Capture portal flow         | xdg-desktop-portal-gnome, Hyprland/wlroots native capture | xdg-desktop-portal-gtk, xdg-desktop-portal-kde (screenshots) | — |
+
+**Fedora recording:** ApexShot supports video recording on Fedora through the
+same ScreenCast portal, PipeWire, and GStreamer path as other distros, on
+Fedora GNOME and KDE Plasma Wayland. Recording on Fedora was newly enabled;
+runtime validation is in progress. Fedora's `ffmpeg-free`/`openh264` codec
+packaging is handled by the existing encoder probe. openSUSE and other
+RPM-family targets remain development-stage for full install/runtime coverage.
+If your PR exercises an *Untested* square, mention that in the PR description.
+
+## Submitting Changes
+
+### Workflow
+
+1. Create a new branch for your changes:
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+   or
+   ```bash
+   git checkout -b fix/your-bug-fix
+   ```
+
+2. Make your changes and commit them:
+   ```bash
+   git add .
+   git commit -m "Your descriptive commit message"
+   ```
+
+3. Push to your fork:
+   ```bash
+   git push origin feature/your-feature-name
+   ```
+
+4. Create a pull request on GitHub
+
+### Quick PR Paths
+
+Use the smallest relevant verification set for the subsystem you touched:
+
+- **Docs-only change:** preview the Markdown and link to the changed docs in
+  the PR description. No build is required unless examples changed.
+- **Rust-only change:** run `cargo fmt --all -- --check`, `cargo clippy
+  --workspace --all-targets`, and the most relevant `cargo test` target.
+- **GNOME extension-only change:** run `pnpm check:gnome` and include any
+  manual GNOME Shell validation if the change affects runtime behavior.
+- **Packaging or installer change:** run the relevant script/package build in
+  a disposable VM or container when possible, and describe the distro tested.
+
+### Commit Messages
+
+Follow conventional commits format:
+- `feat:` for new features
+- `fix:` for bug fixes
+- `docs:` for documentation changes
+- `style:` for code style changes (formatting, etc.)
+- `refactor:` for code refactoring
+- `test:` for adding or updating tests
+- `chore:` for maintenance tasks
+
+Examples:
+```
+feat: add webcam PiP support for screen recording
+fix: correct memory leak in overlay cleanup
+docs: update installation instructions for Ubuntu 24.04
+```
+
+### Pull Request Guidelines
+
+- Provide a clear description of the changes
+- Reference related issues (e.g., `Fixes #123`)
+- Include screenshots for UI changes
+- Ensure all tests pass
+- Update documentation if needed
+- Keep PRs focused and small if possible
+
+## Reporting Issues
+
+### Before Reporting
+
+1. Check if the issue already exists
+2. Search for similar closed issues
+3. Verify you're using the latest version
+
+### Issue templates
+
+GitHub will offer two structured templates when you click **New issue**:
+
+- **Bug report** (`.github/ISSUE_TEMPLATE/bug_report.yml`) — collects the
+  install method, distro, display server, desktop environment, and a
+  reproduction. Required fields are minimal but pointed.
+- **Feature request** (`.github/ISSUE_TEMPLATE/feature_request.yml`) —
+  asks you to describe the *problem*, not just the implementation, plus
+  which subsystem(s) the change would touch.
+
+For security issues, please follow [`SECURITY.md`](SECURITY.md) and
+**do not** open a public GitHub issue.
+
+### Privacy-safe reports
+
+ApexShot handles screenshots, recordings, audio devices, clipboard contents,
+browser pages, and XDG portal restore tokens. Please keep public issues safe:
+
+- Do not paste API tokens, cloud credentials, portal restore-token files, or
+  full `.env` / config files.
+- Redact private window titles, file paths, usernames, URLs, QR codes,
+  clipboard contents, and captured screen/audio content before uploading logs,
+  screenshots, or recordings.
+- Prefer short excerpts around the error instead of full terminal or journal
+  dumps. If full logs are needed, attach a redacted file.
+- Use [`SECURITY.md`](SECURITY.md) for anything that could expose another
+  user's screen, microphone, speaker output, clipboard, or browser data.
+
+## Areas for Contribution
+
+These are the areas that would actually benefit from help right now,
+ordered roughly by how much value a single PR can deliver.
+
+### High value
+
+- **Compositor coverage.** Help us promote KDE / Sway / Hyprland from
+  *best-effort* to *tested* in the matrix above. Specifically: verify
+  the wlr-screencopy fast path in `src/backend/screencopy.rs`, the
+  `grim` fallback in `src/backend/wayland.rs`, and the ScreenCast
+  restore-token persistence in `capture-overlay/src/ScreenCapture.cpp`.
+- **Clippy backlog.** ~65 pre-existing warnings prevent us from flipping
+  the CI lint gate to `-D warnings`. Small, focused PRs that clear a
+  category at a time are very welcome.
+- **Browser extension polish.** The native messaging host
+  (`native-host/`) and Chrome/Chromium extension (`web-scroll-extension/`)
+  cover full-page scroll capture; rough edges around long pages and
+  zoom levels remain.
+
+### Medium value
+
+- **OCR accuracy on niche scripts.** The default tessdata set is
+  English; the multi-PSM strategy in `src/ocr/mod.rs` should generalise
+  to other languages but hasn't been validated.
+- **Editor / annotation tools.** Most of `src/capture/editor/` is GTK4
+  Cairo painting — a self-contained codebase that's a friendly first PR
+  surface.
+- **Settings UI / onboarding polish.** Lives in `src/settings/` and
+  `src/onboarding/`.
+- **Documentation & tutorials.** `docs/ARCHITECTURE.md`,
+  `docs/MODULES.md`, and `docs/DEVELOPER_GUIDE.md` are good but always
+  drift behind the code.
+
+### Lower urgency
+
+- Internationalisation of the GTK UI strings.
+- Custom theming for the editor / preview overlay.
+- Plugin / scripting hooks for third-party effects.
+- Additional codecs beyond the default VP9 / H.264 set.
+
+## Communication
+
+### Channels
+
+- **GitHub Issues**: For bug reports and feature requests
+- **GitHub Discussions**: For general questions and ideas
+- **Pull Requests**: For code contributions
+
+### Code of Conduct
+
+This project follows the [Contributor Covenant 2.1](CODE_OF_CONDUCT.md).
+Reports go to **codegoddy@gmail.com**; the maintainer will acknowledge
+within 3 working days.
+
+## Getting Help
+
+If you need help:
+
+1. Check the [documentation](docs/)
+2. Search existing [issues](https://github.com/apex-shot/apexshot/issues)
+3. Start a [GitHub Discussion](https://github.com/apex-shot/apexshot/discussions)
+4. Ask in an existing issue or PR if relevant
+
+## License
+
+By contributing to ApexShot, you agree that your contributions will be licensed under the GPL-3.0-or-later license.
+
+## Recognition
+
+Contributors will be acknowledged in the project's CONTRIBUTORS file and in release notes.
+
+---
+
+Thank you for contributing to ApexShot! 🎉

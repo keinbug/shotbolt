@@ -1,0 +1,1007 @@
+#[cfg(test)]
+mod tests {
+    use super::{
+        append_screenshot_timer_args, build_area_init_args, build_crosshair_args,
+        build_quick_capture_args, build_recording_ui_args, classify_overlay_exit_code,
+        execute_builtin_overlay_query, is_gnome_wayland_session_from_env,
+        parse_area_capture_output_with_persist, parse_area_capture_output_with_stderr,
+        parse_capture_menu_control_request, parse_capture_screen_json,
+        parse_capture_screen_json_with_mode, parse_recording_json, parse_selection_json,
+        quick_capture_menu_result_json, save_capture_to_temp_png,
+        should_request_screenshot_lock, should_use_gtk_layer_shell_selector_from_env,
+        should_use_layer_shell_quick_capture_menu_from_env, supports_custom_shutter_sound_from,
+        tracked_overlay_id, validate_capture_session_with, AreaCapturePathResult,
+        CaptureMenuControlRequest, CaptureSessionCoordinator, LaunchBlockedReason, OverlayExitCode,
+        OverlaySelection, RecordingType,
+    };
+    use crate::{
+        backend::{CaptureData, PixelFormat},
+        config::AppConfig,
+    };
+    use std::path::PathBuf;
+
+    #[test]
+    fn crosshair_capture_does_not_build_area_init_settings_args() {
+        let config = AppConfig {
+            screenshot_timer_interval: 0,
+            ..AppConfig::default()
+        };
+        let args = build_crosshair_args(&config);
+        assert!(args.contains(&"--crosshair-capture".to_string()));
+        // The crosshair route stays minimal: no area selector, no capture menu,
+        // and none of the recording panel's settings.
+        for unexpected in [
+            "--area-init",
+            "--capture-menu",
+            "--open-recording-ui",
+            "--selection-cursor=Crosshair",
+            "--show-zoom-preview=1",
+            "--rec-controls",
+            "--no-hidpi",
+        ] {
+            assert!(
+                !args.contains(&unexpected.to_string()),
+                "crosshair args must not carry {unexpected}: {args:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn crosshair_capture_forwards_freeze_and_cursor_settings() {
+        let defaults = build_crosshair_args(&AppConfig::default());
+        assert!(defaults.contains(&"--freeze-selection-bg=1".to_string()));
+        assert!(defaults.contains(&"--screenshot-cursor=1".to_string()));
+
+        let frozen_without_cursor = AppConfig {
+            screenshot_freeze_screen: true,
+            screenshot_show_cursor: false,
+            ..AppConfig::default()
+        };
+        let args = build_crosshair_args(&frozen_without_cursor);
+        assert!(args.contains(&"--freeze-selection-bg=1".to_string()));
+        assert!(args.contains(&"--screenshot-cursor=0".to_string()));
+
+        let unfrozen_with_cursor = AppConfig {
+            screenshot_freeze_screen: false,
+            screenshot_show_cursor: true,
+            ..AppConfig::default()
+        };
+        let args = build_crosshair_args(&unfrozen_with_cursor);
+        assert!(args.contains(&"--freeze-selection-bg=0".to_string()));
+        assert!(args.contains(&"--screenshot-cursor=1".to_string()));
+    }
+
+    #[test]
+    fn crosshair_capture_keeps_timer_args_alongside_settings() {
+        let timed = AppConfig {
+            screenshot_timer_interval: 3,
+            screenshot_freeze_screen: false,
+            ..AppConfig::default()
+        };
+        let args = build_crosshair_args(&timed);
+        assert!(args.contains(&"--show-timer".to_string()));
+        assert!(args.contains(&"--timer-seconds=3".to_string()));
+        assert!(args.contains(&"--freeze-selection-bg=0".to_string()));
+        assert!(args.contains(&"--screenshot-cursor=1".to_string()));
+    }
+
+    #[test]
+    fn screenshot_timer_args_follow_setting() {
+        let mut off_args = Vec::new();
+        append_screenshot_timer_args(
+            &mut off_args,
+            &AppConfig {
+                screenshot_timer_interval: 0,
+                ..AppConfig::default()
+            },
+        );
+        assert_eq!(off_args, vec!["--hide-timer"]);
+
+        let mut on_args = Vec::new();
+        append_screenshot_timer_args(
+            &mut on_args,
+            &AppConfig {
+                screenshot_timer_interval: 3,
+                ..AppConfig::default()
+            },
+        );
+        assert_eq!(on_args, vec!["--show-timer", "--timer-seconds=3"]);
+    }
+
+    #[test]
+    fn custom_shutter_sound_support_follows_the_capture_route() {
+        assert!(supports_custom_shutter_sound_from(false, true, false));
+
+        assert!(!supports_custom_shutter_sound_from(true, true, false));
+        assert!(!supports_custom_shutter_sound_from(false, false, false));
+        assert!(!supports_custom_shutter_sound_from(false, true, true));
+        assert!(!supports_custom_shutter_sound_from(true, false, true));
+    }
+
+    #[test]
+    fn gnome_wayland_detection_accepts_ubuntu_and_setup_display() {
+        assert!(is_gnome_wayland_session_from_env(
+            Some("wayland-0"),
+            Some("ubuntu:GNOME"),
+            None
+        ));
+        assert!(is_gnome_wayland_session_from_env(
+            Some("wayland-0"),
+            None,
+            Some(":1")
+        ));
+        assert!(!is_gnome_wayland_session_from_env(
+            Some("wayland-0"),
+            Some("KDE"),
+            None
+        ));
+        assert!(!is_gnome_wayland_session_from_env(
+            None,
+            Some("GNOME"),
+            Some(":1")
+        ));
+    }
+
+    #[test]
+    fn gtk_layer_shell_selector_is_not_used_on_gnome_wayland() {
+        assert!(!should_use_gtk_layer_shell_selector_from_env(
+            Some("wayland-0"),
+            Some("ubuntu:GNOME"),
+            None,
+            None,
+            None,
+            false,
+        ));
+        assert!(!should_use_gtk_layer_shell_selector_from_env(
+            Some("wayland-0"),
+            None,
+            Some(":1"),
+            None,
+            None,
+            false,
+        ));
+    }
+
+    #[test]
+    fn gtk_layer_shell_selector_is_reserved_for_arch_wlroots_sessions() {
+        assert!(should_use_gtk_layer_shell_selector_from_env(
+            Some("wayland-0"),
+            Some("Hyprland"),
+            None,
+            Some("hyprland-instance"),
+            None,
+            true,
+        ));
+        assert!(!should_use_gtk_layer_shell_selector_from_env(
+            Some("wayland-0"),
+            Some("Hyprland"),
+            None,
+            Some("hyprland-instance"),
+            None,
+            false,
+        ));
+        assert!(!should_use_gtk_layer_shell_selector_from_env(
+            Some("wayland-0"),
+            Some("arch:GNOME"),
+            None,
+            None,
+            None,
+            true,
+        ));
+        assert!(!should_use_gtk_layer_shell_selector_from_env(
+            Some("wayland-0"),
+            Some("KDE"),
+            None,
+            None,
+            None,
+            true,
+        ));
+        assert!(!should_use_gtk_layer_shell_selector_from_env(
+            Some("wayland-0"),
+            Some("COSMIC"),
+            None,
+            None,
+            None,
+            true,
+        ));
+    }
+
+    #[test]
+    fn layer_shell_menu_route_requires_capability_and_preserves_special_routes() {
+        assert!(!should_use_gtk_layer_shell_selector_from_env(
+            Some("wayland-0"),
+            Some("Hyprland"),
+            None,
+            Some("instance"),
+            None,
+            false,
+        ));
+        assert!(should_use_layer_shell_quick_capture_menu_from_env(
+            Some("wayland-0"),
+            Some("Hyprland"),
+            None,
+            false,
+            false,
+            true,
+        ));
+
+        for desktop in ["KDE", "Niri", "sway"] {
+            assert!(should_use_layer_shell_quick_capture_menu_from_env(
+                Some("wayland-0"),
+                Some(desktop),
+                None,
+                false,
+                false,
+                true,
+            ));
+        }
+
+        assert!(!should_use_layer_shell_quick_capture_menu_from_env(
+            Some("wayland-0"),
+            Some("GNOME"),
+            None,
+            false,
+            false,
+            true,
+        ));
+        assert!(!should_use_layer_shell_quick_capture_menu_from_env(
+            None,
+            Some("KDE"),
+            None,
+            false,
+            false,
+            true,
+        ));
+        assert!(!should_use_layer_shell_quick_capture_menu_from_env(
+            Some("wayland-0"),
+            Some("KDE"),
+            None,
+            false,
+            false,
+            false,
+        ));
+        assert!(!should_use_layer_shell_quick_capture_menu_from_env(
+            Some("wayland-0"),
+            Some("Hyprland"),
+            None,
+            true,
+            false,
+            true,
+        ));
+        assert!(!should_use_layer_shell_quick_capture_menu_from_env(
+            Some("wayland-0"),
+            Some("KDE"),
+            None,
+            false,
+            true,
+            false,
+        ));
+
+        assert!(should_use_layer_shell_quick_capture_menu_from_env(
+            Some("wayland-0"),
+            Some("KDE"),
+            None,
+            false,
+            true,
+            true,
+        ));
+    }
+
+    #[test]
+    fn layer_shell_menu_result_round_trips_backend_options() {
+        use crate::overlay::{CaptureMenuAction as Action, CaptureMenuResult};
+
+        let cases = [
+            CaptureMenuResult {
+                action: Action::Area,
+                ocr: true,
+                microphone: true,
+                speaker: true,
+                ..CaptureMenuResult::default()
+            },
+            CaptureMenuResult {
+                action: Action::Display,
+                timer_seconds: 5,
+                ..CaptureMenuResult::default()
+            },
+            CaptureMenuResult {
+                action: Action::Area,
+                ..CaptureMenuResult::default()
+            },
+            CaptureMenuResult {
+                action: Action::Window,
+                recording: true,
+                microphone: true,
+                speaker: true,
+                mic_device: "alsa_input.usb-mic".into(),
+                speaker_app: "Google Chrome".into(),
+                speaker_app_pid: 9707,
+                ..CaptureMenuResult::default()
+            },
+        ];
+        for menu in cases {
+            let json = quick_capture_menu_result_json(menu.clone()).unwrap();
+            let parsed: CaptureMenuResult = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, menu);
+        }
+
+        let menu = CaptureMenuResult {
+            action: Action::Display,
+            timer_seconds: 3,
+            ..CaptureMenuResult::default()
+        };
+        let args = super::build_quick_capture_args_with_menu(&AppConfig::default(), menu).unwrap();
+        assert!(args
+            .iter()
+            .any(|arg| arg.starts_with("--capture-menu-result={")));
+    }
+
+    #[test]
+    fn layer_shell_menu_result_rejects_cancel_and_unsupported_state() {
+        use crate::overlay::{CaptureMenuAction as Action, CaptureMenuResult};
+
+        assert!(quick_capture_menu_result_json(CaptureMenuResult::default()).is_err());
+        assert!(quick_capture_menu_result_json(
+            CaptureMenuResult {
+                action: Action::Display,
+                ocr: true,
+                ..CaptureMenuResult::default()
+            },
+        )
+        .is_err());
+        assert!(quick_capture_menu_result_json(
+            CaptureMenuResult {
+                action: Action::Area,
+                recording: true,
+                ..CaptureMenuResult::default()
+            },
+        )
+        .is_err());
+        assert!(quick_capture_menu_result_json(
+            CaptureMenuResult {
+                action: Action::Window,
+                timer_seconds: 5,
+                ..CaptureMenuResult::default()
+            },
+        )
+        .is_err());
+        assert!(serde_json::from_str::<CaptureMenuResult>("not json").is_err());
+        assert!(serde_json::from_str::<CaptureMenuResult>(
+            r#"{
+                "action":"display",
+                "recording":false,
+                "ocr":false,
+                "timer_seconds":0,
+                "microphone":false,
+                "speaker":false,
+                "other":true
+            }"#
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn layer_shell_menu_control_accepts_only_focus_and_cancel() {
+        assert_eq!(
+            parse_capture_menu_control_request(b"focus\n"),
+            Some(CaptureMenuControlRequest::Focus)
+        );
+        assert_eq!(
+            parse_capture_menu_control_request(b"cancel\n"),
+            Some(CaptureMenuControlRequest::Cancel)
+        );
+        assert_eq!(parse_capture_menu_control_request(b"other\n"), None);
+    }
+
+    #[test]
+    fn test_parse_normal() {
+        let result = parse_selection_json(r#"{"x":10,"y":20,"width":300,"height":200}"#).unwrap();
+        let area = match result {
+            OverlaySelection::Area(Some(area)) => area,
+            other => panic!("unexpected selection: {other:?}"),
+        };
+        assert_eq!(area.x, 10);
+        assert_eq!(area.y, 20);
+        assert_eq!(area.width, 300);
+        assert_eq!(area.height, 200);
+    }
+
+    #[test]
+    fn test_parse_zero_size_is_error() {
+        assert!(parse_selection_json(r#"{"x":0,"y":0,"width":0,"height":0}"#).is_err());
+    }
+
+    #[test]
+    fn test_parse_capture_screen_path() {
+        let path =
+            parse_capture_screen_json(r#"{"path":"/tmp/demo.png","width":1920,"height":1080}"#)
+                .unwrap();
+        assert_eq!(path.to_string_lossy(), "/tmp/demo.png");
+    }
+
+    #[test]
+    fn test_parse_capture_screen_path_with_mode() {
+        let (path, mode) = parse_capture_screen_json_with_mode(
+            r#"{"path":"/tmp/demo.png","width":1920,"height":1080,"mode":"ocr"}"#,
+        )
+        .unwrap();
+        assert_eq!(path.to_string_lossy(), "/tmp/demo.png");
+        assert_eq!(mode.as_deref(), Some("ocr"));
+    }
+
+    #[test]
+    fn capture_output_preserves_selected_display_geometry() {
+        let result = parse_area_capture_output_with_persist(
+            Some(0),
+            r#"{"path":"/tmp/demo.png","width":1920,"height":1080,"mode":"area","screen_x":1920,"screen_y":0,"screen_width":2560,"screen_height":1440}"#,
+            "",
+            |_| Ok(()),
+        )
+        .unwrap();
+
+        match result {
+            AreaCapturePathResult::CapturedOnDisplay(path, display) => {
+                assert_eq!(path, PathBuf::from("/tmp/demo.png"));
+                assert_eq!(display.x, 1920);
+                assert_eq!(display.y, 0);
+                assert_eq!(display.width, 2560);
+                assert_eq!(display.height, 1440);
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_selection_coords() {
+        let parsed = parse_selection_json(r#"{"x":1,"y":2,"width":3,"height":4}"#).unwrap();
+        let area = match parsed {
+            OverlaySelection::Area(Some(area)) => area,
+            other => panic!("unexpected selection: {other:?}"),
+        };
+        assert_eq!(area.x, 1);
+        assert_eq!(area.y, 2);
+        assert_eq!(area.width, 3);
+        assert_eq!(area.height, 4);
+    }
+
+    #[test]
+    fn parse_recording_json_reads_runtime_overlay_fields() {
+        let request = parse_recording_json(
+            r#"{
+                "x":12,"y":34,"width":567,"height":890,
+                "mode":"record","record_type":"video",
+                "controls":true,"mic":true,"speaker":false,
+                "display_rec_time":true,"hidpi":false,
+                "notifications":true,"cursor":false,
+                "remember_selection":true,"dim_screen":false,
+                "countdown":true,
+                "video_format":1,"video_max_res":2,"video_fps":1,
+                "record_mono":true,"open_editor":false,
+                "fullscreen":true
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(request.x, 12);
+        assert_eq!(request.y, 34);
+        assert_eq!(request.width, 567);
+        assert_eq!(request.height, 890);
+        assert_eq!(request.record_type, RecordingType::Video);
+        assert!(request.controls);
+        assert!(request.mic);
+        assert!(!request.speaker);
+        assert!(request.display_rec_time);
+        assert!(!request.hidpi);
+        assert!(request.notifications);
+        assert!(!request.cursor);
+        assert!(request.remember_selection);
+        assert!(!request.dim_screen);
+        assert!(request.countdown);
+        assert_eq!(request.video_format, 0);
+        assert_eq!(request.video_max_res, 2);
+        assert_eq!(request.video_fps, 1);
+        assert!(request.record_mono);
+        assert!(!request.open_editor);
+        assert!(request.fullscreen);
+    }
+
+    #[test]
+    fn parse_recording_json_preserves_window_target_and_old_payload_defaults() {
+        let window = parse_recording_json(
+            r#"{"x":0,"y":0,"width":0,"height":0,"record_type":"video","window":true}"#,
+        )
+        .unwrap();
+        assert!(window.window);
+
+        let old_payload =
+            parse_recording_json(r#"{"x":0,"y":0,"width":0,"height":0,"record_type":"video"}"#)
+                .unwrap();
+        assert!(!old_payload.window);
+    }
+
+    #[test]
+    fn quick_capture_window_video_builds_a_portal_window_request() {
+        let request = super::recording_request_for_target(
+            crate::overlay::CaptureMenuResult {
+                recording: true,
+                ..crate::overlay::CaptureMenuResult::default()
+            },
+            None,
+            false,
+            true,
+        );
+
+        assert!(request.window);
+        assert!(!request.fullscreen);
+        assert_eq!(
+            (request.x, request.y, request.width, request.height),
+            (0, 0, 0, 0)
+        );
+    }
+
+    #[test]
+    fn qt_quick_capture_window_video_bypasses_still_and_monitor_capture() {
+        let main = include_str!("../../capture-overlay/src/main.cpp");
+        let menu_flow = main
+            .split("CaptureModeToolbar::Result captureMenuResult;")
+            .nth(1)
+            .unwrap()
+            .split("QImage desktopFreezeImage;")
+            .next()
+            .unwrap();
+        let window_route = menu_flow.find("if (captureMenuResult.recording").unwrap();
+        let window_shot_route = menu_flow
+            .find("if (captureMenuResult.action == CaptureModeToolbar::Action::Window)")
+            .unwrap();
+        let monitor_picker = menu_flow
+            .find("MonitorPicker::selectTargetScreen()")
+            .unwrap();
+        assert!(window_route < monitor_picker);
+        assert!(window_route < window_shot_route);
+        let request_path = &menu_flow[..window_route];
+        assert!(request_path.contains("CaptureModeToolbar::choose"));
+        assert!(!request_path.contains("captureSession.prepare"));
+        let window_recording_request = &menu_flow[window_route..window_shot_route];
+        assert!(window_recording_request.contains("QRect(0, 0, 0, 0)"));
+        assert!(
+            window_recording_request.contains("returnRecordingRequest(QRect(0, 0, 0, 0), true)")
+        );
+        let window_request = &menu_flow[window_shot_route..monitor_picker];
+        assert!(menu_flow.contains("captureMenuResult.microphone"));
+        assert!(menu_flow.contains("captureMenuResult.speaker"));
+        let prepare = window_request.find("captureSession.prepareWindow").unwrap();
+        let timer = window_request.find("CaptureCountdownPill::run").unwrap();
+        let fresh_frame = window_request.find("captureSession.captureFresh").unwrap();
+        let cleanup = window_request[fresh_frame..]
+            .find("sessionServer.close()")
+            .unwrap()
+            + fresh_frame;
+        let remove_server = window_request[fresh_frame..]
+            .find("QLocalServer::removeServer(sessionSocketPath)")
+            .unwrap()
+            + fresh_frame;
+        assert!(prepare < timer);
+        assert!(timer < fresh_frame);
+        assert!(fresh_frame < cleanup);
+        assert!(fresh_frame < remove_server);
+        assert!(window_request.contains("captureMenuResult.ocr ? \"ocr\" : nullptr"));
+        assert!(!window_request.contains("MonitorPicker::selectTargetScreen()"));
+        assert!(main.contains("\\\"fullscreen\\\":%s,\\\"window\\\":%s"));
+
+        let toolbar = include_str!("../../capture-overlay/src/CaptureModeToolbar.cpp");
+        assert!(toolbar.contains("m_recording && i == 4"));
+        assert!(toolbar.contains("m_recording && hovered == 4"));
+        let click_handler = toolbar
+            .split("void CaptureModeToolbar::mousePressEvent")
+            .nth(1)
+            .unwrap();
+        let window_click = click_handler
+            .split("case 3:")
+            .nth(1)
+            .unwrap()
+            .split("case 4:")
+            .next()
+            .unwrap();
+        assert!(window_click.contains("m_recording"));
+        assert!(window_click.contains("finish(Action::Window)"));
+    }
+
+    #[test]
+    fn wlroots_quick_capture_window_video_skips_monitor_and_still_capture() {
+        let wlroots = include_str!("wlroots.rs");
+        let quick_capture = wlroots
+            .split("fn open_quick_capture_via_gtk_layer_shell_wlroots()")
+            .nth(1)
+            .unwrap();
+        let cancelled = quick_capture
+            .find("if menu.action == crate::overlay::CaptureMenuAction::Cancel")
+            .unwrap();
+        let menu_unmap = quick_capture
+            .find("wait_for_layer_shell_overlay_to_unmap()")
+            .unwrap();
+        let window_route = quick_capture
+            .find("if menu.action == crate::overlay::CaptureMenuAction::Window && menu.recording")
+            .unwrap();
+        let window_shot_route = quick_capture
+            .find("if menu.action == crate::overlay::CaptureMenuAction::Window {")
+            .unwrap();
+        let monitor_picker = quick_capture
+            .find("select_target_monitor_choice()?")
+            .unwrap();
+        assert!(cancelled < menu_unmap);
+        assert!(quick_capture[cancelled..menu_unmap]
+            .contains("return Ok(AreaCapturePathResult::Cancelled);"));
+        assert!(menu_unmap < window_route);
+        assert!(window_route < window_shot_route);
+        assert!(window_shot_route < monitor_picker);
+        assert!(quick_capture[..window_route].contains("default_target_monitor_choice()?"));
+        assert!(!quick_capture[..window_route].contains("MonitorStill::prepare"));
+        assert!(quick_capture[window_route..window_shot_route]
+            .contains("recording_request_for_target(menu, None, false, true)"));
+        let window_shot = &quick_capture[window_shot_route..monitor_picker];
+        let portal_prepare = window_shot
+            .find("PortalWindowStillSession::prepare")
+            .unwrap();
+        let countdown = window_shot.find("menu.timer_seconds > 0").unwrap();
+        let fresh_frame = window_shot.find("still.capture()").unwrap();
+        assert!(portal_prepare < countdown);
+        assert!(countdown < fresh_frame);
+        assert!(!window_shot.contains("MonitorStill::prepare"));
+        assert!(window_shot.contains("AreaCapturePathResult::OcrRequested(capture)"));
+    }
+
+    #[test]
+    fn legacy_gif_record_type_falls_back_to_video() {
+        // GIF recording is discontinued — old overlays sending "gif" get MP4.
+        let request = parse_recording_json(
+            r#"{"x":1,"y":2,"width":3,"height":4,"mode":"record","record_type":"gif"}"#,
+        )
+        .unwrap();
+        assert_eq!(request.record_type, RecordingType::Video);
+    }
+
+    #[test]
+    fn build_area_init_args_includes_runtime_overlay_defaults() {
+        let config = AppConfig {
+            rec_mic_device: "alsa_input.usb-mic".into(),
+            rec_speaker_app: "Google Chrome".into(),
+            ..AppConfig::default()
+        };
+
+        let args = build_area_init_args(&config);
+
+        assert!(args.contains(&"--video-format=0".to_string()));
+        assert!(args.contains(&"--rec-mic-device=alsa_input.usb-mic".to_string()));
+        assert!(args.contains(&"--rec-speaker-app=Google Chrome".to_string()));
+        assert!(args
+            .iter()
+            .any(|arg| arg.starts_with("--rec-app-audio=")));
+
+        // Empty saved devices stay off the command line.
+        let args = build_area_init_args(&AppConfig::default());
+        assert!(!args.iter().any(|arg| arg.starts_with("--rec-mic-device=")));
+        assert!(!args.iter().any(|arg| arg.starts_with("--rec-speaker-app=")));
+    }
+
+    #[test]
+    fn forwarded_overlay_exit_code_is_classified_distinctly() {
+        assert_eq!(
+            classify_overlay_exit_code(Some(OverlayExitCode::ForwardedToExistingOverlay as i32)),
+            Ok(Some("forwarded"))
+        );
+    }
+
+    #[test]
+    fn builtin_block_overlay_exit_code_is_classified_distinctly() {
+        assert_eq!(
+            classify_overlay_exit_code(Some(OverlayExitCode::BlockedByBuiltinOverlay as i32)),
+            Err(LaunchBlockedReason::BuiltinOverlayActive)
+        );
+    }
+
+    #[test]
+    fn capture_session_coordinator_blocks_duplicate_apex_sessions() {
+        let coordinator = CaptureSessionCoordinator::default();
+        let _guard = coordinator
+            .begin_apex_overlay_session(false)
+            .expect("first session should acquire the guard");
+
+        assert!(matches!(
+            coordinator.begin_apex_overlay_session(false),
+            Err(LaunchBlockedReason::ApexOverlayAlreadyActive)
+        ));
+    }
+
+    #[test]
+    fn capture_session_coordinator_blocks_builtin_overlay_without_latching() {
+        let coordinator = CaptureSessionCoordinator::default();
+
+        assert!(matches!(
+            coordinator.begin_apex_overlay_session(true),
+            Err(LaunchBlockedReason::BuiltinOverlayActive)
+        ));
+
+        assert!(
+            coordinator.begin_apex_overlay_session(false).is_ok(),
+            "builtin detection should not permanently wedge the coordinator"
+        );
+    }
+
+    #[test]
+    fn capture_session_validation_drops_reservation_when_builtin_overlay_blocks() {
+        let coordinator = CaptureSessionCoordinator::default();
+        let guard = coordinator
+            .reserve_apex_overlay_session()
+            .expect("session should reserve the capture slot");
+
+        assert!(matches!(
+            validate_capture_session_with(guard, || true),
+            Err(LaunchBlockedReason::BuiltinOverlayActive)
+        ));
+
+        assert!(coordinator.reserve_apex_overlay_session().is_ok());
+    }
+
+    #[test]
+    fn capture_session_reservation_drops_and_can_be_reacquired() {
+        let coordinator = CaptureSessionCoordinator::default();
+        for _ in 0..3 {
+            let active = coordinator
+                .reserve_apex_overlay_session()
+                .expect("session should reserve the capture slot");
+
+            assert!(matches!(
+                coordinator.reserve_apex_overlay_session(),
+                Err(LaunchBlockedReason::ApexOverlayAlreadyActive)
+            ));
+
+            drop(active);
+            let reacquired = coordinator
+                .reserve_apex_overlay_session()
+                .expect("dropping the guard should release the capture slot");
+            drop(reacquired);
+        }
+    }
+
+    #[test]
+    fn capture_session_reservation_drops_when_builtin_probe_panics() {
+        let coordinator = CaptureSessionCoordinator::default();
+        let guard = coordinator
+            .reserve_apex_overlay_session()
+            .expect("first session should reserve the capture slot");
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            validate_capture_session_with(guard, || panic!("probe failed"))
+        }));
+
+        assert!(result.is_err());
+        assert!(coordinator.reserve_apex_overlay_session().is_ok());
+    }
+
+    #[test]
+    fn builtin_overlay_query_can_run_inside_tokio_runtime_without_panicking() {
+        let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
+
+        let result = runtime.block_on(async {
+            std::panic::catch_unwind(|| execute_builtin_overlay_query(|| true))
+        });
+
+        assert!(result.expect("query should not panic"));
+    }
+
+    #[test]
+    fn screenshot_lock_only_wraps_interactive_overlay_launches() {
+        assert!(should_request_screenshot_lock(&[]));
+        assert!(should_request_screenshot_lock(&["--area-init"]));
+        assert!(should_request_screenshot_lock(&["--window-capture"]));
+        assert!(should_request_screenshot_lock(&["--crosshair-capture"]));
+        assert!(!should_request_screenshot_lock(&["--capture-screen"]));
+    }
+
+    #[test]
+    fn tracked_overlay_id_matches_preview_helper_contract() {
+        assert_eq!(
+            tracked_overlay_id("session-123"),
+            "capture-overlay-session-123"
+        );
+    }
+
+    #[test]
+    fn tracked_overlay_title_matches_the_qt_window() {
+        let session = include_str!("session.rs");
+        let opened_event = session
+            .split("emit_tracked_window_opened(")
+            .nth(1)
+            .unwrap()
+            .split(')')
+            .next()
+            .unwrap();
+        let overlay = include_str!("../../capture-overlay/src/CaptureOverlay.cpp");
+        assert!(opened_event.contains("\"ApexShot Capture Overlay\""));
+        assert!(overlay.contains("setWindowTitle(QStringLiteral(\"ApexShot Capture Overlay\"));"));
+    }
+
+    #[test]
+    fn flatpak_capture_overlay_registration_uses_the_shell_method() {
+        let session = include_str!("session.rs");
+        assert!(session.contains("register_capture_overlay(crate::app_identity::app_id());"));
+
+        let integration = include_str!("../gnome_integration/mod.rs");
+        assert!(integration.contains("\"RegisterCaptureOverlayV2\""));
+
+        let shell_overlay = include_str!("../../gnome-extension/shell-overlay.js");
+        assert!(shell_overlay.contains("<method name=\"RegisterCaptureOverlayV2\">"));
+        assert!(shell_overlay.contains("window.get_title() === windowTitle"));
+        assert!(shell_overlay.contains("this._windowHasAppId(window, appId)"));
+        assert!(shell_overlay.contains("this._previewStacker.registerCaptureUiWindow(window)"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn warm_worker_ping_returns_the_reused_helpers_process_identity() {
+        assert_eq!(
+            super::parse_worker_ping_pid(r#"{"ok":true,"pid":1234}"#).unwrap(),
+            1234
+        );
+        let worker = include_str!("worker.rs");
+        assert!(worker.contains("let pid = ensure_warm_worker_running()?;"));
+        assert!(worker.contains("interactive_session.attach_child_pid(pid);"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn warm_worker_ping_rejects_missing_or_invalid_process_identities() {
+        for payload in [
+            r#"{"ok":true}"#,
+            r#"{"ok":false,"pid":1234}"#,
+            r#"{"ok":true,"pid":0}"#,
+            r#"{"ok":true,"pid":-1}"#,
+            r#"{"ok":true,"pid":"1234"}"#,
+            "invalid JSON",
+        ] {
+            assert!(super::parse_worker_ping_pid(payload).is_err(), "{payload}");
+        }
+    }
+
+    #[test]
+    fn build_area_init_args_includes_screenshot_selection_settings() {
+        let config = AppConfig {
+            screenshot_freeze_screen: false,
+            screenshot_crosshair_mode: "Crosshair".into(),
+            screenshot_show_magnifier: true,
+            ..AppConfig::default()
+        };
+
+        let args = build_area_init_args(&config);
+
+        assert!(args.iter().any(|arg| arg == "--area-init"));
+        assert!(args.iter().any(|arg| arg == "--selection-cursor=Crosshair"));
+        assert!(args.iter().any(|arg| arg == "--show-zoom-preview=1"));
+        assert!(args.iter().any(|arg| arg == "--freeze-selection-bg=0"));
+    }
+
+    #[test]
+    fn build_recording_ui_args_adds_direct_recording_flag() {
+        let args = build_recording_ui_args(&crate::config::AppConfig::default());
+        assert!(args.iter().any(|arg| arg == "--area-init"));
+        assert!(args.iter().any(|arg| arg == "--open-recording-ui"));
+    }
+
+    #[test]
+    fn build_quick_capture_args_opens_unified_menu() {
+        let args = build_quick_capture_args(&crate::config::AppConfig::default());
+        assert!(args.iter().any(|arg| arg == "--area-init"));
+        assert!(args.iter().any(|arg| arg == "--capture-menu"));
+        assert!(args.iter().any(|arg| arg == "--screenshot-cursor=1"));
+
+        let cursor_hidden = crate::config::AppConfig {
+            screenshot_show_cursor: false,
+            ..crate::config::AppConfig::default()
+        };
+        let args = build_quick_capture_args(&cursor_hidden);
+        assert!(args.iter().any(|arg| arg == "--screenshot-cursor=0"));
+    }
+
+    #[test]
+    fn area_init_cancel_does_not_parse_record_config_payload() {
+        let result = parse_area_capture_output_with_stderr(
+            Some(OverlayExitCode::Cancelled as i32),
+            r#"{"x":636,"y":177,"width":600,"height":744,"mode":"record-config","record_type":"video"}"#,
+            "",
+        )
+        .expect("cancel should parse");
+
+        assert!(matches!(result, super::AreaCapturePathResult::Cancelled));
+    }
+
+    #[test]
+    fn explicit_record_config_exit_is_distinct_from_cancel() {
+        let result = parse_area_capture_output_with_persist(
+            Some(OverlayExitCode::RecordConfigUpdated as i32),
+            r#"{"x":636,"y":177,"width":600,"height":744,"mode":"record-config","record_type":"video","controls":true,"mic":false,"speaker":false,"display_rec_time":false,"hidpi":false,"notifications":true,"cursor":true,"remember_selection":false,"dim_screen":true,"countdown":true,"video_max_res":0,"video_fps":1,"record_mono":false,"open_editor":false,"gif_fps":60,"gif_quality":0.7500,"gif_size_idx":0,"optimize_gif":true,"fullscreen":false}"#,
+            "",
+            |_| Ok(()),
+        )
+        .expect("record config should parse");
+
+        assert!(matches!(
+            result,
+            super::AreaCapturePathResult::RecordingConfigUpdated
+        ));
+    }
+
+    #[test]
+    fn area_init_error_includes_portal_stderr_detail() {
+        let err = parse_area_capture_output_with_stderr(
+            Some(2),
+            "",
+            "apexshot-capture: area capture failed: Portal permission capture failed (Portal screenshot rejected: status=2); overlay-local fallback failed (Portal fullscreen capture failed (Portal screenshot rejected: status=2))\n",
+        )
+        .expect_err("exit 2 should be an error");
+
+        let msg = err.to_string();
+        assert!(msg.contains("status=2"), "msg={msg}");
+        assert!(msg.contains("Portal"), "msg={msg}");
+    }
+
+    #[test]
+    fn user_facing_message_strips_exit_prefix_and_keeps_portal_detail() {
+        let technical = "apexshot-capture --area-init exited with code 2: area capture failed: Portal permission capture failed (Portal screenshot rejected: status=2)";
+        let body = super::user_facing_capture_failure_message(technical);
+        assert!(
+            body.contains("Portal screenshot rejected: status=2"),
+            "body={body}"
+        );
+        assert!(!body.contains("exited with code"), "body={body}");
+    }
+
+    #[test]
+    fn extract_capture_error_prefers_capture_failed_line() {
+        let stderr = "qt.something: noise\napexshot-capture: area capture failed: Portal screenshot rejected: status=2\n";
+        let detail = super::extract_capture_error_detail(stderr).expect("detail");
+        assert!(detail.contains("Portal screenshot rejected: status=2"));
+        assert!(!detail.starts_with("apexshot-capture:"));
+    }
+
+    #[cfg(feature = "flatpak")]
+    #[test]
+    fn sandbox_screenshot_dismissal_is_cancellation_not_capture_failure() {
+        assert!(matches!(
+            super::overlay_exit_error(
+                "--capture-screen",
+                2,
+                "apexshot-capture: fullscreen capture failed: Portal screenshot rejected: status=1",
+            ),
+            crate::overlay::SelectionError::Cancelled
+        ));
+        assert!(matches!(
+            super::overlay_exit_error(
+                "--capture-screen",
+                2,
+                "apexshot-capture: fullscreen capture failed: Portal screenshot rejected: status=2",
+            ),
+            crate::overlay::SelectionError::InitError(_)
+        ));
+    }
+
+    #[test]
+    fn save_capture_to_temp_png_round_trips_rgba_capture() {
+        let capture = CaptureData::new(
+            vec![
+                255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255,
+            ],
+            2,
+            2,
+            PixelFormat::RGBA32,
+        );
+
+        let path = save_capture_to_temp_png(&capture).expect("temp png should save");
+        let loaded = image::open(&path)
+            .expect("temp png should load")
+            .into_rgba8();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(loaded.width(), 2);
+        assert_eq!(loaded.height(), 2);
+    }
+}

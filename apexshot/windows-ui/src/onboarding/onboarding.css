@@ -1,0 +1,219 @@
+/* Authored at 100% scale, then scaled with the Windows editor stylesheet. */
+
+.editor-root.onboarding-root {
+    background: #191919;
+    color: #f3f0ec;
+    box-shadow: none;
+    font-family: 'Inter', 'Noto Sans', system-ui, sans-serif;
+    font-size: 14px;
+}
+
+.onboarding-pane {
+    background: transparent;
+}
+
+.onboarding-root .onboarding-headline {
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: -0.6px;
+    line-height: 1.15;
+}
+
+.onboarding-root .onboarding-copy {
+    font-size: 15px;
+    font-weight: 400;
+    line-height: 1.35;
+    color: #a3a09c;
+    opacity: 1;
+}
+
+.editor-root .onboarding-actions button.settings-primary-btn {
+    min-width: 0;
+    min-height: 42px;
+    padding: 0 18px;
+    border: none;
+    border-radius: 7px;
+    background: #ff670d;
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 600;
+    box-shadow: none;
+}
+
+.editor-root .onboarding-actions button.settings-primary-btn:hover {
+    background: #ff792b;
+}
+
+.editor-root .onboarding-actions button.settings-primary-btn:active {
+    background: #e65c0a;
+}
+
+.editor-root .onboarding-actions button.settings-primary-btn:disabled {
+    background: #67391f;
+    color: #b9a493;
+}
+
+.onboarding-root .onboarding-progress-node {
+    border: 1px solid rgba(243, 240, 236, 0.14);
+    border-radius: 999px;
+    color: rgba(243, 240, 236, 0.30);
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.onboarding-root .onboarding-progress-node-done {
+    border-color: rgba(243, 240, 236, 0.24);
+    color: rgba(243, 240, 236, 0.65);
+}
+
+.onboarding-root .onboarding-progress-node-active {
+    border-color: rgba(243, 240, 236, 0.65);
+    background: rgba(243, 240, 236, 0.07);
+    color: #f3f0ec;
+    font-weight: 600;
+}
+
+.onboarding-root .onboarding-progress-connector {
+    background: rgba(243, 240, 236, 0.12);
+}
+
+.onboarding-root .onboarding-progress-connector-done {
+    background: rgba(243, 240, 236, 0.24);
+}
+
+.onboarding-root .onboarding-text-button,
+.onboarding-root .onboarding-text-button:hover,
+.onboarding-root .onboarding-text-button:active {
+    background: transparent;
+    background-image: none;
+    border: none;
+    box-shadow: none;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 5px 10px;
+}
+
+.onboarding-root .onboarding-text-button:focus-visible {
+    outline: 1px solid #ff670d;
+    outline-offset: 3px;
+}
+
+.onboarding-action-note {
+    color: #83807b;
+    font-size: 12px;
+}
+
+/* Setup is a form, not another Settings page: no nested tables or cards. */
+.onboarding-root .onboarding-card-list,
+.onboarding-root .onboarding-hotkey-table {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.onboarding-root .onboarding-feature-row,
+.onboarding-root .onboarding-hotkey-table .settings-table-row {
+    background: transparent;
+    border: none;
+    padding: 10px 0;
+}
+
+.onboarding-root .onboarding-icon-badge {
+    color: #b9b4ad;
+    background: transparent;
+}
+
+.onboarding-root .settings-table-row > label,
+.onboarding-root .onboarding-feature-title {
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.onboarding-root .settings-sub-option {
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.3;
+    color: #a3a09c;
+    opacity: 1;
+}
+
+.onboarding-root .cloud-user-name {
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.onboarding-root .onboarding-status-pill {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.onboarding-hotkey-table .shortcut-capture-plus {
+    font-size: 12px;
+}
+
+.onboarding-hotkey-table .shortcut-capture-keycap {
+    font-size: 12px;
+    font-weight: 500;
+    padding: 4px 7px;
+    border: none;
+    box-shadow: none;
+    background: #2b2b2b;
+}
+
+.onboarding-root .onboarding-connect-code-frame {
+    background: #222222;
+    border: none;
+    box-shadow: none;
+    border-radius: 8px;
+    padding: 8px 8px 8px 16px;
+}
+
+.onboarding-root .onboarding-connect-code {
+    font-family: 'Cascadia Mono', 'Consolas', 'Courier New', monospace;
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: 2px;
+}
+
+.onboarding-status-error {
+    font-size: 13px;
+}
+
+.editor-root.editor-theme-light.onboarding-root {
+    background: #f4f2ee;
+    color: #25231f;
+}
+
+.editor-theme-light.onboarding-root .onboarding-copy,
+.editor-theme-light.onboarding-root .settings-sub-option {
+    color: #6c6861;
+}
+
+.editor-theme-light.onboarding-root .onboarding-progress-node {
+    border-color: rgba(37, 35, 31, 0.15);
+    color: rgba(37, 35, 31, 0.35);
+}
+
+.editor-theme-light.onboarding-root .onboarding-progress-node-done {
+    border-color: rgba(37, 35, 31, 0.28);
+    color: rgba(37, 35, 31, 0.65);
+}
+
+.editor-theme-light.onboarding-root .onboarding-progress-node-active {
+    border-color: rgba(37, 35, 31, 0.65);
+    background: rgba(37, 35, 31, 0.05);
+    color: #25231f;
+}
+
+.editor-theme-light.onboarding-root .onboarding-progress-connector {
+    background: rgba(37, 35, 31, 0.15);
+}
+
+.editor-theme-light.onboarding-root .onboarding-progress-connector-done {
+    background: rgba(37, 35, 31, 0.28);
+}
+
+.editor-theme-light.onboarding-root .onboarding-hotkey-table .shortcut-capture-keycap,
+.editor-theme-light.onboarding-root .onboarding-connect-code-frame {
+    background: #e8e5df;
+}

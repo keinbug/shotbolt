@@ -1,0 +1,1284 @@
+use super::crop::{
+    normalize_window_frame, stream_cursor_from_metadata, stream_cursor_update,
+    window_cursor_from_metadata, window_cursor_update, window_frame_crop,
+};
+use super::*;
+use crate::pipewire_engine::{FrameCrop, PipeWireFrame};
+use gstreamer::glib;
+
+/// Try to start the GStreamer audio capture (mic + speaker monitor mixed and
+/// encoded in-process). `None` means the caller should keep the legacy
+/// ffmpeg-pulse audio inputs — only when GStreamer plugins are missing or
+/// the pipeline cannot produce samples.
+fn start_gst_audio_or_fallback(
+    config: &super::RecordingConfig,
+    muxer: &str,
+    inputs: super::audio::AudioInputs,
+) -> Option<super::gst_audio::ActiveGstAudio> {
+    use super::gst_audio::{audio_available, ActiveGstAudio, AudioTermination, GstAudioSetup};
+
+    let setup = GstAudioSetup::from_recording(config, inputs)?;
+    if !audio_available(
+        muxer,
+        AudioTermination::AppSink,
+        setup.noise_suppression,
+        !setup.app_streams.is_empty(),
+    ) {
+        eprintln!("[recording] GStreamer audio unavailable; using ffmpeg pulse inputs");
+        return None;
+    }
+    match ActiveGstAudio::start(&setup, muxer) {
+        Ok(audio) => {
+            println!("Recording audio via GStreamer (mic/monitor mix, unified pipeline)");
+            Some(audio)
+        }
+        Err(err) => {
+            eprintln!("[recording] GStreamer audio first start failed ({err}); retrying");
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            match ActiveGstAudio::start(&setup, muxer) {
+                Ok(audio) => {
+                    println!("Recording audio via GStreamer (mic/monitor mix, unified pipeline)");
+                    Some(audio)
+                }
+                Err(err) => {
+                    eprintln!(
+                        "[recording] GStreamer audio failed to start ({err}); using ffmpeg pulse inputs"
+                    );
+                    None
+                }
+            }
+        }
+    }
+}
+
+/// Failure text for an encoder that exited before the recording finished.
+/// Carries ffmpeg's own diagnostics so a dead input never surfaces as a bare
+/// "Broken pipe".
+fn ffmpeg_encoding_failure(
+    encoder_name: &str,
+    status: &std::process::ExitStatus,
+    stderr: &str,
+) -> String {
+    format!(
+        "ffmpeg failed to encode the recording with {encoder_name} (exit {status}).{}",
+        ffmpeg_error_detail(stderr)
+    )
+}
+
+fn first_valid_window_frame(
+    capture: &crate::pipewire_engine::PipeWireCapture,
+) -> super::RecordResult<(PipeWireFrame, FrameCrop)> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+    let mut rejected_frame = false;
+    loop {
+        match capture.try_recv_frame() {
+            Ok(Some(frame)) => {
+                if let Some(crop) = window_frame_crop(&frame) {
+                    return Ok((frame, crop));
+                }
+                if !rejected_frame {
+                    eprintln!(
+                        "[recording] Ignoring window frame with invalid crop or buffer bounds"
+                    );
+                    rejected_frame = true;
+                }
+            }
+            Ok(None) => {}
+            Err(err) => {
+                return Err(RecordError::GStreamerError(format!(
+                    "PipeWire window frame failed: {err}"
+                )))
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(RecordError::GStreamerError(
+                "The selected window did not produce a valid frame within 8 seconds".into(),
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
+fn update_pending_video_frame(
+    last_pixels: &mut Option<std::sync::Arc<Vec<u8>>>,
+    pending_frame_at_us: &mut Option<i64>,
+    frame: Option<(Vec<u8>, i64)>,
+) {
+    if let Some((pixels, captured_at_us)) = frame {
+        *last_pixels = Some(std::sync::Arc::new(pixels));
+        *pending_frame_at_us = Some(captured_at_us);
+    }
+}
+
+/// Wayland recording: native PipeWire frame capture + ffmpeg pipe for encoding.
+pub(in crate::recording) fn record_wayland_with_ffmpeg_sync(
+    mut wayland_source: WaylandSource,
+    final_path: &std::path::Path,
+    encoder_name: &str,
+    encoder_props: &str,
+    audio_muxer: &str,
+    config: &mut super::RecordingConfig,
+    command_rx: Option<mpsc::UnboundedReceiver<RecordingControlCommand>>,
+) -> super::RecordResult<super::RecordedSession> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+
+    let final_path = final_path.to_path_buf();
+
+    // Initialize GStreamer before PipeWire so the libraries do not fight over
+    // spa/libpipewire startup. Do not start audio yet: starting it here lets
+    // audio run while the portal/PipeWire stream is still negotiating, which
+    // makes the saved audio track longer than the actual video timeline.
+    let _ = super::gst_audio::ensure_gst_initialized();
+    if config.mic_enabled || config.speaker_enabled {
+        super::audio::ensure_pipewire_pulse_running();
+    }
+    // Check the requested devices exist before either audio path references
+    // them: a missing mic or monitor must cost only its own track, not the
+    // recording. ffmpeg otherwise exits when it cannot open the pulse input.
+    let audio_inputs = if config.mic_enabled || config.speaker_enabled {
+        super::audio::resolve_available_audio_inputs(config)
+    } else {
+        super::audio::AudioInputs::default()
+    };
+    let mut audio_exclusive = Some(RecordingAudioExclusiveGuard::acquire(audio_inputs.any()));
+
+    // Open PipeWire capture stream (continuous).
+    // Portal path: connect via the remote FD from OpenPipeWireRemote.
+    // KDE-native path: node lives on the default session socket.
+    // Negotiate against the portal/KWin stream size, not the area crop.
+    // Feeding the crop as VideoSize makes GNOME emit a buffer that does not
+    // match the negotiated format, which used to panic in convert_to_rgba_frame.
+    let hint_w = (wayland_source.stream_width > 0).then_some(wayland_source.stream_width);
+    let hint_h = (wayland_source.stream_height > 0).then_some(wayland_source.stream_height);
+    let window_target = config.target == super::RecordingTarget::Window;
+    let cursor_metadata_enabled = wayland_source.cursor_metadata_enabled;
+    let capture = match match wayland_source.pipewire_fd {
+        Some(fd) if window_target => crate::pipewire_engine::PipeWireCapture::connect_window(
+            fd,
+            wayland_source.node_id,
+            None,
+            hint_w,
+            hint_h,
+            cursor_metadata_enabled,
+        ),
+        Some(fd) => crate::pipewire_engine::PipeWireCapture::connect_with_cursor_metadata(
+            fd,
+            wayland_source.node_id,
+            None, // continuous — no max frame limit
+            hint_w,
+            hint_h,
+            cursor_metadata_enabled,
+        ),
+        None => crate::pipewire_engine::PipeWireCapture::connect_default(
+            wayland_source.node_id,
+            None,
+            hint_w,
+            hint_h,
+        ),
+    } {
+        Ok(capture) => capture,
+        Err(e) => {
+            return Err(RecordError::GStreamerError(format!(
+                "PipeWire capture failed: {e}"
+            )));
+        }
+    };
+    // Declared after `capture` so unwind/error cleanup closes the exclusive
+    // portal session before attempting native PipeWire teardown.
+    let mut capture_session = wayland_source.session.take();
+
+    let format = capture.format().ok_or_else(|| {
+        RecordError::GStreamerError("No format negotiated before recording".into())
+    })?;
+
+    let mut first_window_frame = None;
+    let mut first_window_cursor = None;
+    let mut window_output_size = None;
+    // Crop of the newest window pixel frame. Pointer-only updates carry no
+    // pixels, so they map through this crop instead of recomputing bounds.
+    let mut last_window_crop = None;
+    let crop = if window_target {
+        let (frame, crop) = first_valid_window_frame(&capture)?;
+        last_window_crop = Some(crop);
+        let width = crop.width;
+        let height = crop.height;
+        first_window_cursor = window_cursor_update(&frame, crop, width, height)
+            .map(|cursor| (frame.captured_at_us, cursor));
+        let pixels = normalize_window_frame(&frame, crop, width, height).ok_or_else(|| {
+            RecordError::GStreamerError("The selected window frame could not be normalized".into())
+        })?;
+        first_window_frame = Some((pixels, frame.captured_at_us));
+        window_output_size = Some((width, height));
+        None
+    } else {
+        wayland_source.crop.and_then(|crop| {
+            scale_crop_to_frame(
+                crop,
+                wayland_source.stream_width,
+                wayland_source.stream_height,
+                format.width,
+                format.height,
+            )
+        })
+    };
+    let (input_width, input_height) = if window_target {
+        window_output_size.ok_or_else(|| {
+            RecordError::GStreamerError("The selected window did not produce a valid frame".into())
+        })?
+    } else {
+        match crop {
+            Some(crop) => {
+                let (width, height) = even_crop_output(crop, format.width, format.height);
+                eprintln!(
+                    "[recording] Applying Wayland area crop: left={} top={} => {}x{}",
+                    crop.left, crop.top, width, height
+                );
+                (width, height)
+            }
+            None => (format.width.max(2) & !1, format.height.max(2) & !1),
+        }
+    };
+    let fps = config.fps.max(1);
+    // Native SPA bytes — no channel swap (see PipeWireCapture::pix_fmt).
+    let pix_fmt = if window_target {
+        "rgba"
+    } else {
+        crate::pipewire_engine::pix_fmt_for_format(format.video_format)
+    };
+    let stream_header = super::timestamped_video::header(input_width, input_height, fps, pix_fmt)?;
+
+    // Start audio only after the video capture stream is negotiated. This
+    // keeps the encoded audio timeline aligned with the first video frame.
+    let mut active_audio = if audio_inputs.any() {
+        start_gst_audio_or_fallback(config, audio_muxer, audio_inputs)
+    } else {
+        None
+    };
+
+    // Build ffmpeg command
+    // Encoder preference: NVENC CQP > VAAPI QP > x264 CRF. All auto when HW present.
+    let use_nvenc = super::wf_recorder::should_use_nvenc()
+        && encoder_name != "libvpx-vp9"
+        && encoder_name != "libvpx"
+        && encoder_name != "libtheora";
+    let use_vaapi = !use_nvenc && super::wf_recorder::should_use_vaapi();
+    let mut ffmpeg_cmd = Command::new("ffmpeg");
+    ffmpeg_cmd
+        .arg("-y")
+        .arg("-loglevel")
+        .arg("warning")
+        .arg("-nostats");
+
+    ffmpeg_cmd.arg("-f").arg("matroska").arg("-i").arg("pipe:0");
+
+    // Add every input before filters, codecs, maps, and other output options.
+    // FFmpeg otherwise applies an option such as -vf to the following audio
+    // input and exits with AVERROR(EINVAL) (234).
+    let gst_audio_fd = active_audio.as_mut().and_then(|audio| {
+        let format = audio.input_format();
+        audio.take_read_fd().map(|fd| (format, fd))
+    });
+    if let Some((format, read_fd)) = gst_audio_fd {
+        // GStreamer path: encoded audio arrives on an inherited fd as a second
+        // input. Both inputs EOF deterministically (pipe writer closes on EOS),
+        // so no -shortest hack is needed.
+        ffmpeg_cmd.arg("-f").arg(format);
+        ffmpeg_cmd.arg("-i").arg("pipe:3");
+        attach_audio_pipe_as_fd3(&mut ffmpeg_cmd, read_fd);
+    } else if audio_inputs.any() {
+        // Only sources that were checked above reach ffmpeg; a missing one
+        // would make ffmpeg exit on its input and kill the whole recording.
+        if audio_inputs.mic {
+            let mic_dev = config
+                .mic_source
+                .clone()
+                .unwrap_or_else(super::audio::get_pulse_default_source);
+            eprintln!("[recording] Audio: mic device={mic_dev}");
+            ffmpeg_cmd.arg("-f").arg("pulse");
+            ffmpeg_cmd.arg("-i").arg(&mic_dev);
+        }
+
+        if audio_inputs.speaker {
+            if let Some(app) = config.speaker_app.as_ref() {
+                // The ffmpeg pulse fallback opens the output monitor; a
+                // single app's streams are only available on the GStreamer
+                // path.
+                eprintln!(
+                    "[recording] one-app audio is unavailable on this path; recording every app instead of '{}'",
+                    app.name
+                );
+            }
+            let spk_dev = config
+                .speaker_source
+                .clone()
+                .unwrap_or_else(super::audio::get_pulse_speaker_monitor);
+            eprintln!("[recording] Audio: speaker monitor={spk_dev}");
+            ffmpeg_cmd.arg("-f").arg("pulse");
+            ffmpeg_cmd.arg("-i").arg(&spk_dev);
+        }
+    }
+
+    // One line describing the actual video path (encoder + quality + sizes).
+    // Without this every "blurry recording" report is blind guessing.
+    let mut video_desc = String::from("unknown");
+
+    if use_nvenc {
+        // NVENC recording settings: RC=CQP, profile high.
+        let filter = wayland_video_filter(config.max_resolution);
+        let (fit_w, fit_h) =
+            super::fit_within_max_resolution(input_width, input_height, config.max_resolution);
+        let cqp = config
+            .crf
+            .saturating_sub(super::crf_resolution_reduction(fit_w, fit_h));
+        ffmpeg_cmd
+            .arg("-vf")
+            .arg(super::timestamped_video::cfr_filter(fps, &filter))
+            .arg("-c:v")
+            .arg("h264_nvenc")
+            .arg("-rc")
+            .arg("constqp")
+            .arg("-qp")
+            .arg(cqp.to_string())
+            .arg("-profile:v")
+            .arg("high")
+            .arg("-preset")
+            .arg("p5")
+            .arg("-tune")
+            .arg("hq")
+            .arg("-multipass")
+            .arg("qres")
+            // Lookahead (8 frames) with adaptive I/B frames; without it motion
+            // re-allocates bits less smoothly.
+            .arg("-rc-lookahead")
+            .arg("8")
+            .arg("-spatial-aq")
+            .arg("1")
+            .arg("-temporal-aq")
+            .arg("1")
+            .arg("-bf")
+            .arg("2")
+            .arg("-g")
+            .arg((fps * 2).to_string())
+            // Match the bt709 conversion in the filter; untagged NVENC output
+            // makes players guess, which can wash the image out.
+            .arg("-color_range")
+            .arg("tv")
+            .arg("-colorspace")
+            .arg("bt709")
+            .arg("-color_primaries")
+            .arg("bt709")
+            .arg("-color_trc")
+            .arg("bt709")
+            // ffmpeg's nvenc wrapper drops transfer/primaries from the VUI.
+            // Players then guess wrong and lift blacks (cloudy playback), so
+            // rewrite the H.264 VUI so all four fields are tagged bt709/tv.
+            .arg("-bsf:v")
+            .arg("h264_metadata=video_full_range_flag=0:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1");
+        video_desc = format!("h264_nvenc CQP{cqp} preset=p5 tune=hq multipass=qres AQ");
+    } else if use_vaapi {
+        let (vaapi_width, vaapi_height) =
+            fit_within_max_resolution(input_width, input_height, config.max_resolution);
+        // Tier-derived QP like the other encoders (was a fixed 20/24).
+        let qp = config
+            .crf
+            .saturating_sub(super::crf_resolution_reduction(vaapi_width, vaapi_height));
+        let vaapi_args = super::wf_recorder::ffmpeg_vaapi_args(vaapi_width, vaapi_height, qp);
+        video_desc = format!("h264_vaapi CQP qp{qp} {vaapi_width}x{vaapi_height} profile=high");
+        for (index, arg) in vaapi_args.iter().enumerate() {
+            if index > 0 && vaapi_args[index - 1] == "-vf" {
+                ffmpeg_cmd.arg(super::timestamped_video::cfr_filter(fps, arg));
+            } else {
+                ffmpeg_cmd.arg(arg);
+            }
+        }
+        ffmpeg_cmd.arg("-g").arg((fps * 2).to_string());
+        ffmpeg_cmd
+            .arg("-color_range")
+            .arg("tv")
+            .arg("-colorspace")
+            .arg("bt709")
+            .arg("-color_primaries")
+            .arg("bt709")
+            .arg("-color_trc")
+            .arg("bt709")
+            // Same VUI fix as NVENC: vaapi does not emit transfer/primaries.
+            .arg("-bsf:v")
+            .arg("h264_metadata=video_full_range_flag=0:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1");
+    } else {
+        // Convert desktop RGBA (full-range RGB) to standard limited-range
+        // YUV420P for broad MP4/player compatibility. Tagging H.264 as full
+        // range can make some Linux players display lifted blacks / a washed
+        // layer, so use normal video range while preserving correct RGB input.
+        let filter = wayland_video_filter(config.max_resolution);
+        ffmpeg_cmd
+            .arg("-vf")
+            .arg(super::timestamped_video::cfr_filter(fps, &filter))
+            .arg("-color_range")
+            .arg("tv")
+            .arg("-colorspace")
+            .arg("bt709")
+            .arg("-color_primaries")
+            .arg("bt709")
+            .arg("-color_trc")
+            .arg("iec61966-2-1");
+        ffmpeg_cmd.arg("-c:v").arg(encoder_name);
+        // Sane defaults for screen recording.
+        if encoder_name == "libx264" {
+            ffmpeg_cmd.arg("-preset").arg("veryfast");
+            ffmpeg_cmd.arg("-profile:v").arg("high");
+            ffmpeg_cmd.arg("-g").arg((fps * 2).to_string());
+            ffmpeg_cmd.arg("-bf").arg("2");
+            // Resolution-compensated CRF: the tier base minus the output-size
+            // reduction, so capped resolutions stay sharp.
+            let (fit_w, fit_h) =
+                super::fit_within_max_resolution(input_width, input_height, config.max_resolution);
+            let crf = config
+                .crf
+                .saturating_sub(super::crf_resolution_reduction(fit_w, fit_h));
+            ffmpeg_cmd.arg("-crf").arg(crf.to_string());
+            video_desc = format!("libx264 CRF{crf} preset=veryfast profile=high");
+            // x264 sets VUI color metadata from its own params, ignoring
+            // ffmpeg's -color_* output options — pass them explicitly so the
+            // transfer/primaries tags actually land in the file. Strict
+            // players otherwise guess, which can wash the image out.
+            ffmpeg_cmd
+                .arg("-x264-params")
+                .arg("colorprim=bt709:transfer=iec61966-2-1:colormatrix=bt709");
+        } else if encoder_name == "libopenh264" {
+            // Fedora ffmpeg-free ships OpenH264 (no libx264). CRF is not
+            // supported; use a solid CBR-ish bitrate for desktop capture.
+            ffmpeg_cmd.arg("-b:v").arg("8M");
+            ffmpeg_cmd.arg("-maxrate").arg("10M");
+            ffmpeg_cmd.arg("-bufsize").arg("16M");
+            ffmpeg_cmd.arg("-allow_skip_frames").arg("0");
+            video_desc = String::from("libopenh264 CBR 8M");
+        } else if encoder_name == "libvpx-vp9" || encoder_name == "libvpx" {
+            // File-recording quality, not streaming realtime: deadline good,
+            // cpu-used 2, CQ 20 (was realtime/6/CRF 32 = blurry).
+            ffmpeg_cmd.arg("-b:v").arg("0");
+            ffmpeg_cmd.arg("-crf").arg("20");
+            ffmpeg_cmd.arg("-deadline").arg("good");
+            ffmpeg_cmd.arg("-cpu-used").arg("2");
+            video_desc = format!("{encoder_name} CQ20 deadline=good cpu-used=2");
+        }
+        if !encoder_props.is_empty() {
+            for prop in encoder_props.split_whitespace() {
+                if let Some((key, val)) = prop.split_once('=') {
+                    ffmpeg_cmd.arg(format!("-{key}")).arg(val);
+                }
+            }
+        }
+    }
+
+    // Map audio after all inputs have been declared.
+    if audio_inputs.any() {
+        if active_audio.is_some() {
+            // Encoded audio is muxed as-is; mono is handled by the GStreamer
+            // branch caps, so no channel conversion happens here.
+            ffmpeg_cmd.arg("-map").arg("0:v");
+            ffmpeg_cmd.arg("-map").arg("1:a");
+            ffmpeg_cmd.arg("-c:a").arg("copy");
+            // The pipe carries ADTS AAC. The fragmented MP4 header is written
+            // before the first audio packet, so the AudioSpecificConfig must
+            // come from the bitstream filter; without it the muxer rejects the
+            // first AAC packet and ffmpeg exits.
+            if active_audio
+                .as_ref()
+                .is_some_and(|audio| audio.input_format() == "aac")
+            {
+                ffmpeg_cmd.arg("-bsf:a").arg("aac_adtstoasc");
+            }
+        } else {
+            // Legacy pulse inputs: ffmpeg captures from PulseAudio directly;
+            // on modern GNOME this is provided by pipewire-pulse.
+            if audio_inputs.mic && audio_inputs.speaker {
+                ffmpeg_cmd.arg("-filter_complex");
+                ffmpeg_cmd.arg("[1:a][2:a]amix=inputs=2:duration=first[aout]");
+                ffmpeg_cmd.arg("-map").arg("0:v");
+                ffmpeg_cmd.arg("-map").arg("[aout]");
+            } else {
+                ffmpeg_cmd.arg("-map").arg("0:v");
+                ffmpeg_cmd.arg("-map").arg("1:a");
+            }
+
+            if config.mono_audio {
+                ffmpeg_cmd.arg("-ac").arg("1");
+            }
+            // Pulse sources never EOF. Without this, closing the video pipe
+            // leaves ffmpeg blocked on mic/speaker input and Stop never
+            // finishes. (The GStreamer pipe path EOFs deterministically.)
+            ffmpeg_cmd.arg("-shortest");
+        }
+    }
+
+    ffmpeg_cmd
+        .arg("-fps_mode")
+        .arg("cfr")
+        .arg("-r")
+        .arg(fps.to_string());
+
+    if final_path.extension().is_some_and(|e| e == "mp4") {
+        ffmpeg_cmd
+            .arg("-movflags")
+            .arg("+frag_keyframe+empty_moov+default_base_moof")
+            .arg("-flush_packets")
+            .arg("1");
+    }
+
+    eprintln!(
+        "[recording] video: {video_desc} | pipe {input_width}x{input_height} {pix_fmt} @ {fps}fps -> {}",
+        final_path.display()
+    );
+
+    ffmpeg_cmd.arg(&final_path);
+    ffmpeg_cmd.stdin(Stdio::piped());
+    ffmpeg_cmd.stdout(Stdio::null());
+    ffmpeg_cmd.stderr(Stdio::piped());
+
+    let mut disk_guard = super::disk_space::DiskSpaceGuard::new(&final_path);
+    if disk_guard.refuse_start() {
+        if let Some(mut audio) = active_audio.take() {
+            audio.abort();
+        }
+        return Err(RecordError::GStreamerError(
+            "Not enough free disk space to start recording (512 MB required)".into(),
+        ));
+    }
+
+    let mut child = match ffmpeg_cmd.spawn() {
+        Ok(child) => child,
+        Err(e) => {
+            if let Some(mut audio) = active_audio.take() {
+                audio.abort();
+            }
+            return Err(RecordError::GStreamerError(format!(
+                "Failed to spawn ffmpeg: {e}"
+            )));
+        }
+    };
+
+    let mut stdin = child.stdin.take().expect("stdin should be piped");
+    set_child_stdin_nonblocking(&stdin).map_err(|e| {
+        let _ = child.kill();
+        let _ = child.wait();
+        RecordError::GStreamerError(format!("Failed to make ffmpeg input cancellable: {e}"))
+    })?;
+    let mut stderr = child.stderr.take().expect("stderr should be piped");
+    let stderr_reader = std::thread::spawn(move || {
+        const MAX_DIAGNOSTIC_BYTES: usize = 16 * 1024;
+        let mut output = Vec::new();
+        let mut buffer = [0u8; 4096];
+        loop {
+            match stderr.read(&mut buffer) {
+                Ok(0) | Err(_) => break,
+                Ok(read) => {
+                    output.extend_from_slice(&buffer[..read]);
+                    if output.len() > MAX_DIAGNOSTIC_BYTES {
+                        let excess = output.len() - MAX_DIAGNOSTIC_BYTES;
+                        output.drain(..excess);
+                    }
+                }
+            }
+        }
+        String::from_utf8_lossy(&output).into_owned()
+    });
+
+    println!("Recording (native PipeWire + ffmpeg) to {:?}", final_path);
+
+    // Recording loop
+    let mut command_rx = command_rx;
+    let mut stop_action = super::RecordingTerminalAction::Save;
+    let mut frames_written = 0u64;
+    let frame_interval = std::time::Duration::from_secs_f64(1.0 / fps as f64);
+    let mut next_frame_at: Option<std::time::Instant> = None;
+    let mut dropped_frames = 0u64;
+    let mut last_drop_log = std::time::Instant::now();
+    let mut first_written_at: Option<std::time::Instant> = None;
+    let mut last_pixels = None;
+    let mut pending_frame_at_us = None;
+    update_pending_video_frame(
+        &mut last_pixels,
+        &mut pending_frame_at_us,
+        first_window_frame.take(),
+    );
+    let mut last_encoded_pixels = None;
+    let mut paused = false;
+    let mut timeline = super::timeline::RecordingTimeline::default();
+    if cursor_metadata_enabled {
+        let (width, height) = if window_target {
+            window_output_size.expect("window target has an initial frame")
+        } else {
+            (input_width, input_height)
+        };
+        timeline.enable_stream_cursor(width, height);
+        if let Some((captured_at_us, cursor)) = first_window_cursor {
+            timeline.record_stream_cursor(captured_at_us, cursor);
+        }
+    }
+    if active_audio.is_none() && audio_inputs.any() {
+        timeline.retain_live_audio_pauses();
+        eprintln!("[recording] Live Pulse audio fallback retains frozen pause intervals on the media clock");
+    }
+    let mut last_frame_at_us = None;
+    let first_frame_deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+    // A failed write means ffmpeg stopped reading; teardown below reports its
+    // stderr instead of returning the bare pipe error.
+    let mut ffmpeg_write_error: Option<std::io::Error> = None;
+
+    loop {
+        // Check for control commands
+        let command = match &mut command_rx {
+            Some(rx) => match rx.try_recv() {
+                Ok(cmd) => Some(cmd),
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => None,
+                Err(_) => {
+                    command_rx = None;
+                    None
+                }
+            },
+            None => None,
+        };
+
+        if let Some(command) = command {
+            match command {
+                RecordingControlCommand::Restart => {
+                    stop_action = super::RecordingTerminalAction::Restart;
+                    break;
+                }
+                RecordingControlCommand::StopSave => {
+                    println!("\nStopping recording...");
+                    break;
+                }
+                RecordingControlCommand::StopDiscard => {
+                    stop_action = super::RecordingTerminalAction::Discard;
+                    println!("\nDiscarding recording...");
+                    break;
+                }
+                RecordingControlCommand::Pause if !paused => {
+                    timeline.pause(glib::monotonic_time());
+                    println!("Recording paused");
+                    if let Some(audio) = active_audio.as_mut() {
+                        audio.set_paused(true);
+                    }
+                    paused = true;
+                    super::notify_daemon_event("recording_session_paused");
+                }
+                RecordingControlCommand::Resume if paused => {
+                    if disk_guard.low() {
+                        eprintln!("[recording] refusing to resume: disk space is almost full");
+                        break;
+                    }
+                    timeline.resume(glib::monotonic_time());
+                    println!("Recording resumed");
+                    if let Some(audio) = active_audio.as_mut() {
+                        audio.set_paused(false);
+                    }
+                    paused = false;
+                    next_frame_at = None; // don't skip the first frame
+                    super::notify_daemon_event("recording_session_resumed");
+                }
+                _ => {}
+            }
+        }
+
+        // An audio pipeline error truncates the audio track but must not kill
+        // an otherwise healthy video recording.
+        if let Some(err) = active_audio.as_ref().and_then(|a| a.poll_bus_error()) {
+            eprintln!("[recording] GStreamer audio error: {err}; continuing without audio");
+            if let Some(mut audio) = active_audio.take() {
+                audio.abort();
+            }
+        }
+
+        if let Some(true) = disk_guard.poll() {
+            eprintln!("[recording] stopping: disk space is almost full");
+            break;
+        }
+
+        // While paused, spin briefly and check for commands instead
+        // of capturing frames.
+        if paused {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            continue;
+        }
+
+        // Pointer-only buffers arrive between pixel frames, so drain them on
+        // every tick rather than on the frame cadence below. They go straight
+        // into the cursor track and never reach ffmpeg or the frame counter.
+        while let Some(update) = capture.try_recv_cursor_update() {
+            if !cursor_metadata_enabled {
+                continue;
+            }
+            // Positions captured before the first encoded frame have no place
+            // in the sidecar; rebasing would drop them anyway.
+            let Some(origin_us) = timeline.origin_us() else {
+                continue;
+            };
+            if update.captured_at_us < origin_us {
+                continue;
+            }
+            let cursor = if window_target {
+                last_window_crop.and_then(|window_crop| {
+                    window_cursor_from_metadata(
+                        update.cursor_metadata,
+                        window_crop,
+                        input_width,
+                        input_height,
+                    )
+                })
+            } else {
+                stream_cursor_from_metadata(update.cursor_metadata, crop, input_width, input_height)
+            };
+            if let Some(cursor) = cursor {
+                timeline.record_stream_cursor(update.captured_at_us, cursor);
+            }
+        }
+
+        // Gate acquisition on cadence (one frame per tick): acquiring
+        // and converting a full RGBA frame on every 1ms spin burns hundreds
+        // of MiB/s of copies for frames that are overwritten before use.
+        let now = std::time::Instant::now();
+        if let Some(deadline) = next_frame_at {
+            if now < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                continue;
+            }
+        }
+
+        match capture.try_recv_frame() {
+            Ok(Some(frame)) => {
+                let captured_at_us = frame.captured_at_us;
+                let expected = input_width as usize * input_height as usize * 4;
+                let mut cursor_update = None;
+                let pixels = if window_target {
+                    window_frame_crop(&frame).and_then(|crop| {
+                        last_window_crop = Some(crop);
+                        if cursor_metadata_enabled {
+                            cursor_update =
+                                window_cursor_update(&frame, crop, input_width, input_height);
+                        }
+                        normalize_window_frame(&frame, crop, input_width, input_height)
+                    })
+                } else if frame.video_format == format.video_format
+                    && frame.width == format.width
+                    && frame.height == format.height
+                {
+                    if cursor_metadata_enabled {
+                        cursor_update =
+                            stream_cursor_update(&frame, crop, input_width, input_height);
+                    }
+                    if let Some(crop) = crop {
+                        crop_rgba_frame(&frame, crop, input_width, input_height).ok()
+                    } else if frame.pixels.len() == expected {
+                        Some(frame.pixels)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                match pixels {
+                    Some(pixels) if pixels.len() == expected => {
+                        update_pending_video_frame(
+                            &mut last_pixels,
+                            &mut pending_frame_at_us,
+                            Some((pixels, captured_at_us)),
+                        );
+                    }
+                    Some(pixels) => {
+                        eprintln!(
+                            "[recording] Skipping frame with {} bytes (expected {expected})",
+                            pixels.len()
+                        );
+                    }
+                    None => {
+                        eprintln!(
+                            "[recording] Skipping frame with invalid crop, format, or dimensions"
+                        );
+                    }
+                }
+                // A pixel buffer's cursor metadata is valid even when its
+                // pixels cannot be encoded, so record it independently.
+                if let Some(cursor) = cursor_update {
+                    timeline.record_stream_cursor(captured_at_us, cursor);
+                }
+                if next_frame_at.is_none() {
+                    next_frame_at = Some(std::time::Instant::now());
+                }
+            }
+            Ok(None) => {}
+            Err(e) => {
+                eprintln!("PipeWire frame error: {e}");
+                break;
+            }
+        }
+
+        let Some(pixels) = last_pixels.as_ref() else {
+            if std::time::Instant::now() > first_frame_deadline {
+                drop(stdin);
+                let _ = child.kill();
+                let _ = child.wait();
+                if let Some(mut audio) = active_audio.take() {
+                    audio.abort();
+                }
+                return Err(RecordError::GStreamerError(
+                    "Recording produced no frames. The screen share ended before capture started."
+                        .into(),
+                ));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            continue;
+        };
+        let Some(frame_at_us) = pending_frame_at_us else {
+            next_frame_at = Some(std::time::Instant::now() + frame_interval);
+            continue;
+        };
+
+        let now = std::time::Instant::now();
+        let Some(deadline) = next_frame_at else {
+            next_frame_at = Some(now);
+            continue;
+        };
+        if now < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            continue;
+        }
+
+        if last_frame_at_us.is_some_and(|previous| frame_at_us <= previous) {
+            pending_frame_at_us = None;
+            next_frame_at = Some(now + frame_interval);
+            continue;
+        }
+
+        // Lag must never stop progress. When the encoder is more than two
+        // intervals behind, count the backlog slots being skipped but still
+        // write the newest frame below, then re-anchor the schedule from now.
+        // Frame pts come from capture time, so a late write keeps correct timing.
+        let lateness = now.saturating_duration_since(deadline);
+        let lagging = lateness > frame_interval * 2;
+        if lagging {
+            dropped_frames += (lateness.as_secs_f64() / frame_interval.as_secs_f64()) as u64;
+            if last_drop_log.elapsed() > std::time::Duration::from_secs(5) {
+                eprintln!(
+                    "[recording] encoder lagging; dropped {dropped_frames} backlog frame(s) to stay realtime"
+                );
+                dropped_frames = 0;
+                last_drop_log = std::time::Instant::now();
+            }
+        }
+
+        // Debug: APEXSHOT_DUMP_FRAME=/tmp/frame keeps the first fed frame for
+        // capture-vs-encode diagnosis (raw bytes + .info with WxH/pixfmt).
+        if frames_written == 0 {
+            if let Ok(path) = std::env::var("APEXSHOT_DUMP_FRAME") {
+                if !path.is_empty() {
+                    let _ = std::fs::write(&path, pixels.as_slice());
+                    let _ = std::fs::write(
+                        format!("{path}.info"),
+                        format!("{input_width}x{input_height} {pix_fmt} fps={fps} {video_desc}"),
+                    );
+                    eprintln!("[recording] dumped first frame to {path}");
+                }
+            }
+        }
+
+        let pts_us = timeline.frame_time_us(frame_at_us);
+        let frame_header = super::timestamped_video::frame_header(pts_us, pixels.len());
+        let initial_header = if frames_written == 0 {
+            stream_header.as_slice()
+        } else {
+            &[]
+        };
+        match write_ffmpeg_frame_interruptible(
+            &mut stdin,
+            &[initial_header, &frame_header, pixels],
+            &mut FfmpegFrameControl {
+                command_rx: &mut command_rx,
+                stop_action: &mut stop_action,
+                paused: &mut paused,
+                active_audio: &mut active_audio,
+                timeline: &mut timeline,
+                notify: super::notify_daemon_event,
+                disk_guard: &mut disk_guard,
+            },
+        ) {
+            Ok(keep_recording) => {
+                if !keep_recording && stop_action != super::RecordingTerminalAction::Save {
+                    break;
+                }
+                frames_written += 1;
+                last_frame_at_us = Some(frame_at_us);
+                last_encoded_pixels = Some(std::sync::Arc::clone(pixels));
+                pending_frame_at_us = None;
+                if first_written_at.is_none() {
+                    first_written_at = Some(std::time::Instant::now());
+                }
+                next_frame_at = Some(if lagging {
+                    now + frame_interval
+                } else {
+                    deadline + frame_interval
+                });
+                if frames_written == 1 {
+                    let max_rgb = pixels
+                        .chunks_exact(4)
+                        .map(|px| px[0].max(px[1]).max(px[2]))
+                        .max()
+                        .unwrap_or(0);
+                    eprintln!(
+                        "[recording] First frame written to ffmpeg ({} bytes, max_rgb={max_rgb})",
+                        pixels.len()
+                    );
+                    eprintln!(
+                        "[recording] media origin monotonic_us={frame_at_us} pts_us={pts_us}"
+                    );
+                    if let Some(audio) = active_audio.as_ref() {
+                        audio.set_start_at_monotonic_us(frame_at_us);
+                    }
+                    if max_rgb == 0 {
+                        eprintln!(
+                            "[recording] First frame is fully black — capture buffer is empty"
+                        );
+                    }
+                }
+                if frames_written.is_multiple_of(30) {
+                    eprintln!("[recording] {} frames written", frames_written);
+                }
+                if !keep_recording {
+                    break;
+                }
+            }
+            Err(e) => {
+                if e.kind() == std::io::ErrorKind::BrokenPipe {
+                    eprintln!("ffmpeg pipe broken (likely exited)");
+                } else {
+                    eprintln!("Failed to write to ffmpeg: {e}");
+                }
+                ffmpeg_write_error = Some(e);
+                break;
+            }
+        }
+    }
+
+    let stopped_at = std::time::Instant::now();
+    let stopped_at_us = glib::monotonic_time();
+    if let Some(audio) = active_audio.as_ref() {
+        audio.set_end_now();
+    }
+    timeline.finish(stopped_at_us);
+
+    // One line per recording that shows exactly what the compositor sent.
+    // A cursorless video caused by pointer-only buffers being dropped looks
+    // identical to a compositor that never granted metadata without it.
+    let buffer_stats = capture.buffer_stats();
+    let stream_cursor_samples = timeline.stream_cursor_sample_count();
+    eprintln!(
+        "[recording] pipewire buffers: pixel_frames={} cursor_only={} corrupted={} empty={} cursor_present={} cursor_hidden={} cursor_missing={} stream_cursor_samples={stream_cursor_samples}",
+        buffer_stats.pixel_frames,
+        buffer_stats.cursor_only,
+        buffer_stats.corrupted,
+        buffer_stats.empty,
+        buffer_stats.cursor_present,
+        buffer_stats.cursor_hidden,
+        buffer_stats.cursor_missing,
+    );
+    if cursor_metadata_enabled && stream_cursor_samples == 0 {
+        eprintln!(
+            "[recording] cursor metadata granted but no cursor positions arrived; the video has no cursor"
+        );
+    }
+
+    if disk_guard.tripped() && stop_action == super::RecordingTerminalAction::Save {
+        crate::utils::notify::desktop_notification(
+            &crate::i18n::t("Recording stopped"),
+            &crate::i18n::t("Disk space is almost full"),
+        );
+    }
+
+    // Release the exclusive GNOME ScreenCast session before audio drain or
+    // ffmpeg finalization. Those can block for seconds; the compositor must
+    // not stay captured while they finish. Drop it *before* unlocking the
+    // busy flag so a new recording cannot open a second portal on top of this
+    // one.
+    drop(capture_session.take());
+    drop(capture);
+
+    if matches!(
+        stop_action,
+        super::RecordingTerminalAction::Save | super::RecordingTerminalAction::Discard
+    ) {
+        // Tray / hotkeys / screenshots become available immediately. ffmpeg
+        // keeps writing the file in this worker.
+        super::control_session::release_recording_busy();
+        super::notify_daemon_event("recording_session_ended");
+    }
+
+    // Stop audio at the same wall-clock instant as video capture. Do not keep
+    // the mic open while ffmpeg drains — that would grow the audio track past
+    // the session.
+    if let Some(mut audio) = active_audio.take() {
+        if stop_action != super::RecordingTerminalAction::Save {
+            audio.abort();
+        } else {
+            audio.stop();
+        }
+    }
+    drop(audio_exclusive.take());
+
+    if stop_action == super::RecordingTerminalAction::Save && ffmpeg_write_error.is_none() {
+        if let (Some(pixels), Some(last_frame_at_us)) = (&last_encoded_pixels, last_frame_at_us) {
+            let end_pts = timeline.frame_time_us(stopped_at_us);
+            let tail_pts = end_pts.saturating_sub(1_000_000 / u64::from(fps));
+            let last_pts = timeline.frame_time_us(last_frame_at_us);
+            if tail_pts > last_pts {
+                let tail_header = super::timestamped_video::frame_header(tail_pts, pixels.len());
+                if let Err(err) = write_ffmpeg_frame_interruptible(
+                    &mut stdin,
+                    &[&tail_header, pixels],
+                    &mut FfmpegFrameControl {
+                        command_rx: &mut command_rx,
+                        stop_action: &mut stop_action,
+                        paused: &mut paused,
+                        active_audio: &mut active_audio,
+                        timeline: &mut timeline,
+                        notify: super::notify_daemon_event,
+                        disk_guard: &mut disk_guard,
+                    },
+                ) {
+                    // Fall through to the shared teardown so the failure is
+                    // reported with ffmpeg's own stderr, not a bare pipe error.
+                    eprintln!("Failed to write the final frame to ffmpeg: {err}");
+                    ffmpeg_write_error = Some(err);
+                }
+            }
+        }
+    }
+
+    if let (Some(start), true) = (
+        first_written_at,
+        stop_action == super::RecordingTerminalAction::Save,
+    ) {
+        let wall = stopped_at.saturating_duration_since(start).as_secs_f64();
+        eprintln!(
+            "[recording] duration wall={wall:.3}s submitted_frames={frames_written} output_fps={fps}"
+        );
+    }
+
+    // Deterministic encoder stop: close video stdin so ffmpeg finalizes once
+    // both inputs are at EOF (audio already EOFed above).
+    drop(stdin);
+    if stop_action != super::RecordingTerminalAction::Save {
+        let _ = child.kill();
+    }
+
+    let status = wait_for_ffmpeg_child(&mut child)?;
+    let ffmpeg_stderr = stderr_reader.join().unwrap_or_default();
+
+    if stop_action != super::RecordingTerminalAction::Save {
+        let _ = std::fs::remove_file(&final_path);
+        return Ok(super::RecordedSession {
+            path: final_path,
+            action: stop_action,
+            timeline: Some(timeline),
+        });
+    }
+
+    // ffmpeg stopped reading the video pipe. ffmpeg has now exited and its
+    // stderr is joined, so report the real cause (a missing pulse input, an
+    // encoder error, ...) instead of just "Broken pipe".
+    if let Some(write_error) = ffmpeg_write_error {
+        eprintln!("[recording] ffmpeg input pipe failed: {write_error}");
+        let keep_output = std::fs::metadata(&final_path)
+            .map(|metadata| metadata.len() > 0)
+            .unwrap_or(false);
+        if !keep_output {
+            let _ = std::fs::remove_file(&final_path);
+        }
+        return Err(RecordError::GStreamerError(ffmpeg_encoding_failure(
+            encoder_name,
+            &status,
+            &ffmpeg_stderr,
+        )));
+    }
+
+    if frames_written == 0 {
+        let _ = std::fs::remove_file(&final_path);
+        return Err(RecordError::GStreamerError(
+            "Recording produced no frames. The screen share ended before capture started.".into(),
+        ));
+    }
+
+    if !status.success() {
+        let keep_output = std::fs::metadata(&final_path)
+            .map(|metadata| metadata.len() > 0)
+            .unwrap_or(false);
+        if !keep_output {
+            let _ = std::fs::remove_file(&final_path);
+            return Err(RecordError::GStreamerError(ffmpeg_encoding_failure(
+                encoder_name,
+                &status,
+                &ffmpeg_stderr,
+            )));
+        }
+        eprintln!("[recording] ffmpeg exited {status}; keeping output because it already has data");
+    }
+
+    // Guard against zero-byte / missing outputs that used to be reported as saved.
+    match std::fs::metadata(&final_path) {
+        Ok(metadata) if metadata.len() > 0 => {
+            println!("Recording saved to {:?}", final_path);
+            println!(
+                "File size: {:.2} MB",
+                metadata.len() as f64 / 1024.0 / 1024.0
+            );
+        }
+        Ok(_) => {
+            let _ = std::fs::remove_file(&final_path);
+            return Err(RecordError::GStreamerError(
+                "Recording finished but the output file is empty (encoder failed).".into(),
+            ));
+        }
+        Err(err) => {
+            return Err(RecordError::GStreamerError(format!(
+                "Recording finished but output file is missing: {err}"
+            )));
+        }
+    }
+
+    Ok(super::RecordedSession {
+        path: final_path,
+        action: stop_action,
+        timeline: Some(timeline),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn one_valid_initial_window_frame_is_pending_without_later_damage() {
+        let captured_at_us = 1_234_567;
+        let pixels = [12, 34, 56, 255].repeat(4);
+        let mut last_pixels = None;
+        let mut pending_frame_at_us = None;
+        update_pending_video_frame(
+            &mut last_pixels,
+            &mut pending_frame_at_us,
+            Some((pixels.clone(), captured_at_us)),
+        );
+        update_pending_video_frame(&mut last_pixels, &mut pending_frame_at_us, None);
+
+        assert_eq!(
+            last_pixels.as_deref().map(|pixels| pixels.as_slice()),
+            Some(pixels.as_slice())
+        );
+        assert_eq!(pending_frame_at_us, Some(captured_at_us));
+    }
+
+    #[test]
+    fn mp4_outputs_get_fragmented_durability_flags_only() {
+        let source = include_str!("wayland.rs");
+        let source = source.split("#[cfg(test)]").next().unwrap();
+        let mp4_gate = source
+            .find("final_path.extension().is_some_and(|e| e == \"mp4\")")
+            .expect("MP4-only flag gate");
+        let flags = source
+            .find("+frag_keyframe+empty_moov+default_base_moof")
+            .expect("fragmented movflags");
+        let flush = source.find("-flush_packets").expect("packet flushing");
+        assert!(
+            mp4_gate < flags && flags < flush,
+            "fragment durability flags must be gated on the MP4 extension",
+        );
+        assert!(
+            !source[..mp4_gate].contains("frag_keyframe"),
+            "non-MP4 outputs must not get fragmented-moov flags",
+        );
+        assert!(source.contains("(fps * 2).to_string()"));
+    }
+
+    #[test]
+    fn copied_adts_aac_is_converted_for_the_fragmented_mp4_muxer() {
+        // Regression: with empty_moov the MP4 header is written before any
+        // audio packet, so copied ADTS AAC needs aac_adtstoasc or ffmpeg exits
+        // on the first audio packet and every recording with audio fails.
+        let source = include_str!("wayland.rs");
+        let source = source.split("#[cfg(test)]").next().unwrap();
+        let copy = source
+            .find("ffmpeg_cmd.arg(\"-c:a\").arg(\"copy\");")
+            .expect("GStreamer audio is stream-copied");
+        let bsf = source
+            .find("ffmpeg_cmd.arg(\"-bsf:a\").arg(\"aac_adtstoasc\");")
+            .expect("ADTS to MP4 bitstream filter");
+        assert!(copy < bsf, "the filter belongs to the copied audio stream");
+        assert!(
+            source[copy..bsf].contains("audio.input_format() == \"aac\""),
+            "only ADTS AAC input gets the filter; Ogg/Opus does not",
+        );
+    }
+
+    #[test]
+    fn the_low_disk_guard_runs_before_spawn_and_inside_the_loop() {
+        let source = include_str!("wayland.rs");
+        let source = source.split("#[cfg(test)]").next().unwrap();
+        let refused = source.find("refuse_start()").expect("pre-start refusal");
+        let spawned = source.find("ffmpeg_cmd.spawn()").expect("encoder spawn");
+        assert!(
+            refused < spawned,
+            "the disk check must refuse before the encoder launches",
+        );
+        assert!(source.contains("disk_guard.poll()"));
+        assert!(source.contains("disk_guard.low()"));
+    }
+
+    #[test]
+    fn lagging_capture_still_writes_the_newest_frame() {
+        // Regression: a lag branch that `continue`d before the write skipped
+        // every frame while per-pass work stayed above two intervals, so the
+        // recording froze after the first frame.
+        let source = include_str!("wayland.rs");
+        let source = source.split("#[cfg(test)]").next().unwrap();
+        let lag = source
+            .find("lateness > frame_interval * 2")
+            .expect("lag check");
+        let write = lag
+            + source[lag..]
+                .find("write_ffmpeg_frame_interruptible(")
+                .expect("frame write follows the lag check");
+        assert!(
+            !source[lag..write].contains("continue;"),
+            "the lag branch must fall through to the write, not skip it",
+        );
+        assert!(source.contains(
+            "dropped_frames += (lateness.as_secs_f64() / frame_interval.as_secs_f64()) as u64;"
+        ));
+        assert!(source.contains(
+            "encoder lagging; dropped {dropped_frames} backlog frame(s) to stay realtime"
+        ));
+        let reanchor = source
+            .find("next_frame_at = Some(if lagging {\n                    now + frame_interval\n                } else {\n                    deadline + frame_interval\n                });")
+            .expect("schedule re-anchors from now when lagging");
+        assert!(
+            reanchor > write,
+            "the re-anchor must follow the frame write it belongs to",
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_early_ffmpeg_exit_reports_ffmpeg_stderr() {
+        use std::os::unix::process::ExitStatusExt;
+
+        let status = std::process::ExitStatus::from_raw(1 << 8);
+        let message = ffmpeg_encoding_failure(
+            "libopenh264",
+            &status,
+            "[pulse @ 0x1] Error opening input file default.\nInput/output error\n",
+        );
+        assert!(message.contains("libopenh264"));
+        assert!(message.contains("exit status: 1"));
+        assert!(message.contains("Error opening input file default."));
+        assert!(message.contains("Input/output error"));
+    }
+}

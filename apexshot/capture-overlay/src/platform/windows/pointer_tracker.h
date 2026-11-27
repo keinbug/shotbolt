@@ -1,0 +1,188 @@
+#pragma once
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
+#include <windows.h>
+
+#include <QObject>
+#include <QRect>
+#include <QString>
+
+#include <functional>
+#include <memory>
+#include <vector>
+
+namespace Platform {
+
+/// The cursor shapes the sidecar records. The editor parses the recorded name
+/// with an enum that maps anything unknown to default, so these names are a
+/// contract and a wrong one degrades silently.
+enum class CursorKind {
+    Default,
+    Hand,
+    Text,
+    Crosshair,
+    Wait,
+    Resize,
+};
+
+/// The webcam track recorded beside a video.
+///
+/// The recorder writes the camera into its own file so the editor can composite
+/// it as a layer instead of a burn-in, and records the bubble's position in
+/// fractions of the captured region. Fractions keep the layer at the same place
+/// and size whatever resolution the recording was made at, and let the editor
+/// re-render it at any output size.
+struct WebcamTrack {
+    /// File name inside the pointer sidecar's directory.
+    QString file;
+    /// Name of the clean screen recording beside the final video, if baked.
+    QString screenFile;
+    int width = 0;
+    int height = 0;
+    /// The track's own length. The camera's clock is not the desktop's, so the
+    /// editor maps a video time onto the track by scaling with it.
+    double duration = 0.0;
+    /// Seconds from the start of the video to the first frame of the track,
+    /// measured from the screen's and the camera's first frames. A recording
+    /// without that measurement stores the length difference instead.
+    double start = 0.0;
+    double x = 0.0;
+    double y = 0.0;
+    double w = 0.0;
+    double h = 0.0;
+    /// The shared shape table: 0 circle, 1 square, 2 rectangle, 3 vertical.
+    int shape = 0;
+    bool flip = false;
+
+    bool is_valid() const { return !file.isEmpty() && width > 0 && height > 0; }
+};
+
+/// Where one capture segment's frames sit, so cursor times taken on the
+/// recorder's clock can be moved onto the joined video's own timeline.
+struct SegmentTiming {
+    /// The recorder's media time, in seconds, when this segment's clock started.
+    double mediaStart = 0.0;
+    /// How long after that the segment's first frame was captured, in seconds.
+    double firstFrameDelay = 0.0;
+    /// Where the segment's first frame sits in the joined video, in seconds.
+    double videoStart = 0.0;
+};
+
+/// `t`, in seconds on the recorder's clock, on the joined video's timeline.
+/// A moment before its segment's first frame is held at that frame.
+double videoTimeFor(double t, const std::vector<SegmentTiming>& segments);
+
+class PointerTracker final : public QObject
+{
+public:
+    using MediaClock = std::function<qint64()>;
+
+    explicit PointerTracker(QObject* parent = nullptr);
+    ~PointerTracker() override;
+
+    void start(const QRect& region,
+               int fps,
+               MediaClock mediaClock,
+               bool captureKeystrokes = false);
+    void pause(qint64 mediaTimeMs);
+    void resume();
+    void stop(qint64 mediaTimeMs);
+    void discard();
+    /// Move every recorded time onto the joined video's timeline. Call after
+    /// `stop`, once each segment's first-frame time is known; an empty list
+    /// leaves the times as they are.
+    void alignToVideo(const std::vector<SegmentTiming>& segments);
+    /// Write the sidecar. `webcam` is written as the `webcam` block when it is
+    /// valid, so a recording without a camera carries no camera keys at all.
+    bool writeSidecar(const QString& videoPath,
+                      const WebcamTrack& webcam,
+                      QString* error = nullptr) const;
+    /// Write the sidecar to an explicit path, for the copy a recording keeps
+    /// in its work directory while it runs.
+    bool writeSidecarTo(const QString& sidecarPath,
+                        const WebcamTrack& webcam,
+                        QString* error = nullptr) const;
+    /// Install a sidecar written by `writeSidecarTo` as the sidecar of
+    /// `videoPath`: its cursor images move with it and its camera block is
+    /// replaced by `webcam`.
+    static bool adoptSidecar(const QString& fromSidecarPath,
+                             const QString& videoPath,
+                             const WebcamTrack& webcam,
+                             QString* error = nullptr);
+
+private:
+    struct Press {
+        bool active = false;
+        double down = 0.0;
+        double x = 0.0;
+        double y = 0.0;
+        bool dragged = false;
+    };
+
+    void sample();
+    void closePresses(qint64 mediaTimeMs);
+    void reset();
+    static LRESULT CALLBACK mouseHook(int code, WPARAM wParam, LPARAM lParam);
+    static LRESULT CALLBACK keyboardHook(int code, WPARAM wParam, LPARAM lParam);
+    void handleMouseEvent(WPARAM message, const MSLLHOOKSTRUCT& event);
+    void handleKeyEvent(WPARAM message, const KBDLLHOOKSTRUCT& event);
+    qint64 eventMediaTime(DWORD eventTime) const;
+    qint64 eventMediaTime(const MSLLHOOKSTRUCT& event) const;
+    void appendPointer(qint64 mediaTimeMs,
+                       const POINT& point,
+                       CursorKind kind,
+                       const QString& cursorId);
+    void appendVisibility(double t, bool visible);
+    void updateVisibility(qint64 mediaTimeMs);
+    QString cursorIdFor(HCURSOR cursor, CursorKind& kind);
+    bool installHook();
+    bool installKeyboardHook();
+    void removeHook();
+
+    QRect region_;
+    MediaClock mediaClock_;
+    class Data;
+    std::unique_ptr<Data> data_;
+};
+
+/// Returns the Windows verbatim canonical path for an existing video file.
+QString canonicalVideoPathFor(const QString& videoPath);
+
+/// Returns the app-data sidecar path for an existing video file.
+QString sidecarPathFor(const QString& videoPath);
+
+/// The recording ID stored in a finished recording's MP4 `description` tag
+/// (`apexshot-recording:<uuid>`), or an empty string when there is none.
+QString recordingIdOf(const QString& videoPath);
+
+/// `%LOCALAPPDATA%/apexshot/recordings`, the root of the per-recording folders.
+QString recordingsRootDirectory();
+
+/// The sidecar path inside a recording ID's folder: `<root>/<id>/pointer.json`.
+QString recordingSidecarPathFor(const QString& recordingId);
+
+/// Prefix the MP4 tag value carries before the ID.
+QString recordingIdTagValue(const QString& recordingId);
+
+/// Returns the app-data path of the webcam track recorded beside a video. The
+/// track lives next to the pointer sidecar, so both are found from the video
+/// path alone and neither can be mistaken for user footage.
+QString webcamTrackPathFor(const QString& videoPath);
+
+/// Returns the sidecar name of a cursor kind: "default", "hand", "text",
+/// "crosshair", "wait", or "resize".
+QString cursorKindName(CursorKind kind);
+
+/// Maps a cursor handle to the shared kind by comparing it against the
+/// standard system cursors. Anything that is not one of those, and a null
+/// handle, records as default: see the note in the implementation about
+/// application-supplied cursors.
+CursorKind cursorKindFor(HCURSOR cursor);
+
+} // namespace Platform

@@ -86,12 +86,7 @@ struct Payload {
 
 fn enabled() -> bool {
     // Shotbolt: no download telemetry to the original project.
-    false && !std::env::var("APEXSHOT_TELEMETRY").is_ok_and(|value| {
-        matches!(
-            value.trim().to_ascii_lowercase().as_str(),
-            "0" | "false" | "no" | "off"
-        )
-    })
+    false
 }
 
 fn endpoint() -> String {

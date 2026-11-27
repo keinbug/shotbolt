@@ -1,0 +1,177 @@
+use super::geometry::SelectionRectF;
+use crate::compositor::WindowInfo;
+
+/// Mirrors the C++ CaptureIntent enum — distinguishes what the user
+/// wants to do with the selected area when they confirm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum OverlayIntent {
+    #[default]
+    Area,
+    Ocr,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ResizeHandle {
+    North,
+    South,
+    East,
+    West,
+    NorthEast,
+    NorthWest,
+    SouthEast,
+    SouthWest,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DragMode {
+    /// User dragged outside any existing selection — draw a brand-new rect.
+    NewSelection,
+    /// User dragged from inside the existing selection — translate the whole rect.
+    Move,
+    /// User dragged from a border/corner handle — resize the rect.
+    Resize(ResizeHandle),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OverlayMode {
+    StandardArea,
+    CrosshairCapture,
+}
+
+/// State for the area selector overlay
+pub(crate) struct SelectorState {
+    pub(crate) start_x: f64,
+    pub(crate) start_y: f64,
+    pub(crate) current_x: f64,
+    pub(crate) current_y: f64,
+    pub(crate) drag_origin_x: f64,
+    pub(crate) drag_origin_y: f64,
+    pub(crate) drag_mode: Option<DragMode>,
+    pub(crate) initial_rect: Option<SelectionRectF>,
+    pub(crate) is_dragging: bool,
+    pub(crate) cancelled: bool,
+    pub(crate) completed: bool,
+    // Legacy rail's active-tool slot retired with it; hover slots stay as
+    // generic (always-None) hover state consumed by leave/reset paths.
+    pub(crate) hover_tool_index: Option<usize>,
+    pub(crate) hover_size_panel: bool,
+    pub(crate) hover_crop_panel: bool,
+    /// True when the user clicked Fullscreen — selection covers the whole screen,
+    /// waiting for Enter to confirm the capture.
+    pub(crate) fullscreen_mode: bool,
+    /// The selector was opened from the compact capture menu.  In this mode
+    /// the C++ overlay deliberately omits its legacy left tool rail; only the
+    /// frame and crop controls remain available.
+    pub(crate) capture_menu_area_mode: bool,
+    // Menu state (capture-area only; aspect owned by the top-center bar,
+    // `capture_aspect_ratio_index` kept as a legacy-index mirror for compat)
+    pub(crate) capture_aspect_ratio_index: usize,
+    pub(crate) hovered_capture_crop_menu_item: i32,
+    // Top-center instruction bar state (mirrors C++ m_topBar* members).
+    // `top_bar_aspect_ratio` is 0.0 for Free, else W/H; the pill highlight is
+    // ratio-based, never index-based.
+    pub(crate) top_bar_aspect_ratio: f64,
+    pub(crate) top_bar_snap_to_ratios: bool,
+    pub(crate) top_bar_crop_menu_open: bool,
+    pub(crate) hovered_top_bar_aspect: i32,
+    /// -1 = none, 0 = crop dropdown, 1 = cancel.
+    pub(crate) hovered_top_bar_button: i32,
+    pub(crate) hovered_top_bar_crop_item: i32,
+    pub(crate) overlay_mode: OverlayMode,
+    // ── Timer capture state ──
+    #[allow(dead_code)]
+    pub(crate) timer_delay_active: bool,
+    #[allow(dead_code)]
+    pub(crate) capture_delay_seconds: i32, // 0, 3, 5, or 10
+    #[allow(dead_code)]
+    pub(crate) countdown_active: bool,
+    #[allow(dead_code)]
+    pub(crate) countdown_value: i32,
+    #[allow(dead_code)]
+    pub(crate) countdown_cancel_requested: bool,
+    #[allow(dead_code)]
+    pub(crate) hovered_countdown_cancel: bool,
+    pub(crate) countdown_bubble_x: f64,
+    pub(crate) countdown_bubble_y: f64,
+    pub(crate) countdown_bubble_w: f64,
+    pub(crate) countdown_bubble_h: f64,
+    // ── Scroll popup state ──
+    pub(crate) scroll_popup_open: bool,
+    pub(crate) hovered_scroll_popup_close: bool,
+    pub(crate) hovered_scroll_download: bool,
+    // ── Capture intent (mirrors C++ CaptureIntent) ──
+    pub(crate) intent: OverlayIntent,
+    // ── Window snapping state ──
+    pub(crate) windows: Vec<WindowInfo>,
+    pub(crate) hovered_window: Option<usize>,
+    // ── Window capture from toolbar button ──
+    pub(crate) window_capture_requested: bool,
+    // ── Window picker popup ──
+    pub(crate) window_picker_open: bool,
+    pub(crate) hovered_window_picker_entry: i32,
+}
+
+impl Default for SelectorState {
+    fn default() -> Self {
+        Self {
+            start_x: 0.0,
+            start_y: 0.0,
+            current_x: 0.0,
+            current_y: 0.0,
+            drag_origin_x: 0.0,
+            drag_origin_y: 0.0,
+            drag_mode: None,
+            initial_rect: None,
+            is_dragging: false,
+            cancelled: false,
+            completed: false,
+            hover_tool_index: None,
+            hover_size_panel: false,
+            hover_crop_panel: false,
+            fullscreen_mode: false,
+            capture_menu_area_mode: false,
+            capture_aspect_ratio_index: 0,
+            hovered_capture_crop_menu_item: -1,
+            top_bar_aspect_ratio: 0.0,
+            top_bar_snap_to_ratios: true,
+            top_bar_crop_menu_open: false,
+            hovered_top_bar_aspect: -1,
+            hovered_top_bar_button: -1,
+            hovered_top_bar_crop_item: -1,
+            overlay_mode: OverlayMode::StandardArea,
+            timer_delay_active: false,
+            capture_delay_seconds: 5,
+            countdown_active: false,
+            countdown_value: 0,
+            countdown_cancel_requested: false,
+            hovered_countdown_cancel: false,
+            countdown_bubble_x: 0.0,
+            countdown_bubble_y: 0.0,
+            countdown_bubble_w: 0.0,
+            countdown_bubble_h: 0.0,
+            scroll_popup_open: false,
+            hovered_scroll_popup_close: false,
+            hovered_scroll_download: false,
+            intent: OverlayIntent::default(),
+            windows: Vec::new(),
+            hovered_window: None,
+            window_capture_requested: false,
+            window_picker_open: false,
+            hovered_window_picker_entry: -1,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selector_state_defaults_to_top_bar_freeform() {
+        // No rail tool is active anymore; aspect state lives on the top bar.
+        let state = SelectorState::default();
+        assert!((state.top_bar_aspect_ratio - 0.0).abs() < 1e-9);
+        assert!(state.top_bar_snap_to_ratios);
+        assert!(!state.top_bar_crop_menu_open);
+    }
+}

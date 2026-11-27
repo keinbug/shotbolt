@@ -1,0 +1,2027 @@
+use crate::i18n::t;
+use gdk4x11::X11Surface;
+use gtk4::cairo;
+use gtk4::gdk::{self, Key};
+use gtk4::{
+    glib::{self, clone},
+    prelude::*,
+    Application, ApplicationWindow, CssProvider, DrawingArea, EventControllerKey,
+    EventControllerMotion, GestureClick, GestureDrag,
+};
+use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
+use serde::{Deserialize, Serialize};
+use std::cell::Cell;
+use std::f64::consts::PI;
+use std::rc::Rc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
+use std::time::Duration;
+use thiserror::Error;
+use tokio::sync::oneshot;
+use x11rb::properties::{WmSizeHints, WmSizeHintsSpecification};
+use x11rb::wrapper::ConnectionExt;
+use x11rb::{
+    connection::Connection,
+    protocol::xproto::{self, ConnectionExt as _},
+};
+
+use crate::overlay::drawing::{draw_frosted_panel, rounded_rect_path};
+use crate::overlay::layout::{RectF, ACTION_CARD_GAP, FEATURE_PANEL_MARGIN, FEATURE_PANEL_TOP_GAP};
+
+/// Shared action-tile height (was owned by the retired recording panel).
+const REC_ACTION_HEIGHT: f64 = 50.0;
+const BAR_PAD: f64 = 8.0;
+const BAR_HEIGHT: f64 = REC_ACTION_HEIGHT + BAR_PAD * 2.0;
+const STOP_CELL_W_WITH_TIMER: f64 = 120.0;
+const STOP_CELL_W_ICON_ONLY: f64 = 72.0;
+const ICON_CELL_W: f64 = 56.0;
+const CELL_GAP: f64 = ACTION_CARD_GAP;
+const CELL_H: f64 = REC_ACTION_HEIGHT;
+const PANEL_RADIUS: f64 = 12.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BarTile {
+    Stop,
+    Pause,
+    Restart,
+    Discard,
+}
+
+fn compute_bar_width(show_timer: bool) -> f64 {
+    let stop_w = if show_timer {
+        STOP_CELL_W_WITH_TIMER
+    } else {
+        STOP_CELL_W_ICON_ONLY
+    };
+    BAR_PAD * 2.0 + stop_w + CELL_GAP * 3.0 + ICON_CELL_W * 3.0
+}
+
+fn bar_tile_rects(bar_x: f64, bar_y: f64, show_timer: bool) -> [(BarTile, RectF); 4] {
+    let stop_w = if show_timer {
+        STOP_CELL_W_WITH_TIMER
+    } else {
+        STOP_CELL_W_ICON_ONLY
+    };
+    let y = bar_y + BAR_PAD;
+    let mut x = bar_x + BAR_PAD;
+    let stop = RectF {
+        x,
+        y,
+        width: stop_w,
+        height: CELL_H,
+    };
+    x += stop_w + CELL_GAP;
+    let pause = RectF {
+        x,
+        y,
+        width: ICON_CELL_W,
+        height: CELL_H,
+    };
+    x += ICON_CELL_W + CELL_GAP;
+    let restart = RectF {
+        x,
+        y,
+        width: ICON_CELL_W,
+        height: CELL_H,
+    };
+    x += ICON_CELL_W + CELL_GAP;
+    let discard = RectF {
+        x,
+        y,
+        width: ICON_CELL_W,
+        height: CELL_H,
+    };
+    [
+        (BarTile::Stop, stop),
+        (BarTile::Pause, pause),
+        (BarTile::Restart, restart),
+        (BarTile::Discard, discard),
+    ]
+}
+
+#[derive(Debug, Error)]
+pub enum StopOverlayError {
+    #[error("GTK initialization failed: {0}")]
+    InitError(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StopAction {
+    Save,
+    Discard,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RecordingControlsParams {
+    pub capture_x: i32,
+    pub capture_y: i32,
+    pub capture_w: i32,
+    pub capture_h: i32,
+    pub is_fullscreen: bool,
+    pub show_timer: bool,
+    pub use_shell_mask: bool,
+    #[serde(default = "default_dim_screen")]
+    pub dim_screen: bool,
+    pub countdown_enabled: bool,
+    pub countdown_seconds: u32,
+    pub session_id: Option<String>,
+}
+
+fn default_dim_screen() -> bool {
+    true
+}
+
+impl Default for RecordingControlsParams {
+    fn default() -> Self {
+        Self {
+            capture_x: 0,
+            capture_y: 0,
+            capture_w: 0,
+            capture_h: 0,
+            is_fullscreen: false,
+            show_timer: true,
+            use_shell_mask: false,
+            dim_screen: default_dim_screen(),
+            countdown_enabled: false,
+            countdown_seconds: 3,
+            session_id: None,
+        }
+    }
+}
+
+/// How the controls window is driven.
+#[derive(Debug, Clone, Copy)]
+struct ControlsWindowMode {
+    /// Print the X11 window id and the stop/discard commands to stdout so the
+    /// recording process can mask the bar and forward the commands.
+    announce_to_recorder: bool,
+    /// Keep the bar outside the capture rectangle when the desktop has room.
+    keep_outside_capture: bool,
+}
+
+impl ControlsWindowMode {
+    const PLAIN: Self = Self {
+        announce_to_recorder: false,
+        keep_outside_capture: false,
+    };
+    const RECORDER: Self = Self {
+        announce_to_recorder: true,
+        keep_outside_capture: true,
+    };
+}
+
+pub fn run_recording_controls(
+    params: RecordingControlsParams,
+    session_id: Option<String>,
+    _bus_name: Option<String>,
+    stop_tx: oneshot::Sender<StopAction>,
+) -> Result<(), StopOverlayError> {
+    run_recording_controls_window(params, session_id, stop_tx, ControlsWindowMode::PLAIN)
+}
+
+fn run_recording_controls_window(
+    params: RecordingControlsParams,
+    session_id: Option<String>,
+    stop_tx: oneshot::Sender<StopAction>,
+    mode: ControlsWindowMode,
+) -> Result<(), StopOverlayError> {
+    let stop_tx: Arc<Mutex<Option<oneshot::Sender<StopAction>>>> =
+        Arc::new(Mutex::new(Some(stop_tx)));
+
+    let _params_for_activate = RecordingControlsParams {
+        capture_x: params.capture_x,
+        capture_y: params.capture_y,
+        capture_w: params.capture_w,
+        capture_h: params.capture_h,
+        is_fullscreen: params.is_fullscreen,
+        show_timer: params.show_timer,
+        use_shell_mask: params.use_shell_mask,
+        dim_screen: params.dim_screen,
+        countdown_enabled: params.countdown_enabled,
+        countdown_seconds: params.countdown_seconds,
+        session_id: session_id.clone(),
+    };
+
+    let app = Application::builder()
+        .application_id("com.apexshot.recording")
+        .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
+        .build();
+
+    let stop_tx_activate = stop_tx.clone();
+    app.connect_activate(move |application| {
+        let dim_windows = setup_dim_windows(application, params.clone());
+        let controls_window = setup_window(
+            application,
+            params.clone(),
+            stop_tx_activate.clone(),
+            dim_windows,
+            session_id.clone(),
+            mode,
+        );
+        controls_window.set_visible(true); // Show immediately for non-countdown mode
+    });
+
+    let _ = app.run_with_args::<String>(&[]);
+    Ok(())
+}
+
+pub fn run_recording_countdown_bar(
+    params: RecordingControlsParams,
+    seconds: u32,
+) -> Result<bool, StopOverlayError> {
+    // The X11 recorder spawns this entry with a session id and no countdown
+    // seconds to host the recording controls bar in its own process.
+    if seconds == 0 && params.session_id.is_some() {
+        let session_id = params.session_id.clone();
+        let (stop_tx, _stop_rx) = oneshot::channel();
+        run_recording_controls_window(params, session_id, stop_tx, ControlsWindowMode::RECORDER)?;
+        return Ok(true);
+    }
+
+    let app = Application::builder()
+        .application_id("com.apexshot.recording")
+        .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
+        .build();
+
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let cancelled_activate = cancelled.clone();
+    app.connect_activate(move |application| {
+        let dim_windows = setup_dim_windows(application, params.clone());
+        setup_countdown_window(
+            application,
+            params.clone(),
+            seconds,
+            dim_windows,
+            cancelled_activate.clone(),
+            false,
+            None,
+            None,
+        );
+    });
+
+    let _ = app.run_with_args::<String>(&[]);
+    Ok(!cancelled.load(Ordering::Relaxed))
+}
+
+/// Unified recording UI: dim windows + countdown + controls bar in one lifecycle.
+/// Dim windows persist through the entire flow, eliminating surface transitions.
+/// Prints "ready" to stdout when countdown finishes and controls are visible.
+pub fn run_recording_ui(
+    params: RecordingControlsParams,
+    seconds: u32,
+    stop_tx: oneshot::Sender<StopAction>,
+) -> Result<(), StopOverlayError> {
+    let stop_tx = Arc::new(Mutex::new(Some(stop_tx)));
+
+    let app = Application::builder()
+        .application_id("com.apexshot.recording")
+        .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
+        .build();
+
+    app.connect_activate(move |application| {
+        let dim_windows = setup_dim_windows(application, params.clone());
+        let display = gdk::Display::default().expect("No display");
+        let should_show_controls = native_controls_should_be_visible(&display, &params);
+        let controls_window = setup_window(
+            application,
+            params.clone(),
+            stop_tx.clone(),
+            dim_windows.clone(),
+            params.session_id.clone(),
+            ControlsWindowMode::PLAIN,
+        );
+        setup_countdown_window(
+            application,
+            params.clone(),
+            seconds,
+            dim_windows,
+            Arc::new(AtomicBool::new(false)),
+            true,
+            should_show_controls.then_some(controls_window),
+            Some(stop_tx.clone()),
+        );
+    });
+
+    let _ = app.run_with_args::<String>(&[]);
+    Ok(())
+}
+
+pub fn run_recording_stop_overlay(
+    stop_tx: oneshot::Sender<StopAction>,
+) -> Result<(), StopOverlayError> {
+    run_recording_controls(
+        RecordingControlsParams {
+            capture_x: 0,
+            capture_y: 0,
+            capture_w: 0,
+            capture_h: 0,
+            is_fullscreen: true,
+            show_timer: false,
+            use_shell_mask: false,
+            dim_screen: false,
+            countdown_enabled: false,
+            countdown_seconds: 3,
+            session_id: None,
+        },
+        None,
+        None,
+        stop_tx,
+    )
+}
+
+fn compute_bar_position(
+    params: &RecordingControlsParams,
+    desktop_bounds: (i32, i32, i32, i32),
+) -> (i32, i32) {
+    let bar_w = compute_bar_width(params.show_timer);
+    let bar_h = BAR_HEIGHT;
+    let margin = FEATURE_PANEL_MARGIN;
+    let top_gap = FEATURE_PANEL_TOP_GAP;
+    let (desktop_x, desktop_y, desktop_w, desktop_h) = desktop_bounds;
+    let desktop_left = desktop_x as f64;
+    let desktop_top = desktop_y as f64;
+    let desktop_right = (desktop_x + desktop_w) as f64;
+    let desktop_bottom = (desktop_y + desktop_h) as f64;
+
+    let clamp_x_min = desktop_left + margin;
+    let clamp_x_max = (desktop_right - bar_w - margin).max(clamp_x_min);
+    let clamp_y_min = desktop_top + margin;
+    let clamp_y_max = (desktop_bottom - bar_h - margin).max(clamp_y_min);
+
+    if params.is_fullscreen || params.capture_w <= 0 || params.capture_h <= 0 {
+        let x = (desktop_left + (desktop_w as f64 - bar_w) / 2.0).clamp(clamp_x_min, clamp_x_max);
+        return (x.round() as i32, clamp_y_min.round() as i32);
+    }
+
+    let sel_x = params.capture_x as f64;
+    let sel_y = params.capture_y as f64;
+    let sel_w = params.capture_w as f64;
+    let sel_h = params.capture_h as f64;
+
+    let x = (sel_x + (sel_w - bar_w) / 2.0).clamp(clamp_x_min, clamp_x_max);
+
+    let below_y = sel_y + sel_h + top_gap;
+    let above_y = sel_y - top_gap - bar_h;
+
+    let y = if below_y + bar_h + margin <= desktop_bottom {
+        below_y
+    } else {
+        above_y.clamp(clamp_y_min, clamp_y_max)
+    };
+
+    (x.round() as i32, y.round() as i32)
+}
+
+/// Layout helper kept for unit tests and possible future control-bar layouts.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(super) fn can_show_bar_outside_capture(
+    params: &RecordingControlsParams,
+    desktop_bounds: (i32, i32, i32, i32),
+) -> bool {
+    if params.is_fullscreen || params.capture_w <= 0 || params.capture_h <= 0 {
+        return false;
+    }
+
+    let margin = FEATURE_PANEL_MARGIN;
+    let top_gap = FEATURE_PANEL_TOP_GAP;
+    let (_, desktop_y, _, desktop_h) = desktop_bounds;
+    let desktop_top = desktop_y as f64;
+    let desktop_bottom = (desktop_y + desktop_h) as f64;
+
+    let sel_y = params.capture_y as f64;
+    let sel_h = params.capture_h as f64;
+    let bar_h = BAR_HEIGHT;
+
+    let fits_below = sel_y + sel_h + top_gap + bar_h + margin <= desktop_bottom;
+    let fits_above = sel_y - top_gap - bar_h >= desktop_top + margin;
+
+    fits_below || fits_above
+}
+
+fn native_controls_should_be_visible(
+    _display: &gdk::Display,
+    _params: &RecordingControlsParams,
+) -> bool {
+    // Floating recording controls are disabled on the native (non-GNOME) path.
+    // Fedora/KDE and other desktops use global shortcuts + tray + desktop
+    // notifications.
+    false
+}
+
+fn setup_window(
+    app: &Application,
+    params: RecordingControlsParams,
+    stop_tx: Arc<Mutex<Option<oneshot::Sender<StopAction>>>>,
+    dim_windows: Vec<ApplicationWindow>,
+    session_id: Option<String>,
+    mode: ControlsWindowMode,
+) -> ApplicationWindow {
+    install_controls_css();
+
+    let display = gdk::Display::default().expect("No display");
+    let monitor = monitor_for_capture(&display, &params);
+
+    let desktop_bounds = display_bounds().unwrap_or((0, 0, 1920, 1080));
+    let (screen_w, screen_h) = (desktop_bounds.2, desktop_bounds.3);
+
+    let is_wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
+    let layer_shell_active = is_wayland && gtk4_layer_shell::is_supported();
+
+    let initial_pos = if mode.keep_outside_capture && !layer_shell_active {
+        if can_show_bar_outside_capture(&params, desktop_bounds) {
+            compute_bar_position(&params, desktop_bounds)
+        } else {
+            // No room above or below the capture: fall back to the bar's
+            // normal top position, exactly like a fullscreen recording.
+            let mut normal = params.clone();
+            normal.is_fullscreen = true;
+            compute_bar_position(&normal, desktop_bounds)
+        }
+    } else if layer_shell_active {
+        if let Some(ref m) = monitor {
+            let geom = m.geometry();
+            let mut local_params = params.clone();
+            local_params.capture_x -= geom.x();
+            local_params.capture_y -= geom.y();
+            compute_bar_position(&local_params, (0, 0, geom.width(), geom.height()))
+        } else {
+            compute_bar_position(&params, desktop_bounds)
+        }
+    } else {
+        compute_bar_position(&params, desktop_bounds)
+    };
+
+    let bar_w_f = compute_bar_width(params.show_timer);
+    let bar_h_f = BAR_HEIGHT;
+    let bar_w_i = bar_w_f.ceil() as i32;
+    let bar_h_i = bar_h_f.ceil() as i32;
+
+    let (clamp_w, clamp_h) = if let Some(ref m) = monitor {
+        let geom = m.geometry();
+        (geom.width(), geom.height())
+    } else {
+        (screen_w, screen_h)
+    };
+    let (drag_min_x, drag_min_y, drag_max_x, drag_max_y) = if layer_shell_active {
+        (0, 0, (clamp_w - bar_w_i).max(0), (clamp_h - bar_h_i).max(0))
+    } else {
+        (
+            desktop_bounds.0,
+            desktop_bounds.1,
+            desktop_bounds.0 + (desktop_bounds.2 - bar_w_i).max(0),
+            desktop_bounds.1 + (desktop_bounds.3 - bar_h_i).max(0),
+        )
+    };
+
+    let initial_pos_mapped = initial_pos;
+
+    let current_pos = Rc::new(Cell::new(initial_pos_mapped));
+    let drag_start_pos = Rc::new(Cell::new(initial_pos_mapped));
+
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title(t("ApexShot Recording"))
+        .default_width(bar_w_i)
+        .default_height(bar_h_i)
+        .decorated(false)
+        .resizable(false)
+        .build();
+    window.add_css_class("recording-controls-window");
+    window.set_visible(false); // Hide during countdown, show after
+
+    if layer_shell_active {
+        let (pos_x, pos_y) = initial_pos_mapped;
+        window.init_layer_shell();
+        window.set_layer(Layer::Top);
+        if let Some(ref m) = monitor {
+            window.set_monitor(Some(m));
+        }
+        window.set_anchor(Edge::Top, true);
+        window.set_anchor(Edge::Left, true);
+        window.set_anchor(Edge::Bottom, false);
+        window.set_anchor(Edge::Right, false);
+        window.set_margin(Edge::Top, pos_y);
+        window.set_margin(Edge::Left, pos_x);
+        window.set_keyboard_mode(KeyboardMode::OnDemand);
+        window.set_exclusive_zone(-1);
+        window.set_namespace(Some("apexshot-recording-controls"));
+    }
+
+    if !layer_shell_active {
+        let current_pos_realize = current_pos.clone();
+        window.connect_realize(clone!(
+            #[weak]
+            window,
+            move |_| {
+                suppress_x11_controls_window_type(&window);
+                if mode.announce_to_recorder {
+                    announce_controls_x11_window(&window);
+                }
+                let _ = request_x11_always_on_top(&window);
+                let (x, y) = current_pos_realize.get();
+                let _ = place_x11_controls_window(&window, x, y);
+            }
+        ));
+
+        let current_pos_map = current_pos.clone();
+        window.connect_map(clone!(
+            #[weak]
+            window,
+            move |_| {
+                let (x, y) = current_pos_map.get();
+                let _ = request_x11_always_on_top(&window);
+                let _ = place_x11_controls_window(&window, x, y);
+                schedule_x11_controls_position(&window, current_pos_map.clone());
+            }
+        ));
+    }
+
+    let elapsed_secs = Rc::new(Cell::new(0u64));
+    let hovered_tile: Rc<Cell<Option<BarTile>>> = Rc::new(Cell::new(None));
+    let is_paused: Rc<Cell<bool>> = Rc::new(Cell::new(false));
+    let session_id_draw = session_id.clone();
+    let show_timer = params.show_timer;
+
+    let drawing_area = DrawingArea::new();
+    drawing_area.add_css_class("recording-controls-canvas");
+    drawing_area.set_content_width(bar_w_i);
+    drawing_area.set_content_height(bar_h_i);
+
+    {
+        let elapsed = elapsed_secs.clone();
+        let hovered = hovered_tile.clone();
+        let paused = is_paused.clone();
+        drawing_area.set_draw_func(move |_, cr, width, height| {
+            cr.set_operator(cairo::Operator::Source);
+            cr.set_source_rgba(0.0, 0.0, 0.0, 0.0);
+            let _ = cr.paint();
+            cr.set_operator(cairo::Operator::Over);
+
+            let w = width as f64;
+            let h = height as f64;
+            draw_frosted_panel(cr, 0.0, 0.0, w, h, PANEL_RADIUS, w, h, None);
+
+            let tiles = bar_tile_rects(0.0, 0.0, show_timer);
+            let hover = hovered.get();
+            let secs = elapsed.get();
+
+            for (tile, rect) in tiles.iter() {
+                let is_stop = *tile == BarTile::Stop;
+                let is_hovered = hover == Some(*tile);
+                let is_disabled = session_id_draw.is_none();
+
+                if is_stop {
+                    draw_primary_pill(cr, *rect, is_hovered);
+                } else {
+                    draw_control_cell(cr, *tile, *rect, is_hovered, is_disabled, paused.get());
+                }
+
+                let alpha = if is_disabled {
+                    0.32
+                } else if is_hovered {
+                    1.0
+                } else {
+                    0.94
+                };
+
+                match tile {
+                    BarTile::Stop => draw_stop_glyph(cr, *rect, show_timer, secs),
+                    BarTile::Pause => {
+                        if paused.get() {
+                            draw_resume_glyph(cr, *rect, alpha)
+                        } else {
+                            draw_pause_glyph(cr, *rect, alpha)
+                        }
+                    }
+                    BarTile::Restart => draw_restart_glyph(cr, *rect, alpha),
+                    BarTile::Discard => draw_discard_glyph(cr, *rect, alpha),
+                }
+            }
+        });
+    }
+
+    window.set_child(Some(&drawing_area));
+
+    if params.show_timer {
+        let elapsed_for_timer = elapsed_secs.clone();
+        let drawing_area_weak = drawing_area.downgrade();
+        let window_weak = window.downgrade();
+        let paused_for_timer = is_paused.clone();
+        glib::timeout_add_local(Duration::from_secs(1), move || {
+            let Some(window) = window_weak.upgrade() else {
+                return glib::ControlFlow::Break;
+            };
+            // In countdown mode the controls window is created hidden before the
+            // actual recorder starts. Do not count that waiting time as recording
+            // time; begin ticking only once the controls are shown.
+            if !window.is_visible() {
+                return glib::ControlFlow::Continue;
+            }
+            if paused_for_timer.get() {
+                return glib::ControlFlow::Continue;
+            }
+            elapsed_for_timer.set(elapsed_for_timer.get() + 1);
+            if let Some(area) = drawing_area_weak.upgrade() {
+                area.queue_draw();
+                glib::ControlFlow::Continue
+            } else {
+                glib::ControlFlow::Break
+            }
+        });
+    }
+
+    let motion = EventControllerMotion::new();
+    {
+        let hovered = hovered_tile.clone();
+        let drawing_area_weak = drawing_area.downgrade();
+        motion.connect_motion(move |_, x, y| {
+            let tiles = bar_tile_rects(0.0, 0.0, show_timer);
+            let mut hit: Option<BarTile> = None;
+            for (tile, rect) in tiles.iter() {
+                if rect.contains(x, y) {
+                    hit = Some(*tile);
+                    break;
+                }
+            }
+            if hovered.replace(hit) != hit {
+                if let Some(area) = drawing_area_weak.upgrade() {
+                    area.queue_draw();
+                }
+            }
+        });
+    }
+    {
+        let hovered = hovered_tile.clone();
+        let drawing_area_weak = drawing_area.downgrade();
+        motion.connect_leave(move |_| {
+            if hovered.replace(None).is_some() {
+                if let Some(area) = drawing_area_weak.upgrade() {
+                    area.queue_draw();
+                }
+            }
+        });
+    }
+    drawing_area.add_controller(motion);
+
+    let close_with_action = {
+        let stop_tx = stop_tx.clone();
+        let window_weak = window.downgrade();
+        let dim_window_weaks: Vec<_> = dim_windows
+            .iter()
+            .map(|window| window.downgrade())
+            .collect();
+        Rc::new(move |action: StopAction| {
+            send_stop_action(&stop_tx, action);
+            if mode.announce_to_recorder {
+                match action {
+                    StopAction::Save => println!("stop"),
+                    StopAction::Discard => println!("discard"),
+                }
+                use std::io::Write;
+                let _ = std::io::stdout().flush();
+            }
+            for dim_window in &dim_window_weaks {
+                if let Some(window) = dim_window.upgrade() {
+                    window.close();
+                }
+            }
+            if let Some(window) = window_weak.upgrade() {
+                if let Some(app) = window.application() {
+                    app.quit();
+                } else {
+                    window.close();
+                }
+            }
+        })
+    };
+
+    let click = GestureClick::builder().button(1).build();
+    {
+        let close_with_action = close_with_action.clone();
+        let session_id = session_id.clone();
+        let paused = is_paused.clone();
+        let drawing_area_weak = drawing_area.downgrade();
+        let window_weak = window.downgrade();
+        click.connect_released(move |gesture, n_press, x, y| {
+            if n_press != 1 {
+                return;
+            }
+            let tiles = bar_tile_rects(0.0, 0.0, show_timer);
+            for (tile, rect) in tiles.iter() {
+                if rect.contains(x, y) {
+                    gesture.set_state(gtk4::EventSequenceState::Claimed);
+                    match tile {
+                        BarTile::Stop => close_with_action(StopAction::Save),
+                        BarTile::Discard => close_with_action(StopAction::Discard),
+                        BarTile::Pause => {
+                            if session_id.is_some() {
+                                let currently_paused = paused.get();
+                                if currently_paused {
+                                    paused.set(false);
+                                    println!("resume");
+                                } else {
+                                    paused.set(true);
+                                    println!("pause");
+                                }
+                                use std::io::Write;
+                                let _ = std::io::stdout().flush();
+                                if let Some(area) = drawing_area_weak.upgrade() {
+                                    area.queue_draw();
+                                }
+                            }
+                        }
+                        BarTile::Restart => {
+                            if session_id.is_some() {
+                                println!("restart");
+                                use std::io::Write;
+                                let _ = std::io::stdout().flush();
+                                if let Some(window) = window_weak.upgrade() {
+                                    if let Some(app) = window.application() {
+                                        app.quit();
+                                    } else {
+                                        window.close();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return;
+                }
+            }
+        });
+    }
+    drawing_area.add_controller(click);
+
+    let key_ctrl = EventControllerKey::builder()
+        .propagation_phase(gtk4::PropagationPhase::Capture)
+        .build();
+    {
+        let close_with_action = close_with_action.clone();
+        key_ctrl.connect_key_pressed(move |_, key, _, _| {
+            if key == Key::Escape {
+                close_with_action(StopAction::Save);
+                return glib::Propagation::Stop;
+            }
+            glib::Propagation::Proceed
+        });
+    }
+    window.add_controller(key_ctrl);
+
+    let drag = GestureDrag::new();
+    drag.connect_drag_begin(clone!(
+        #[strong]
+        current_pos,
+        #[strong]
+        drag_start_pos,
+        move |_, _, _| {
+            drag_start_pos.set(current_pos.get());
+        }
+    ));
+    drag.connect_drag_update(clone!(
+        #[weak]
+        window,
+        #[strong]
+        current_pos,
+        #[strong]
+        drag_start_pos,
+        move |_, dx, dy| {
+            let (start_x, start_y) = drag_start_pos.get();
+            let next_x = (start_x + dx.round() as i32).clamp(drag_min_x, drag_max_x);
+            let next_y = (start_y + dy.round() as i32).clamp(drag_min_y, drag_max_y);
+            current_pos.set((next_x, next_y));
+            if layer_shell_active {
+                window.set_margin(Edge::Left, next_x);
+                window.set_margin(Edge::Top, next_y);
+            } else {
+                let _ = position_x11_window(&window, next_x, next_y);
+            }
+        }
+    ));
+    drawing_area.add_controller(drag);
+
+    window
+}
+
+fn setup_countdown_window(
+    app: &Application,
+    params: RecordingControlsParams,
+    seconds: u32,
+    dim_windows: Vec<ApplicationWindow>,
+    cancelled: Arc<AtomicBool>,
+    unified_mode: bool,
+    controls_window: Option<ApplicationWindow>,
+    cancel_stop_tx: Option<Arc<Mutex<Option<oneshot::Sender<StopAction>>>>>,
+) {
+    let display = gdk::Display::default().expect("No display");
+    let monitor = if params.capture_w > 0 && params.capture_h > 0 {
+        monitor_for_capture(&display, &params)
+    } else {
+        countdown_monitor_for_display(&display)
+    };
+    let monitor_geom = monitor.as_ref().map(|m| m.geometry());
+    let bubble_size = 184.0;
+
+    let win_w = bubble_size as i32;
+    let win_h = bubble_size as i32;
+
+    let countdown_center_global =
+        if !params.is_fullscreen && params.capture_w > 0 && params.capture_h > 0 {
+            let global_center_x = params.capture_x as f64 + params.capture_w as f64 / 2.0;
+            let global_center_y = params.capture_y as f64 + params.capture_h as f64 / 2.0;
+            (global_center_x, global_center_y)
+        } else if let Some(ref geom) = monitor_geom {
+            (
+                geom.x() as f64 + geom.width() as f64 / 2.0,
+                geom.y() as f64 + geom.height() as f64 / 2.0,
+            )
+        } else {
+            let (display_w, display_h) = display_size().unwrap_or((1920, 1080));
+            (display_w as f64 / 2.0, display_h as f64 / 2.0)
+        };
+    let countdown_x = (countdown_center_global.0 - bubble_size / 2.0).round() as i32;
+    let countdown_y = (countdown_center_global.1 - bubble_size / 2.0).round() as i32;
+
+    install_countdown_css();
+
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title(t("ApexShot Recording Countdown"))
+        .default_width(win_w)
+        .default_height(win_h)
+        .decorated(false)
+        .resizable(false)
+        .focusable(false)
+        .build();
+    window.set_css_classes(&["recording-countdown-overlay"]);
+
+    let is_wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
+    let layer_shell_active = is_wayland && gtk4_layer_shell::is_supported();
+    if layer_shell_active {
+        window.init_layer_shell();
+        window.set_layer(Layer::Overlay);
+        if let Some(ref m) = monitor {
+            window.set_monitor(Some(m));
+        }
+        window.set_anchor(Edge::Top, true);
+        window.set_anchor(Edge::Left, true);
+        window.set_anchor(Edge::Bottom, false);
+        window.set_anchor(Edge::Right, false);
+        let (margin_x, margin_y) = if let Some(ref geom) = monitor_geom {
+            (countdown_x - geom.x(), countdown_y - geom.y())
+        } else {
+            (countdown_x, countdown_y)
+        };
+        window.set_keyboard_mode(KeyboardMode::None);
+        window.set_exclusive_zone(-1);
+        window.set_margin(Edge::Top, margin_y.max(0));
+        window.set_margin(Edge::Left, margin_x.max(0));
+        window.set_margin(Edge::Bottom, 0);
+        window.set_margin(Edge::Right, 0);
+        window.set_namespace(Some("apexshot-recording-countdown"));
+    } else {
+        window.connect_realize(clone!(
+            #[weak]
+            window,
+            move |_| {
+                suppress_x11_controls_window_type(&window);
+                let _ = request_x11_always_on_top(&window);
+                let _ = position_x11_window(&window, countdown_x, countdown_y);
+            }
+        ));
+    }
+
+    let remaining = Rc::new(Cell::new(seconds.max(1) as i32));
+    let hovered = Rc::new(Cell::new(false));
+    let drawing_area = DrawingArea::new();
+    drawing_area.set_css_classes(&["recording-countdown-canvas"]);
+    drawing_area.set_content_width(win_w);
+    drawing_area.set_content_height(win_h);
+    drawing_area.set_draw_func({
+        let remaining = remaining.clone();
+        let hovered = hovered.clone();
+        move |_, cr, width, height| {
+            cr.set_operator(cairo::Operator::Source);
+            cr.set_source_rgba(0.0, 0.0, 0.0, 0.0);
+            let _ = cr.paint();
+            cr.set_operator(cairo::Operator::Over);
+
+            let bubble_size = width.min(height) as f64;
+            let center_x = width as f64 / 2.0;
+            let center_y = height as f64 / 2.0;
+            let bubble_x = center_x - bubble_size / 2.0;
+            let bubble_y = center_y - bubble_size / 2.0;
+            let is_hovered = hovered.get();
+
+            cr.set_source_rgba(
+                if is_hovered { 132.0 / 255.0 } else { 0.0 },
+                if is_hovered { 38.0 / 255.0 } else { 0.0 },
+                if is_hovered { 24.0 / 255.0 } else { 0.0 },
+                if is_hovered {
+                    242.0 / 255.0
+                } else {
+                    240.0 / 255.0
+                },
+            );
+            cr.arc(
+                bubble_x + bubble_size / 2.0,
+                bubble_y + bubble_size / 2.0,
+                bubble_size / 2.0,
+                0.0,
+                std::f64::consts::TAU,
+            );
+            let _ = cr.fill();
+
+            cr.select_font_face(
+                crate::typography::UI_FONT_FAMILY,
+                cairo::FontSlant::Normal,
+                cairo::FontWeight::Bold,
+            );
+            cr.set_font_size(if is_hovered { 34.0 } else { 72.0 });
+            if is_hovered {
+                cr.set_source_rgb(1.0, 228.0 / 255.0, 214.0 / 255.0);
+            } else {
+                cr.set_source_rgb(1.0, 1.0, 1.0);
+            }
+            let text = if is_hovered {
+                "Cancel".to_string()
+            } else {
+                remaining.get().to_string()
+            };
+            if let Ok(extents) = cr.text_extents(&text) {
+                cr.move_to(
+                    bubble_x + (bubble_size - extents.width()) / 2.0 - extents.x_bearing(),
+                    bubble_y + (bubble_size - extents.height()) / 2.0 - extents.y_bearing(),
+                );
+                let _ = cr.show_text(&text);
+            }
+        }
+    });
+
+    let motion = gtk4::EventControllerMotion::new();
+    motion.connect_motion({
+        let hovered = hovered.clone();
+        let drawing_area = drawing_area.clone();
+        move |_, x, y| {
+            let cx = win_w as f64 / 2.0;
+            let cy = win_h as f64 / 2.0;
+            let inside = (x - cx).hypot(y - cy) <= bubble_size / 2.0;
+            if hovered.replace(inside) != inside {
+                drawing_area.queue_draw();
+            }
+        }
+    });
+    motion.connect_leave({
+        let hovered = hovered.clone();
+        let drawing_area = drawing_area.clone();
+        move |_| {
+            if hovered.replace(false) {
+                drawing_area.queue_draw();
+            }
+        }
+    });
+    drawing_area.add_controller(motion);
+
+    let click = gtk4::GestureClick::builder().button(1).build();
+    click.connect_pressed({
+        let app_weak = app.downgrade();
+        let window_weak = window.downgrade();
+        let cancel_stop_tx = cancel_stop_tx.clone();
+        move |_, _, x, y| {
+            let cx = win_w as f64 / 2.0;
+            let cy = win_h as f64 / 2.0;
+            if (x - cx).hypot(y - cy) <= bubble_size / 2.0 {
+                cancelled.store(true, Ordering::Relaxed);
+                if let Some(tx) = cancel_stop_tx
+                    .as_ref()
+                    .and_then(|tx| tx.lock().ok().and_then(|mut guard| guard.take()))
+                {
+                    let _ = tx.send(StopAction::Discard);
+                }
+                if unified_mode {
+                    println!("discard");
+                    use std::io::Write;
+                    let _ = std::io::stdout().flush();
+                }
+                if let Some(window) = window_weak.upgrade() {
+                    window.close();
+                }
+                if let Some(app) = app_weak.upgrade() {
+                    app.quit();
+                }
+            }
+        }
+    });
+    drawing_area.add_controller(click);
+
+    window.set_child(Some(&drawing_area));
+
+    let drawing_area_weak = drawing_area.downgrade();
+    let window_weak = window.downgrade();
+    let app_weak = app.downgrade();
+    let dim_window_weaks: Vec<_> = dim_windows
+        .iter()
+        .map(|window| window.downgrade())
+        .collect();
+
+    // Start the countdown clock only after the window is mapped/shown.
+    // Arming the 1s timer before present() races with compositor map latency
+    // (layer-shell, process spawn of recording-ui-internal, etc.): if the first
+    // frame arrives after the first tick, "3" is never visible and the user only
+    // sees "2". Permissions dialogs are not the cause on the current path —
+    // when countdown is enabled the ScreenCast portal runs *after* countdown.
+    let timer_started = Rc::new(Cell::new(false));
+    window.connect_map(clone!(
+        #[strong]
+        remaining,
+        #[strong]
+        drawing_area_weak,
+        #[strong]
+        window_weak,
+        #[strong]
+        app_weak,
+        #[strong]
+        dim_window_weaks,
+        #[strong]
+        controls_window,
+        #[strong]
+        timer_started,
+        move |_| {
+            if timer_started.replace(true) {
+                return;
+            }
+            // Ensure the initial "3" (or configured seconds) is painted before we tick.
+            if let Some(area) = drawing_area_weak.upgrade() {
+                area.queue_draw();
+            }
+
+            let remaining = remaining.clone();
+            let drawing_area_weak = drawing_area_weak.clone();
+            let window_weak = window_weak.clone();
+            let app_weak = app_weak.clone();
+            let dim_window_weaks = dim_window_weaks.clone();
+            let controls_window = controls_window.clone();
+            glib::timeout_add_local(Duration::from_secs(1), move || {
+                let next = remaining.get() - 1;
+                if next <= 1 {
+                    // Intentionally never paint "1" so it cannot leak into the recording.
+                    if !unified_mode {
+                        for dim_window in &dim_window_weaks {
+                            if let Some(window) = dim_window.upgrade() {
+                                window.close();
+                            }
+                        }
+                        if let Some(window) = window_weak.upgrade() {
+                            window.set_visible(false);
+                        }
+                        let app_weak = app_weak.clone();
+                        glib::timeout_add_local_once(Duration::from_millis(1100), move || {
+                            if let Some(app) = app_weak.upgrade() {
+                                app.quit();
+                            }
+                        });
+                    } else {
+                        if let Some(window) = window_weak.upgrade() {
+                            window.close();
+                        }
+                        let controls_window = controls_window.clone();
+                        glib::timeout_add_local_once(Duration::from_millis(1100), move || {
+                            // Keep the final "1" second hidden so it cannot leak into the recording.
+                            if let Some(controls) = controls_window.as_ref() {
+                                controls.set_visible(true);
+                            }
+                            println!("ready");
+                            use std::io::Write;
+                            let _ = std::io::stdout().flush();
+                        });
+                    }
+                    return glib::ControlFlow::Break;
+                }
+                remaining.set(next);
+                if let Some(area) = drawing_area_weak.upgrade() {
+                    area.queue_draw();
+                }
+                glib::ControlFlow::Continue
+            });
+        }
+    ));
+
+    window.present();
+}
+
+fn setup_dim_windows(app: &Application, params: RecordingControlsParams) -> Vec<ApplicationWindow> {
+    if params.use_shell_mask
+        || !params.dim_screen
+        || params.is_fullscreen
+        || params.capture_w <= 0
+        || params.capture_h <= 0
+    {
+        return Vec::new();
+    }
+
+    let is_wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
+    if is_wayland && !gtk4_layer_shell::is_supported() {
+        eprintln!(
+            "[recording] Skipping area dim mask on Wayland without Layer Shell; regular GTK windows would occlude the desktop."
+        );
+        return Vec::new();
+    }
+
+    install_dim_css();
+
+    let Some(display) = gdk::Display::default() else {
+        return Vec::new();
+    };
+    let monitor = monitor_for_capture(&display, &params);
+    let Some(monitor) = monitor else {
+        return Vec::new();
+    };
+    let geometry = monitor.geometry();
+    // The C++ selector reports desktop-global coordinates. Convert them into
+    // monitor-local coordinates before creating per-output mask windows.
+    let local_x = (params.capture_x - geometry.x()).clamp(0, geometry.width());
+    let local_y = (params.capture_y - geometry.y()).clamp(0, geometry.height());
+    let local_right =
+        (params.capture_x + params.capture_w - geometry.x()).clamp(0, geometry.width());
+    let local_bottom =
+        (params.capture_y + params.capture_h - geometry.y()).clamp(0, geometry.height());
+
+    let rects = vec![
+        (0, 0, geometry.width(), local_y),
+        (0, local_y, local_x, (local_bottom - local_y).max(0)),
+        (
+            local_right,
+            local_y,
+            (geometry.width() - local_right).max(0),
+            (local_bottom - local_y).max(0),
+        ),
+        (
+            0,
+            local_bottom,
+            geometry.width(),
+            (geometry.height() - local_bottom).max(0),
+        ),
+    ];
+
+    let mut windows = Vec::new();
+    for (x, y, width, height) in rects {
+        if width <= 0 || height <= 0 {
+            continue;
+        }
+        if let Some(window) = build_dim_window(app, &monitor, x, y, width, height) {
+            windows.push(window);
+        }
+    }
+
+    windows
+}
+
+fn build_dim_window(
+    app: &Application,
+    monitor: &gdk::Monitor,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+) -> Option<ApplicationWindow> {
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title(t("ApexShot Recording Mask"))
+        .default_width(width)
+        .default_height(height)
+        .decorated(false)
+        .resizable(false)
+        .focusable(false)
+        .build();
+
+    window.set_can_focus(false);
+    window.set_focusable(false);
+    window.set_css_classes(&["recording-dim-overlay"]);
+
+    let fill = DrawingArea::new();
+    fill.set_content_width(width);
+    fill.set_content_height(height);
+    fill.set_draw_func(|_, cr, width, height| {
+        cr.set_source_rgba(0.0, 0.0, 0.0, 0.55);
+        cr.rectangle(0.0, 0.0, width as f64, height as f64);
+        let _ = cr.fill();
+    });
+    window.set_child(Some(&fill));
+
+    let is_wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
+    let layer_shell_active = is_wayland && gtk4_layer_shell::is_supported();
+    if layer_shell_active {
+        window.init_layer_shell();
+        window.set_layer(Layer::Top);
+        window.set_monitor(Some(monitor));
+        window.set_anchor(Edge::Top, true);
+        window.set_anchor(Edge::Left, true);
+        window.set_anchor(Edge::Bottom, false);
+        window.set_anchor(Edge::Right, false);
+        window.set_margin(Edge::Top, y);
+        window.set_margin(Edge::Left, x);
+        window.set_keyboard_mode(KeyboardMode::None);
+        // Critical on Hyprland: keep mask coordinates relative to the physical
+        // output, not the compositor workarea below reserved bars/panels.
+        window.set_exclusive_zone(-1);
+        window.set_namespace(Some("apexshot-recording-mask"));
+    } else {
+        window.fullscreen_on_monitor(monitor);
+        let x_pos = x;
+        let y_pos = y;
+        window.connect_realize(clone!(
+            #[weak]
+            window,
+            move |_| {
+                suppress_x11_controls_window_type(&window);
+                let _ = request_x11_always_on_top(&window);
+                let _ = position_x11_window(&window, x_pos, y_pos);
+            }
+        ));
+        window.connect_map(clone!(
+            #[weak]
+            window,
+            move |_| {
+                let _ = request_x11_always_on_top(&window);
+                let _ = position_x11_window(&window, x, y);
+            }
+        ));
+    }
+
+    window.present();
+    Some(window)
+}
+
+fn install_countdown_css() {
+    if let Some(display) = gdk::Display::default() {
+        let provider = CssProvider::new();
+        provider.load_from_data(
+            ".recording-countdown-overlay,
+             .recording-countdown-overlay > contents,
+             .recording-countdown-canvas {
+                background: transparent;
+                background-color: transparent;
+             }",
+        );
+        gtk4::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
+}
+
+fn install_controls_css() {
+    if let Some(display) = gdk::Display::default() {
+        let provider = CssProvider::new();
+        provider.load_from_data(
+            ".recording-controls-window,
+             .recording-controls-window > contents,
+             .recording-controls-canvas {
+                background: transparent;
+                background-color: transparent;
+            }
+            .countdown-bar-container {
+                background-color: #141414;
+                border-radius: 12px;
+                padding: 10px;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+            }
+            .countdown-label {
+                color: white;
+                font-size: 24pt;
+                font-weight: 800;
+                margin-bottom: 8px;
+            }
+            .countdown-progress {
+                background-color: rgba(255, 255, 255, 0.1);
+                border-radius: 4px;
+                min-height: 8px;
+            }
+            .countdown-progress-inner {
+                background: linear-gradient(to right, #f46357, #ff9b8a);
+                border-radius: 4px;
+                min-height: 8px;
+            }",
+        );
+        gtk4::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
+}
+
+fn install_dim_css() {
+    if let Some(display) = gdk::Display::default() {
+        let provider = CssProvider::new();
+        provider.load_from_data(
+            ".recording-dim-overlay {
+                background-color: transparent;
+            }",
+        );
+        gtk4::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
+}
+
+fn draw_control_cell(
+    cr: &cairo::Context,
+    tile: BarTile,
+    rect: RectF,
+    hovered: bool,
+    disabled: bool,
+    paused: bool,
+) {
+    let active_pause = matches!(tile, BarTile::Pause) && paused;
+    if !hovered && !active_pause {
+        return;
+    }
+
+    let (r, g, b, fill_alpha, stroke_alpha) = if disabled {
+        (1.0, 1.0, 1.0, 0.04, 0.06)
+    } else {
+        match tile {
+            BarTile::Pause if active_pause => {
+                (74.0 / 255.0, 144.0 / 255.0, 226.0 / 255.0, 0.24, 0.34)
+            }
+            BarTile::Pause => (74.0 / 255.0, 144.0 / 255.0, 226.0 / 255.0, 0.18, 0.26),
+            BarTile::Restart => (1.0, 184.0 / 255.0, 77.0 / 255.0, 0.18, 0.28),
+            BarTile::Discard => (235.0 / 255.0, 87.0 / 255.0, 87.0 / 255.0, 0.18, 0.30),
+            BarTile::Stop => (1.0, 1.0, 1.0, 0.09, 0.14),
+        }
+    };
+
+    rounded_rect_path(cr, rect.x, rect.y, rect.width, rect.height, 10.0);
+    cr.set_source_rgba(r, g, b, fill_alpha);
+    let _ = cr.fill();
+
+    rounded_rect_path(
+        cr,
+        rect.x + 0.75,
+        rect.y + 0.75,
+        rect.width - 1.5,
+        rect.height - 1.5,
+        9.25,
+    );
+    cr.set_source_rgba(r, g, b, stroke_alpha);
+    cr.set_line_width(1.2);
+    let _ = cr.stroke();
+}
+
+fn draw_primary_pill(cr: &cairo::Context, rect: RectF, hovered: bool) {
+    if hovered {
+        rounded_rect_path(cr, rect.x, rect.y, rect.width, rect.height, 10.0);
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.09);
+        let _ = cr.fill();
+    }
+    let (path_x, path_y, path_w, path_h) = (
+        rect.x + 3.0,
+        rect.y + 3.0,
+        rect.width - 6.0,
+        rect.height - 6.0,
+    );
+    rounded_rect_path(cr, path_x, path_y, path_w, path_h, 9.0);
+    cr.set_source_rgba(176.0 / 255.0, 92.0 / 255.0, 56.0 / 255.0, 88.0 / 255.0);
+    let _ = cr.fill();
+
+    let _ = cr.save();
+    rounded_rect_path(cr, path_x, path_y, path_w, path_h, 9.0);
+    cr.clip();
+    rounded_rect_path(
+        cr,
+        rect.x + 3.8,
+        rect.y + 3.8,
+        rect.width - 7.6,
+        rect.height - 7.6,
+        8.4,
+    );
+    cr.set_source_rgba(1.0, 212.0 / 255.0, 178.0 / 255.0, 152.0 / 255.0);
+    cr.set_line_width(1.1);
+    let _ = cr.stroke();
+    let _ = cr.restore();
+}
+
+fn draw_stop_glyph(cr: &cairo::Context, rect: RectF, show_timer: bool, secs: u64) {
+    let cy = rect.y + rect.height / 2.0;
+    let icon_cx = if show_timer {
+        rect.x + 22.0
+    } else {
+        rect.x + rect.width / 2.0
+    };
+
+    let shadow_alpha = 0.32;
+    cr.set_source_rgba(0.0, 0.0, 0.0, shadow_alpha);
+    cr.set_line_width(1.8);
+    cr.arc(icon_cx + 0.6, cy + 0.8, 10.0, 0.0, 2.0 * PI);
+    let _ = cr.stroke();
+    let sq = 4.0;
+    cr.rectangle(icon_cx + 0.6 - sq, cy + 0.8 - sq, sq * 2.0, sq * 2.0);
+    let _ = cr.fill();
+
+    cr.set_source_rgba(1.0, 1.0, 1.0, 1.0);
+    cr.set_line_width(1.8);
+    cr.arc(icon_cx, cy, 10.0, 0.0, 2.0 * PI);
+    let _ = cr.stroke();
+    cr.rectangle(icon_cx - sq, cy - sq, sq * 2.0, sq * 2.0);
+    let _ = cr.fill();
+
+    if show_timer {
+        let mins = secs / 60;
+        let s = secs % 60;
+        let text = format!("{}:{:02}", mins, s);
+        cr.select_font_face(
+            crate::typography::UI_FONT_FAMILY,
+            cairo::FontSlant::Normal,
+            cairo::FontWeight::Bold,
+        );
+        cr.set_font_size(16.5);
+        let label_x = rect.x + 42.0;
+        let label_y = cy + 5.6;
+
+        cr.set_source_rgba(0.0, 0.0, 0.0, shadow_alpha);
+        cr.move_to(label_x + 0.6, label_y + 0.8);
+        let _ = cr.show_text(&text);
+        cr.set_source_rgba(1.0, 232.0 / 255.0, 214.0 / 255.0, 1.0);
+        cr.move_to(label_x, label_y);
+        let _ = cr.show_text(&text);
+    }
+}
+
+fn draw_glyph_with_shadow<F>(cr: &cairo::Context, rect: RectF, alpha: f64, draw: F)
+where
+    F: Fn(&cairo::Context, f64, f64),
+{
+    let cx = rect.x + rect.width / 2.0;
+    let cy = rect.y + rect.height / 2.0;
+
+    cr.set_source_rgba(0.0, 0.0, 0.0, (alpha * 0.40).min(0.44));
+    cr.set_line_width(1.8);
+    draw(cr, cx + 0.6, cy + 0.8);
+
+    cr.set_source_rgba(1.0, 1.0, 1.0, alpha);
+    cr.set_line_width(1.8);
+    draw(cr, cx, cy);
+}
+
+fn draw_pause_glyph(cr: &cairo::Context, rect: RectF, alpha: f64) {
+    draw_glyph_with_shadow(cr, rect, alpha, |cr, cx, cy| {
+        cr.arc(cx, cy, 10.0, 0.0, 2.0 * PI);
+        let _ = cr.stroke();
+        let bar_w = 2.2;
+        let bar_h = 11.0;
+        let gap = 3.5;
+        cr.rectangle(cx - gap - bar_w / 2.0, cy - bar_h / 2.0, bar_w, bar_h);
+        cr.rectangle(cx + gap - bar_w / 2.0, cy - bar_h / 2.0, bar_w, bar_h);
+        let _ = cr.fill();
+    });
+}
+
+fn draw_resume_glyph(cr: &cairo::Context, rect: RectF, alpha: f64) {
+    draw_glyph_with_shadow(cr, rect, alpha, |cr, cx, cy| {
+        cr.arc(cx, cy, 10.0, 0.0, 2.0 * PI);
+        let _ = cr.stroke();
+        let triangle_size = 5.0;
+        cr.move_to(cx - triangle_size / 2.0, cy - triangle_size);
+        cr.line_to(cx - triangle_size / 2.0, cy + triangle_size);
+        cr.line_to(cx + triangle_size, cy);
+        cr.close_path();
+        let _ = cr.fill();
+    });
+}
+
+fn draw_restart_glyph(cr: &cairo::Context, rect: RectF, alpha: f64) {
+    draw_glyph_with_shadow(cr, rect, alpha, |cr, cx, cy| {
+        let start_angle = 60.0_f64.to_radians();
+        let end_angle = 340.0_f64.to_radians();
+        cr.arc(cx, cy, 8.5, start_angle, end_angle);
+        let _ = cr.stroke();
+
+        let head_r = 8.5;
+        let tip_angle = start_angle;
+        let base_angle1 = start_angle - 25.0_f64.to_radians();
+        cr.move_to(cx + head_r * tip_angle.cos(), cy - head_r * tip_angle.sin());
+        cr.line_to(
+            cx + (head_r + 4.0) * base_angle1.cos(),
+            cy - (head_r + 4.0) * base_angle1.sin(),
+        );
+        cr.line_to(
+            cx + (head_r - 4.0) * base_angle1.cos(),
+            cy - (head_r - 4.0) * base_angle1.sin(),
+        );
+        cr.close_path();
+        let _ = cr.fill();
+    });
+}
+
+fn draw_discard_glyph(cr: &cairo::Context, rect: RectF, alpha: f64) {
+    draw_glyph_with_shadow(cr, rect, alpha, |cr, cx, cy| {
+        cr.set_line_join(cairo::LineJoin::Round);
+        let bw = 11.0;
+        let bh = 13.0;
+        let top = cy - 3.5;
+        cr.rectangle(cx - bw / 2.0, top, bw, bh);
+        let _ = cr.stroke();
+        cr.move_to(cx - 8.0, top - 1.5);
+        cr.line_to(cx + 8.0, top - 1.5);
+        let _ = cr.stroke();
+        cr.rectangle(cx - 2.5, top - 4.0, 5.0, 2.5);
+        let _ = cr.stroke();
+        cr.move_to(cx - 2.0, top + 2.5);
+        cr.line_to(cx - 2.0, top + 9.5);
+        cr.move_to(cx + 2.0, top + 2.5);
+        cr.line_to(cx + 2.0, top + 9.5);
+        let _ = cr.stroke();
+    });
+}
+
+fn display_bounds() -> Option<(i32, i32, i32, i32)> {
+    display_bounds_from_monitor_geometries(iter_monitor_geometries())
+}
+
+pub(super) fn display_bounds_from_monitor_geometries<I>(
+    geometries: I,
+) -> Option<(i32, i32, i32, i32)>
+where
+    I: IntoIterator<Item = (i32, i32, i32, i32)>,
+{
+    let mut min_left = i32::MAX;
+    let mut min_top = i32::MAX;
+    let mut max_right = i32::MIN;
+    let mut max_bottom = i32::MIN;
+    let mut found = false;
+
+    for (x, y, width, height) in geometries {
+        if width <= 0 || height <= 0 {
+            continue;
+        }
+        min_left = min_left.min(x);
+        min_top = min_top.min(y);
+        max_right = max_right.max(x + width);
+        max_bottom = max_bottom.max(y + height);
+        found = true;
+    }
+
+    if found && max_right > min_left && max_bottom > min_top {
+        Some((
+            min_left,
+            min_top,
+            max_right - min_left,
+            max_bottom - min_top,
+        ))
+    } else {
+        None
+    }
+}
+
+fn iter_monitor_geometries() -> Vec<(i32, i32, i32, i32)> {
+    let Some(display) = gdk::Display::default() else {
+        return Vec::new();
+    };
+    let monitors = display.monitors();
+    let mut geometries = Vec::new();
+    for idx in 0..monitors.n_items() {
+        let Some(item) = monitors.item(idx) else {
+            continue;
+        };
+        let Ok(monitor) = item.downcast::<gdk::Monitor>() else {
+            continue;
+        };
+        let geometry = monitor.geometry();
+        geometries.push((
+            geometry.x(),
+            geometry.y(),
+            geometry.width(),
+            geometry.height(),
+        ));
+    }
+    geometries
+}
+
+fn display_size() -> Option<(i32, i32)> {
+    display_bounds().map(|(_, _, width, height)| (width, height))
+}
+
+fn monitor_for_capture(
+    display: &gdk::Display,
+    params: &RecordingControlsParams,
+) -> Option<gdk::Monitor> {
+    let center_x = params.capture_x + params.capture_w / 2;
+    let center_y = params.capture_y + params.capture_h / 2;
+    let monitors = display.monitors();
+
+    for idx in 0..monitors.n_items() {
+        let Some(item) = monitors.item(idx) else {
+            continue;
+        };
+        let Ok(monitor) = item.downcast::<gdk::Monitor>() else {
+            continue;
+        };
+        let geometry = monitor.geometry();
+        let inside_x = center_x >= geometry.x() && center_x < geometry.x() + geometry.width();
+        let inside_y = center_y >= geometry.y() && center_y < geometry.y() + geometry.height();
+        if inside_x && inside_y {
+            return Some(monitor);
+        }
+    }
+
+    None
+}
+
+fn countdown_monitor_for_display(display: &gdk::Display) -> Option<gdk::Monitor> {
+    let model = display.monitors();
+    let mut monitors = Vec::new();
+    let mut geometries = Vec::new();
+    for idx in 0..model.n_items() {
+        let Some(item) = model.item(idx) else {
+            continue;
+        };
+        let Ok(monitor) = item.downcast::<gdk::Monitor>() else {
+            continue;
+        };
+        let geometry = monitor.geometry();
+        monitors.push(monitor);
+        geometries.push((
+            geometry.x(),
+            geometry.y(),
+            geometry.width(),
+            geometry.height(),
+        ));
+    }
+    let index = countdown_monitor_index_from_geometries(&geometries)?;
+    monitors.get(index).cloned()
+}
+
+pub(super) fn countdown_monitor_index_from_geometries(
+    geometries: &[(i32, i32, i32, i32)],
+) -> Option<usize> {
+    let contains_display_origin = |(x, y, width, height): &(i32, i32, i32, i32)| {
+        *width > 0
+            && *height > 0
+            && *x <= 0
+            && x.checked_add(*width).is_some_and(|right| 0 < right)
+            && *y <= 0
+            && y.checked_add(*height).is_some_and(|bottom| 0 < bottom)
+    };
+    geometries
+        .iter()
+        .position(contains_display_origin)
+        .or_else(|| {
+            geometries
+                .iter()
+                .position(|(_, _, width, height)| *width > 0 && *height > 0)
+        })
+}
+
+#[cfg(test)]
+pub(super) fn monitor_index_for_capture_from_geometries(
+    geometries: &[(i32, i32, i32, i32)],
+    params: &RecordingControlsParams,
+) -> Option<usize> {
+    let center_x = params.capture_x + params.capture_w / 2;
+    let center_y = params.capture_y + params.capture_h / 2;
+
+    geometries.iter().position(|(x, y, width, height)| {
+        *width > 0
+            && *height > 0
+            && center_x >= *x
+            && center_x < *x + *width
+            && center_y >= *y
+            && center_y < *y + *height
+    })
+}
+
+fn send_stop_action(stop_tx: &Arc<Mutex<Option<oneshot::Sender<StopAction>>>>, action: StopAction) {
+    if let Some(tx) = stop_tx.lock().ok().and_then(|mut guard| guard.take()) {
+        let _ = tx.send(action);
+    }
+}
+
+/// Print the controls window's X11 id so the recording process can mask it.
+fn announce_controls_x11_window(window: &impl IsA<gtk4::Window>) {
+    let Some(surface) = window.as_ref().surface() else {
+        return;
+    };
+    let Ok(x11_surface) = surface.downcast::<X11Surface>() else {
+        return;
+    };
+    let Ok(xid) = u32::try_from(x11_surface.xid()) else {
+        return;
+    };
+    println!("xid {xid}");
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
+}
+
+fn suppress_x11_controls_window_type(window: &impl IsA<gtk4::Window>) {
+    let Some(surface) = window.as_ref().surface() else {
+        return;
+    };
+    let Ok(x11_surface) = surface.downcast::<X11Surface>() else {
+        return;
+    };
+    let Ok(xid) = u32::try_from(x11_surface.xid()) else {
+        return;
+    };
+    let Ok((conn, _)) = x11rb::connect(None) else {
+        return;
+    };
+
+    // Transparent windows must stay composited on X11: bypassing the
+    // compositor paints their transparent areas black.
+
+    if let (Ok(type_cookie), Ok(notif_cookie)) = (
+        conn.intern_atom(false, b"_NET_WM_WINDOW_TYPE"),
+        conn.intern_atom(false, b"_NET_WM_WINDOW_TYPE_NOTIFICATION"),
+    ) {
+        if let (Ok(type_reply), Ok(notif_reply)) = (type_cookie.reply(), notif_cookie.reply()) {
+            let _ = conn.change_property32(
+                xproto::PropMode::REPLACE,
+                xid,
+                type_reply.atom,
+                xproto::AtomEnum::ATOM,
+                &[notif_reply.atom],
+            );
+        }
+    }
+
+    let _ = conn.flush();
+}
+
+fn request_x11_always_on_top(window: &impl IsA<gtk4::Window>) -> Result<(), String> {
+    let xid = x11_surface_window_id(window)?;
+    let (conn, screen_num) = x11rb::connect(None).map_err(|e| e.to_string())?;
+    let root = conn
+        .setup()
+        .roots
+        .get(screen_num)
+        .map(|screen| screen.root)
+        .ok_or_else(|| "missing X11 root window".to_string())?;
+
+    let net_wm_state = intern_atom(&conn, b"_NET_WM_STATE")?;
+    let net_wm_state_above = intern_atom(&conn, b"_NET_WM_STATE_ABOVE")?;
+    let net_wm_state_sticky = intern_atom(&conn, b"_NET_WM_STATE_STICKY")?;
+
+    send_net_wm_state_client_message(&conn, root, xid, net_wm_state, 1, net_wm_state_above, 0)?;
+    send_net_wm_state_client_message(&conn, root, xid, net_wm_state, 1, net_wm_state_sticky, 0)?;
+    conn.configure_window(
+        xid,
+        &xproto::ConfigureWindowAux::new().stack_mode(xproto::StackMode::ABOVE),
+    )
+    .map_err(|e| e.to_string())?;
+    conn.flush().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn position_x11_window(window: &impl IsA<gtk4::Window>, x: i32, y: i32) -> Result<(), String> {
+    let xid = x11_surface_window_id(window)?;
+    let (conn, _) = x11rb::connect(None).map_err(|e| e.to_string())?;
+    conn.configure_window(
+        xid,
+        &xproto::ConfigureWindowAux::new()
+            .x(x)
+            .y(y)
+            .stack_mode(xproto::StackMode::ABOVE),
+    )
+    .map_err(|e| e.to_string())?;
+    conn.flush().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// How long after mapping the controls bar gets before its position is
+/// re-applied. By then the window manager has reparented the toplevel into its
+/// own frame, which is the window a position request has to target.
+const X11_CONTROLS_REPOSITION_DELAY: Duration = Duration::from_millis(150);
+
+/// Put the controls bar at `(x, y)` on screen.
+///
+/// The position is written into `WM_NORMAL_HINTS` as a user-specified
+/// position, so a reparenting window manager maps the window there instead of
+/// at its own default spot. The configure request then targets the window the
+/// manager actually moves: the client while it is still a child of the root,
+/// and its frame once the manager has wrapped it.
+fn place_x11_controls_window(
+    window: &impl IsA<gtk4::Window>,
+    x: i32,
+    y: i32,
+) -> Result<(), String> {
+    let xid = x11_surface_window_id(window)?;
+    let (conn, screen_num) = x11rb::connect(None).map_err(|e| e.to_string())?;
+    let root = conn
+        .setup()
+        .roots
+        .get(screen_num)
+        .map(|screen| screen.root)
+        .ok_or_else(|| "missing X11 root window".to_string())?;
+
+    let mut hints = WmSizeHints::get_normal_hints(&conn, xid)
+        .ok()
+        .and_then(|cookie| cookie.reply().ok())
+        .flatten()
+        .unwrap_or_default();
+    hints.position = Some((WmSizeHintsSpecification::UserSpecified, x, y));
+    hints
+        .set_normal_hints(&conn, xid)
+        .map_err(|e| e.to_string())?;
+
+    let target = x11_move_target(&conn, xid, root)?;
+    let (target_x, target_y) = if target == xid {
+        (x, y)
+    } else {
+        let client = conn
+            .translate_coordinates(xid, root, 0, 0)
+            .map_err(|e| e.to_string())?
+            .reply()
+            .map_err(|e| e.to_string())?;
+        let frame = conn
+            .translate_coordinates(target, root, 0, 0)
+            .map_err(|e| e.to_string())?
+            .reply()
+            .map_err(|e| e.to_string())?;
+        frame_origin_for_position(
+            (x, y),
+            (
+                i32::from(client.dst_x) - i32::from(frame.dst_x),
+                i32::from(client.dst_y) - i32::from(frame.dst_y),
+            ),
+        )
+    };
+
+    conn.configure_window(
+        target,
+        &xproto::ConfigureWindowAux::new()
+            .x(target_x)
+            .y(target_y)
+            .stack_mode(xproto::StackMode::ABOVE),
+    )
+    .map_err(|e| e.to_string())?;
+    conn.flush().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Re-apply the controls bar's position once the event loop is idle and again
+/// after the window manager has had time to reparent it.
+fn schedule_x11_controls_position(window: &ApplicationWindow, position: Rc<Cell<(i32, i32)>>) {
+    let idle_window = window.downgrade();
+    let idle_position = position.clone();
+    glib::idle_add_local_once(move || {
+        if let Some(window) = idle_window.upgrade() {
+            let (x, y) = idle_position.get();
+            let _ = place_x11_controls_window(&window, x, y);
+        }
+    });
+
+    let timeout_window = window.downgrade();
+    glib::timeout_add_local_once(X11_CONTROLS_REPOSITION_DELAY, move || {
+        if let Some(window) = timeout_window.upgrade() {
+            let (x, y) = position.get();
+            let _ = place_x11_controls_window(&window, x, y);
+        }
+    });
+}
+
+/// The window a position request has to name: the client while it is still a
+/// direct child of the root, otherwise the frame a reparenting window manager
+/// wrapped it in.
+fn x11_move_target<C: Connection>(conn: &C, xid: u32, root: u32) -> Result<u32, String> {
+    let mut current = xid;
+    for _ in 0..8 {
+        if current == root {
+            return Ok(xid);
+        }
+        let tree = conn
+            .query_tree(current)
+            .map_err(|e| e.to_string())?
+            .reply()
+            .map_err(|e| e.to_string())?;
+        if tree.parent == root || tree.parent == 0 {
+            return Ok(current);
+        }
+        current = tree.parent;
+    }
+    Ok(current)
+}
+
+/// Origin of a frame that puts its child at `target`, given the child's offset
+/// inside that frame.
+fn frame_origin_for_position(target: (i32, i32), client_offset: (i32, i32)) -> (i32, i32) {
+    (target.0 - client_offset.0, target.1 - client_offset.1)
+}
+
+fn x11_surface_window_id(window: &impl IsA<gtk4::Window>) -> Result<u32, String> {
+    let surface = window
+        .as_ref()
+        .surface()
+        .ok_or_else(|| "missing GTK surface".to_string())?;
+    let x11_surface = surface
+        .downcast::<X11Surface>()
+        .map_err(|_| "surface is not X11 (compositor does not expose X11 backend)".to_string())?;
+    u32::try_from(x11_surface.xid())
+        .map_err(|_| "X11 window id is out of range for xproto window type".to_string())
+}
+
+fn intern_atom<C: Connection>(conn: &C, atom_name: &[u8]) -> Result<u32, String> {
+    conn.intern_atom(false, atom_name)
+        .map_err(|e| e.to_string())?
+        .reply()
+        .map_err(|e| e.to_string())
+        .map(|reply| reply.atom)
+}
+
+fn send_net_wm_state_client_message<C: Connection>(
+    conn: &C,
+    root: xproto::Window,
+    window: xproto::Window,
+    net_wm_state_atom: u32,
+    action: u32,
+    first_property: u32,
+    second_property: u32,
+) -> Result<(), String> {
+    let client_message = xproto::ClientMessageEvent::new(
+        32,
+        window,
+        net_wm_state_atom,
+        [action, first_property, second_property, 1, 0],
+    );
+
+    conn.send_event(
+        false,
+        root,
+        xproto::EventMask::SUBSTRUCTURE_REDIRECT | xproto::EventMask::SUBSTRUCTURE_NOTIFY,
+        client_message,
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DESKTOP: (i32, i32, i32, i32) = (0, 0, 1920, 1080);
+
+    fn window_recording(capture: (i32, i32, i32, i32)) -> RecordingControlsParams {
+        RecordingControlsParams {
+            capture_x: capture.0,
+            capture_y: capture.1,
+            capture_w: capture.2,
+            capture_h: capture.3,
+            is_fullscreen: false,
+            show_timer: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn window_recording_places_the_bar_below_the_window() {
+        let params = window_recording((600, 232, 800, 600));
+        assert!(can_show_bar_outside_capture(&params, DESKTOP));
+        assert_eq!(compute_bar_position(&params, DESKTOP), (836, 844));
+    }
+
+    #[test]
+    fn window_recording_places_the_bar_above_when_below_does_not_fit() {
+        let params = window_recording((600, 500, 800, 600));
+        assert!(can_show_bar_outside_capture(&params, DESKTOP));
+        assert_eq!(compute_bar_position(&params, DESKTOP), (836, 422));
+    }
+
+    #[test]
+    fn window_recording_without_room_falls_back_to_the_top_centre() {
+        let params = window_recording((-200, -100, 2400, 1300));
+        assert!(!can_show_bar_outside_capture(&params, DESKTOP));
+        let mut normal = params.clone();
+        normal.is_fullscreen = true;
+        assert_eq!(compute_bar_position(&normal, DESKTOP), (796, 16));
+    }
+
+    #[test]
+    fn fullscreen_keeps_the_bar_at_the_top_centre() {
+        let params = RecordingControlsParams {
+            is_fullscreen: true,
+            ..Default::default()
+        };
+        assert!(!can_show_bar_outside_capture(&params, DESKTOP));
+        assert_eq!(compute_bar_position(&params, DESKTOP), (796, 16));
+    }
+
+    #[test]
+    fn window_recording_on_the_second_display_centres_on_it() {
+        let params = window_recording((2200, 100, 800, 600));
+        assert_eq!(
+            compute_bar_position(&params, (0, 0, 3840, 1080)),
+            (2436, 712)
+        );
+    }
+
+    #[test]
+    fn frame_origin_subtracts_the_client_offset() {
+        assert_eq!(frame_origin_for_position((836, 844), (0, 0)), (836, 844));
+        assert_eq!(frame_origin_for_position((836, 844), (1, 24)), (835, 820));
+    }
+}

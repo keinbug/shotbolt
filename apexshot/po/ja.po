@@ -1,0 +1,5528 @@
+# ApexShot UI translations.
+# Language: Japanese
+msgid ""
+msgstr ""
+"Project-Id-Version: apexshot\n"
+"Language: ja\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Edit: add a background, frame, or 3D tilt."
+msgstr "編集: 背景、フレーム、3Dチルトを追加できます。"
+
+msgid "Hide suggestion"
+msgstr "提案を非表示"
+
+msgid "Open in the editor"
+msgstr "エディターで開く"
+
+msgid "System default"
+msgstr "システムのデフォルト"
+
+msgid "Record shortcut"
+msgstr "ショートカットを記録"
+
+msgid "Try a styled look"
+msgstr "スタイル付きの見た目を試す"
+
+msgid "Undo look"
+msgstr "見た目を元に戻す"
+
+msgid "Next look"
+msgstr "次の見た目"
+
+msgid "Next look: {name}"
+msgstr "次の見た目: {name}"
+
+msgid "Frost"
+msgstr "フロスト"
+
+msgid "Bleed"
+msgstr "ブリード"
+
+msgid "Float"
+msgstr "フロート"
+
+msgid "Welcome to ApexShot"
+msgstr "ApexShot へようこそ"
+
+msgid "Version {version}"
+msgstr "バージョン {version}"
+
+msgid "ApexShot Settings"
+msgstr "ApexShot の設定"
+
+msgid "Close"
+msgstr "閉じる"
+
+msgid "Minimize"
+msgstr "最小化"
+
+msgid "Save"
+msgstr "保存"
+
+msgid "Settings"
+msgstr "設定"
+
+msgid "Select screenshot save location"
+msgstr "スクリーンショットの保存先"
+
+msgid "Select"
+msgstr "選択"
+
+msgid "Cancel"
+msgstr "キャンセル"
+
+msgid "Select video save location"
+msgstr "動画の保存先"
+
+msgid "General"
+msgstr "一般"
+
+msgid "Shortcuts"
+msgstr "ショートカット"
+
+msgid "Quick Access"
+msgstr "クイックアクセス"
+
+msgid "Recording"
+msgstr "録画"
+
+msgid "Screenshots"
+msgstr "スクリーンショット"
+
+msgid "Annotate"
+msgstr "注釈"
+
+msgid "Cloud"
+msgstr "クラウド"
+
+msgid "Advanced"
+msgstr "詳細"
+
+msgid "About"
+msgstr "情報"
+
+msgid "Saving…"
+msgstr "保存中…"
+
+msgid "Settings saved"
+msgstr "設定を保存しました"
+
+msgid "Save failed: {message}"
+msgstr "保存に失敗しました: {message}"
+
+msgid "After capture:"
+msgstr "キャプチャ後:"
+
+msgid ""
+"Here you can decide what should happen after taking a screenshot or recording your screen."
+msgstr "スクリーンショットや録画のあとに行う操作を選びます。"
+
+msgid "Screenshot"
+msgstr "スクリーンショット"
+
+msgid "Action"
+msgstr "操作"
+
+msgid "Export"
+msgstr "書き出し"
+
+msgid "Browse"
+msgstr "参照"
+
+msgid "Save location"
+msgstr "保存先"
+
+msgid "File format"
+msgstr "ファイル形式"
+
+msgid "File & Image (default)"
+msgstr "ファイルと画像（デフォルト）"
+
+msgid "Image Only"
+msgstr "画像のみ"
+
+msgid "File Path Only"
+msgstr "ファイルパスのみ"
+
+msgid "Clipboard copy behavior"
+msgstr "クリップボードへのコピー"
+
+msgid "Choose whether screenshots copy as an image, a file URI, or both."
+msgstr "画像、ファイル URI、または両方としてコピーします。"
+
+msgid "Off"
+msgstr "オフ"
+
+msgid "1 Second"
+msgstr "1 秒"
+
+msgid "3 Seconds"
+msgstr "3 秒"
+
+msgid "5 Seconds"
+msgstr "5 秒"
+
+msgid "10 Seconds"
+msgstr "10 秒"
+
+msgid "Self-Timer interval"
+msgstr "セルフタイマー"
+
+msgid "Include pointer when available"
+msgstr "可能な場合はポインターを含める"
+
+msgid ""
+"ApexShot includes the pointer only when the current capture flow provides cursor data."
+msgstr "現在のキャプチャ経路がカーソルデータを提供する場合のみポインターを含めます。"
+
+msgid "Drawing Tools"
+msgstr "描画ツール"
+
+msgid "Inverse arrow direction"
+msgstr "矢印の向きを反転"
+
+msgid "Smooth drawing"
+msgstr "なめらかな描画"
+
+msgid "Draw shadow on objects"
+msgstr "オブジェクトに影を付ける"
+
+msgid "Canvas & Interface"
+msgstr "キャンバスとインターフェース"
+
+msgid "Automatically expand canvas"
+msgstr "キャンバスを自動で広げる"
+
+msgid "Show color names (Accessibility)"
+msgstr "色名を表示（アクセシビリティ）"
+
+msgid "Window"
+msgstr "ウィンドウ"
+
+msgid "Always on top"
+msgstr "常に最前面"
+
+msgid "Set Shortcut"
+msgstr "ショートカットを設定"
+
+msgid "Set"
+msgstr "設定"
+
+msgid "Preparing shortcut capture…"
+msgstr "ショートカットの記録を準備しています…"
+
+msgid "Press Esc to cancel or Backspace to disable the keyboard shortcut"
+msgstr "Esc でキャンセル、Backspace でショートカットを無効化"
+
+msgid "Shortcut will be disabled"
+msgstr "ショートカットは無効になります"
+
+msgid ""
+"Shortcuts set here are the same hotkeys ApexShot uses. If one does not work, your desktop environment may already be using it. Open your system keyboard settings and disable conflicting shortcuts if you want to reuse them in ApexShot."
+msgstr ""
+"ここで設定したショートカットが ApexShot のホットキーです。動かない場合はデスクトップ環境が使っている可能性があります。システムのキーボード設定で競合を解除してください。"
+
+msgid "Save Location"
+msgstr "保存先"
+
+msgid "Recordings folder"
+msgstr "録画フォルダー"
+
+msgid "Filename pattern"
+msgstr "ファイル名パターン"
+
+msgid "Use {Date} and {Time} placeholders"
+msgstr "{Date} と {Time} を使います"
+
+msgid "Remember last export folder"
+msgstr "前回の書き出しフォルダーを覚える"
+
+msgid "Upload destination"
+msgstr "アップロード先"
+
+msgid "ApexShot Cloud"
+msgstr "ApexShot Cloud"
+
+msgid "XBackBone (self-hosted)"
+msgstr "XBackBone（セルフホスト）"
+
+msgid "Upload with"
+msgstr "アップロード方法"
+
+msgid "Upload after capture"
+msgstr "キャプチャ後にアップロード"
+
+msgid "Send a link instead?"
+msgstr "代わりにリンクを送りますか？"
+
+msgid "Copied. Send a link instead?"
+msgstr "コピーしました。代わりにリンクを送りますか？"
+
+msgid "Free account · 20 links a month"
+msgstr "無料アカウント · 月20リンク"
+
+msgid "Copied. Want a link instead?"
+msgstr "コピーしました。代わりにリンクを作成しますか？"
+
+msgid ""
+"A free ApexShot account turns every capture into a share link, with 20 links "
+"a month."
+msgstr ""
+"無料の ApexShot アカウントなら、すべてのキャプチャが共有リンクになります（月 20 "
+"リンクまで）。"
+
+msgid "Get link"
+msgstr "リンクを取得"
+
+msgid "Suggest ApexShot Cloud when copying"
+msgstr "コピー時に ApexShot Cloud を提案"
+
+msgid ""
+"Uploads each saved screenshot and copies the share link. Does nothing until you Connect."
+msgstr "保存した各ショットをアップロードし、共有リンクをコピーします。接続するまでは何もしません。"
+
+msgid "ApexShot Cloud account"
+msgstr "ApexShot Cloud アカウント"
+
+msgid "Connected"
+msgstr "接続済み"
+
+msgid "Not connected"
+msgstr "未接続"
+
+msgid "Signed in"
+msgstr "サインイン済み"
+
+msgid "Run `apexshot login` in a terminal, or click Connect below."
+msgstr "端末で `apexshot login` を実行するか、下の接続をクリックしてください。"
+
+msgid "Connect account"
+msgstr "アカウントを接続"
+
+msgid "Logout"
+msgstr "ログアウト"
+
+msgid "XBackBone instance"
+msgstr "XBackBone インスタンス"
+
+msgid "Instance URL"
+msgstr "インスタンス URL"
+
+msgid "Show"
+msgstr "表示"
+
+msgid "API token"
+msgstr "API トークン"
+
+msgid ""
+"Generate a token in your XBackBone instance → Profile → Tokens, with the resource:upload ability."
+msgstr "XBackBone の プロフィール → Tokens で resource:upload 権限のトークンを発行します。"
+
+msgid "Test connection"
+msgstr "接続をテスト"
+
+msgid "Verify setup"
+msgstr "設定を確認"
+
+msgid "Open XBackBone API docs"
+msgstr "XBackBone API ドキュメントを開く"
+
+msgid "Documentation"
+msgstr "ドキュメント"
+
+msgid "File Naming"
+msgstr "ファイル名"
+
+msgid "Filename format"
+msgstr "ファイル名の形式"
+
+msgid "Add @2x suffix for HiDPI screenshots"
+msgstr "HiDPI ショットに @2x を付ける"
+
+msgid "Text Recognition (OCR)"
+msgstr "文字認識 (OCR)"
+
+msgid "English"
+msgstr "英語"
+
+msgid "Spanish"
+msgstr "スペイン語"
+
+msgid "French"
+msgstr "フランス語"
+
+msgid "German"
+msgstr "ドイツ語"
+
+msgid "Italian"
+msgstr "イタリア語"
+
+msgid "Portuguese"
+msgstr "ポルトガル語"
+
+msgid "Chinese (Simplified)"
+msgstr "中国語（簡体字）"
+
+msgid "Japanese"
+msgstr "日本語"
+
+msgid "Russian"
+msgstr "ロシア語"
+
+msgid "Primary language"
+msgstr "主な言語"
+
+msgid "Preserve line breaks"
+msgstr "改行を保持"
+
+msgid "Privacy"
+msgstr "プライバシー"
+
+msgid "Share anonymous usage statistics"
+msgstr "匿名の利用統計を共有"
+
+msgid ""
+"Daily heartbeat: app version, distro, desktop, and coarse feature counts. The update window also reports each update download (version and size). No screenshots or personal data. Override with APEXSHOT_TELEMETRY=0."
+msgstr ""
+"日次のハートビート（バージョン、ディストロ、デスクトップ、機能回数）。更新ウィンドウは各更新のダウンロード（バージョンとサイズ）も報告します。スクリーンショットや個人データは送りません。APEXSHOT_TELEMETRY=0 で無効。"
+
+msgid "Language"
+msgstr "言語"
+
+msgid "Display language"
+msgstr "表示言語"
+
+msgid "System default uses your desktop language. Changes apply after Save."
+msgstr "システムのデフォルトはデスクトップの言語です。変更は保存後に反映されます。"
+
+msgid "Startup"
+msgstr "起動"
+
+msgid "Start at login"
+msgstr "ログイン時に起動"
+
+msgid "Sounds"
+msgstr "サウンド"
+
+msgid "Play sounds"
+msgstr "サウンドを再生"
+
+msgid "Shutter sound"
+msgstr "シャッター音"
+
+msgid "System tray"
+msgstr "システムトレイ"
+
+msgid "Show tray icon"
+msgstr "トレイアイコンを表示"
+
+msgid "Overlay"
+msgstr "オーバーレイ"
+
+msgid "Position"
+msgstr "位置"
+
+msgid "Show on all displays"
+msgstr "すべてのディスプレイに表示"
+
+msgid "Overlay size"
+msgstr "オーバーレイのサイズ"
+
+msgid "Auto-close"
+msgstr "自動で閉じる"
+
+msgid "Automatically close window"
+msgstr "ウィンドウを自動で閉じる"
+
+msgid "30 Seconds"
+msgstr "30 秒"
+
+msgid "1 Minute"
+msgstr "1 分"
+
+msgid "Interval"
+msgstr "間隔"
+
+msgid "Behaviors"
+msgstr "動作"
+
+msgid "Close window after dragging"
+msgstr "ドラッグ後にウィンドウを閉じる"
+
+msgid "Close window after uploading"
+msgstr "アップロード後にウィンドウを閉じる"
+
+msgid "Check for Updates"
+msgstr "更新を確認"
+
+msgid "What's New"
+msgstr "新着情報"
+
+msgid "Help Center"
+msgstr "ヘルプセンター"
+
+msgid "Send Feedback"
+msgstr "フィードバックを送る"
+
+msgid "Website"
+msgstr "ウェブサイト"
+
+msgid "Support ApexShot"
+msgstr "ApexShot を支援"
+
+msgid "ApexShot is free and open source. Donations keep development going."
+msgstr "ApexShot は無料のオープンソースです。寄付が開発を支えます。"
+
+msgid "Support on Ko-fi"
+msgstr "Ko-fi で支援"
+
+msgid "Cloud is a separate paid product"
+msgstr "クラウドは別の有料製品です"
+
+msgid "Opens ApexShot Cloud plans. This is not a donation."
+msgstr "ApexShot Cloud のプランを開きます。寄付ではありません。"
+
+msgid "Copyright © 2026 ApexShot. All rights reserved."
+msgstr "Copyright © 2026 ApexShot. All rights reserved."
+
+msgid "Terms of Service"
+msgstr "利用規約"
+
+msgid "Privacy Policy"
+msgstr "プライバシーポリシー"
+
+msgid "ApexShot Setup"
+msgstr "ApexShot のセットアップ"
+
+msgid "← Back"
+msgstr "← 戻る"
+
+msgid "Next →"
+msgstr "次へ →"
+
+msgid "Start Using ApexShot"
+msgstr "ApexShot を使い始める"
+
+msgid "Extension Installed ✓"
+msgstr "拡張をインストール済み ✓"
+
+msgid "GNOME Shell Extension Required"
+msgstr "GNOME Shell 拡張が必要です"
+
+msgid ""
+"ApexShot requires GNOME Shell. Please install on a GNOME desktop to continue."
+msgstr "ApexShot には GNOME Shell が必要です。GNOME デスクトップにインストールしてください。"
+
+msgid "Exit"
+msgstr "終了"
+
+msgid "Update GNOME Extension"
+msgstr "GNOME 拡張を更新"
+
+msgid ""
+"An old version of the ApexShot extension is installed. It needs to be removed before installing the new version."
+msgstr "古い拡張がインストールされています。新しい版の前に削除してください。"
+
+msgid "Remove Old Extension"
+msgstr "古い拡張を削除"
+
+msgid "GNOME Shell Extension"
+msgstr "GNOME Shell 拡張"
+
+msgid ""
+"On GNOME Wayland, the shell extension unlocks the polished capture experience:"
+msgstr "GNOME Wayland では、拡張が洗練されたキャプチャ体験を有効にします:"
+
+msgid "Floating preview windows"
+msgstr "フローティングプレビュー"
+
+msgid "Always-on-top previews that stay out of your way"
+msgstr "最前面に出すプレビューで邪魔になりません"
+
+msgid "Quick access overlay"
+msgstr "クイックアクセスオーバーレイ"
+
+msgid "Post-capture actions without hunting through menus"
+msgstr "メニューを探さずにキャプチャ後の操作"
+
+msgid "Recording status indicator"
+msgstr "録画ステータス"
+
+msgid "Shell-managed controls while a recording is live"
+msgstr "録画中はシェルがコントロールを管理します"
+
+msgid "Install GNOME Extension"
+msgstr "GNOME 拡張をインストール"
+
+msgid "Installing..."
+msgstr "インストール中..."
+
+msgid ""
+"Note: You may need to log out and back in for the extension to appear in GNOME."
+msgstr "注: 拡張が GNOME に表示されるにはログアウト／ログインが必要な場合があります。"
+
+msgid "Or download manually from GitHub"
+msgstr "または GitHub から手動ダウンロード"
+
+msgid "Browser Extension"
+msgstr "ブラウザ拡張"
+
+msgid ""
+"Optional Chrome/Chromium add-on for full-page web captures that open straight in ApexShot."
+msgstr "ページ全体をキャプチャし、ApexShot で開く任意の Chrome/Chromium 拡張です。"
+
+msgid "Full-page scroll capture"
+msgstr "ページ全体のスクロールキャプチャ"
+
+msgid "Stitch long pages that a normal screenshot can't fit"
+msgstr "通常のショットに収まらない長いページをつなぎます"
+
+msgid "Sends directly to ApexShot"
+msgstr "ApexShot に直接送信"
+
+msgid "Opens in the editor so you can annotate and share immediately"
+msgstr "エディターで開き、すぐ注釈と共有ができます"
+
+msgid "Works with your desktop app"
+msgstr "デスクトップアプリと連携"
+
+msgid "Native messaging keeps the browser and ApexShot in sync"
+msgstr "ネイティブメッセージングでブラウザと ApexShot を同期"
+
+msgid "Get Chrome Extension"
+msgstr "Chrome 拡張を入手"
+
+msgid ""
+"Optional. You can install this later from Settings or the Chrome Web Store."
+msgstr "任意です。あとから設定または Chrome ウェブストアからインストールできます。"
+
+msgid ""
+"Thanks for choosing ApexShot as your screenshot companion.\n"
+"Let's get you set up in just a few quick steps."
+msgstr ""
+"ApexShot をお選びいただきありがとうございます。\n"
+"いくつかの手順でセットアップします。"
+
+msgid "Area & fullscreen capture"
+msgstr "範囲と全画面キャプチャ"
+
+msgid "Grab a region, monitor, or the whole desktop in one hotkey"
+msgstr "ホットキー一つで範囲・モニタ・デスクトップ全体"
+
+msgid "Built-in annotation editor"
+msgstr "内蔵の注釈エディター"
+
+msgid "Arrows, blur, text, and crop without leaving the app"
+msgstr "矢印・ぼかし・テキスト・切り抜きをアプリ内で"
+
+msgid "Screen recording with audio"
+msgstr "音声付き画面録画"
+
+msgid "MP4 or GIF with mic and system audio when your desktop allows it"
+msgstr "デスクトップが許可すればマイクとシステム音声付きの MP4/GIF"
+
+msgid "OCR text extraction"
+msgstr "OCR テキスト抽出"
+
+msgid "Pull text and QR codes straight from a capture"
+msgstr "キャプチャからテキストと QR を取り出す"
+
+msgid "Cloud Upload"
+msgstr "クラウドアップロード"
+
+msgid "Available now · optional"
+msgstr "利用可能 · 任意"
+
+msgid ""
+"Share captures and recordings with a link, or keep everything on your own server."
+msgstr "リンクで共有するか、自分のサーバーに置きます。"
+
+msgid "Sync across devices"
+msgstr "デバイス間で同期"
+
+msgid "Pull recent uploads when you're signed in"
+msgstr "サインイン中は最近のアップロードを取得"
+
+msgid "Instant share links"
+msgstr "すぐ共有できるリンク"
+
+msgid "Copy a URL after capture without leaving the workflow"
+msgstr "キャプチャ後にフローを離れず URL をコピー"
+
+msgid "Storage you control"
+msgstr "自分で管理する保存先"
+
+msgid "Hosted ApexShot Cloud or your own XBackBone instance"
+msgstr "ホスト型 ApexShot Cloud か自分の XBackBone"
+
+msgid "Choose your cloud"
+msgstr "クラウドを選ぶ"
+
+msgid "Hosted by us, ready out of the box with device login."
+msgstr "こちらでホスト。デバイスログインですぐ使えます。"
+
+msgid "XBackBone"
+msgstr "XBackBone"
+
+msgid "Self-host for full control of storage and URLs."
+msgstr "ストレージと URL を完全に管理するならセルフホスト。"
+
+msgid ""
+"Skip for now if you want. After you Connect, your next screenshot gets a share link. Configure later in Settings → Cloud."
+msgstr "今はスキップできます。接続後、次のショットに共有リンクが付きます。あとで 設定 → クラウド。"
+
+msgid "How to capture"
+msgstr "キャプチャ方法"
+
+msgid ""
+"ApexShot runs in the background with a tray icon and hotkeys.\n"
+"After setup, you do not need to open Settings every time."
+msgstr ""
+"ApexShot はトレイアイコンとホットキーでバックグラウンド動作します。\n"
+"セットアップ後は毎回設定を開く必要はありません。"
+
+msgid "Tray icon"
+msgstr "トレイアイコン"
+
+msgid "Right-click for Area, Screen, Window, and Record"
+msgstr "右クリックで範囲・画面・ウィンドウ・録画"
+
+msgid "App menu"
+msgstr "アプリメニュー"
+
+msgid "Opening ApexShot shows Settings; captures stay on tray and hotkeys"
+msgstr "ApexShot を開くと設定です。キャプチャはトレイとホットキーのまま"
+
+msgid "Hotkeys"
+msgstr "ホットキー"
+
+msgid "Defaults below. Change them anytime in Settings → Shortcuts."
+msgstr "以下はデフォルト。設定 → ショートカット でいつでも変更できます。"
+
+msgid "Shortcut"
+msgstr "ショートカット"
+
+msgid "Area capture"
+msgstr "範囲キャプチャ"
+
+msgid "Full screen"
+msgstr "全画面"
+
+msgid "Record UI"
+msgstr "録画 UI"
+
+msgid "Take a test screenshot"
+msgstr "テストショットを撮る"
+
+msgid "Starts the tray daemon if needed, then takes a full screenshot"
+msgstr "必要ならトレイデーモンを起動し、全画面ショットを撮ります"
+
+msgid "Optional. You can skip this and try a capture after finishing setup."
+msgstr "任意です。スキップして、セットアップ後にキャプチャを試せます。"
+
+msgid "{shortcut} (default)"
+msgstr "{shortcut}（デフォルト）"
+
+msgid "You're all set!"
+msgstr "準備完了です！"
+
+msgid ""
+"The tray daemon starts when you finish so hotkeys and captures work right away."
+msgstr "完了時にトレイデーモンが起動し、ホットキーとキャプチャがすぐ使えます。"
+
+msgid "Right-click for Area, Screen, and Record"
+msgstr "右クリックで範囲・画面・録画"
+
+msgid "Capture without opening Settings every time"
+msgstr "毎回設定を開かずにキャプチャ"
+
+msgid "Open ApexShot anytime for Settings and preferences"
+msgstr "設定はいつでも ApexShot から"
+
+msgid "Pro tip"
+msgstr "ヒント"
+
+msgid ""
+"If a hotkey conflicts with your desktop, change it under Settings → Shortcuts."
+msgstr "ホットキーがデスクトップとぶつかる場合は 設定 → ショートカット で変更。"
+
+msgid "Capture Area"
+msgstr "範囲をキャプチャ"
+
+msgid "Crosshair Capture"
+msgstr "クロスヘアキャプチャ"
+
+msgid "Capture Screen"
+msgstr "画面をキャプチャ"
+
+msgid "Open Recording UI"
+msgstr "録画 UI を開く"
+
+msgid "Record Screen"
+msgstr "画面を録画"
+
+msgid "Record Window"
+msgstr "ウィンドウを録画"
+
+msgid "Stop Recording"
+msgstr "録画を停止"
+
+msgid "Video Editor"
+msgstr "動画エディター"
+
+msgid "Image Editor"
+msgstr "画像エディター"
+
+msgid "Open Last Capture"
+msgstr "最後のキャプチャを開く"
+
+msgid "History"
+msgstr "履歴"
+
+msgid "Quit"
+msgstr "終了"
+
+msgid "Camera"
+msgstr "カメラ"
+
+msgid "Classic"
+msgstr "クラシック"
+
+msgid "Pop"
+msgstr "ポップ"
+
+msgid "None"
+msgstr "なし"
+
+msgid "Left"
+msgstr "左"
+
+msgid "Right"
+msgstr "右"
+
+msgid "Hide"
+msgstr "隠す"
+
+msgid "Hide (stay in Tray)"
+msgstr "隠す（トレイに残す）"
+
+msgid "Min"
+msgstr "最小"
+
+msgid "Def"
+msgstr "標準"
+
+msgid "Max"
+msgstr "最大"
+
+msgid "Show Quick Access overlay"
+msgstr "クイックアクセスを表示"
+
+msgid "Copy to clipboard"
+msgstr "クリップボードにコピー"
+
+msgid "Open Annotate tool"
+msgstr "注釈ツールを開く"
+
+msgid "Open Video Editor"
+msgstr "動画エディターを開く"
+
+msgid "Automatic zoom on import"
+msgstr "インポート時に自動ズーム"
+
+msgid "Open File:"
+msgstr "ファイルを開く:"
+
+msgid "Open From Clipboard:"
+msgstr "クリップボードから開く:"
+
+msgid "Restore Recently Closed File:"
+msgstr "最近閉じたファイルを復元:"
+
+msgid "Hide/Show Overlays:"
+msgstr "オーバーレイの表示切替:"
+
+msgid "Capture Area:"
+msgstr "範囲をキャプチャ:"
+
+msgid "Crosshair Capture:"
+msgstr "クロスヘアキャプチャ:"
+
+msgid "Capture Previous Area:"
+msgstr "前回の範囲をキャプチャ:"
+
+msgid "Capture Full Screen:"
+msgstr "全画面をキャプチャ:"
+
+msgid "Show Last Preview:"
+msgstr "最後のプレビューを表示:"
+
+msgid "Open Recording UI:"
+msgstr "録画 UI を開く:"
+
+msgid "Record Screen:"
+msgstr "画面を録画:"
+
+msgid "HEVC (smaller files)"
+msgstr "HEVC（小さいファイル）"
+
+msgid "H.264"
+msgstr "H.264"
+
+msgid "Pause or Resume Recording:"
+msgstr "録画を一時停止／再開:"
+
+msgid "Restart Recording:"
+msgstr "録画をやり直す:"
+
+msgid "Add Recording Marker:"
+msgstr "録画マーカーを追加:"
+
+msgid "Stop and Save Recording:"
+msgstr "録画を停止して保存:"
+
+msgid "Only during recording"
+msgstr "録画中のみ"
+
+msgid "+ Add current color"
+msgstr "+ 現在の色を追加"
+
+msgid "1 : 1 (Square)"
+msgstr "1 : 1（正方形）"
+
+msgid "1 {unit} ago"
+msgstr "1 {unit} 前"
+
+msgid "1, 2, 3, 4..."
+msgstr "1、2、3、4……"
+
+msgid "1080p"
+msgstr "1080p"
+
+msgid "16 : 10"
+msgstr "16 : 10"
+
+msgid "16 : 9"
+msgstr "16：9"
+
+msgid "2 : 3"
+msgstr "2 : 3"
+
+msgid "2.35 : 1"
+msgstr "2.35 : 1"
+
+msgid "3 : 2"
+msgstr "3 : 2"
+
+msgid "4 : 3"
+msgstr "4 : 3"
+
+msgid "480 x auto"
+msgstr "480 × 自動"
+
+msgid "5 : 4 (10 : 8)"
+msgstr "5 対 4（10 対 8）"
+
+msgid "640 x auto"
+msgstr "640 × 自動"
+
+msgid "7 : 5"
+msgstr "7 : 5"
+
+msgid "720p"
+msgstr "720p"
+
+msgid "800 x auto"
+msgstr "800 × 自動"
+
+msgid "9 : 16"
+msgstr "9 : 16"
+
+msgid "A, B, C, D..."
+msgstr "A、B、C、D……"
+
+msgid "Actions"
+msgstr "アクション"
+
+msgid "Add"
+msgstr "追加"
+
+msgid "Add a Manual zoom, or analyze visible cursor motion from the timeline"
+msgstr "手動ズームを追加するか、タイムラインからカーソルの動きを解析する"
+
+msgid "Add to project"
+msgstr "プロジェクトに追加"
+
+msgid "Add wallpaper"
+msgstr "壁紙を追加する"
+
+msgid "Add zoom at playhead"
+msgstr "再生位置にズームを追加"
+
+msgid "Added {auto_zooms} Auto Zooms from {samples} cursor-motion samples."
+msgstr "{auto_zooms} を追加しました。{samples} カーソル移動サンプルから自動ズームが行われます。"
+
+msgid "Adwaita"
+msgstr "アドヴァイタ"
+
+msgid "Alignment"
+msgstr "アライメント"
+
+msgid "An error occurred while taking a screenshot."
+msgstr "スクリーンショットの撮影中にエラーが発生しました。"
+
+msgid "Analyzing visible cursor motion…"
+msgstr "カーソルの動きを分析中…"
+
+msgid "Animation"
+msgstr "アニメーション"
+
+msgid "ApexShot Editor"
+msgstr "ApexShot エディター"
+
+msgid "ApexShot History"
+msgstr "ApexShotの沿革"
+
+msgid "ApexShot Preview"
+msgstr "ApexShot プレビュー"
+
+msgid "ApexShot Recording"
+msgstr "ApexShotの録画"
+
+msgid "ApexShot Recording Countdown"
+msgstr "ApexShot 録画カウントダウン"
+
+msgid "ApexShot Recording Editor"
+msgstr "ApexShot 録画エディタ"
+
+msgid "ApexShot Recording Mask"
+msgstr "ApexShot レコーディングマスク"
+
+msgid "ApexShot could not export this recording."
+msgstr "ApexShotはこの録画をエクスポートできませんでした。"
+
+msgid "ApexShot could not open this video file."
+msgstr "ApexShotはこの動画ファイルを開くことができませんでした。"
+
+msgid "ApexShot lost contact with the export worker."
+msgstr "ApexShotは、輸出担当者と連絡が取れなくなった。"
+
+msgid "ApexShot lost contact with the upload worker."
+msgstr "ApexShot がアップロードワーカーとの接続を失いました。"
+
+msgid "ApexShot-YYYY-MM-DD_HH-MM-SS.png"
+msgstr "ApexShot-YYYY-MM-DD_HH-MM-SS.png"
+
+msgid "Apply selection"
+msgstr "選択内容を適用する"
+
+msgid "Area"
+msgstr "エリア"
+
+msgid "Arrow"
+msgstr "矢印"
+
+msgid "Arrow style"
+msgstr "矢印スタイル"
+
+msgid "Aspect Ratio"
+msgstr "アスペクト比"
+
+msgid "Audio"
+msgstr "音声"
+
+msgid "Auto"
+msgstr "自動"
+
+msgid "Auto Zoom detection complete"
+msgstr "自動ズームの検出が完了しました"
+
+msgid "Auto-balance"
+msgstr "自動バランス"
+
+msgid "Background"
+msgstr "背景"
+
+msgid "Before recording"
+msgstr "録音の前に"
+
+msgid "Behavior"
+msgstr "行動"
+
+msgid "Black"
+msgstr "黒"
+
+msgid "Blackout"
+msgstr "停電"
+
+msgid "Blackout has no intensity control"
+msgstr "「ブラックアウト」には輝度調整機能がありません"
+
+msgid "Blur"
+msgstr "ぼやけ"
+
+msgid "Blurred"
+msgstr "ぼやけた"
+
+msgid "CLICK EFFECT"
+msgstr "クリック効果"
+
+msgid "Camera recenters when the cursor nears the edge of the zoomed view"
+msgstr "カーソルがズーム表示の端に近づくと、カメラの位置が中央に戻ります"
+
+msgid "Captures you take will show up here."
+msgstr "撮影した写真はここに表示されます。"
+
+msgid "Change aspect ratio"
+msgstr "アスペクト比を変更する"
+
+msgid "Change video size"
+msgstr "動画のサイズを変更する"
+
+msgid "Choose a color for the active tool"
+msgstr "アクティブなツールの色を選択してください"
+
+msgid "Choose a folder"
+msgstr "フォルダを選択してください"
+
+msgid "Choose click color"
+msgstr "クリックの色を選択してください"
+
+msgid "Classic Animation"
+msgstr "クラシックアニメ"
+
+msgid "Clean up microphone noise"
+msgstr "マイクのノイズを除去する"
+
+msgid "Click a display · Esc to cancel · {keys}"
+msgstr "表示をクリック · Esc キーでキャンセル · {keys}"
+
+msgid "Click color"
+msgstr "色をクリック"
+
+msgid "Click to open a video, or drop one here"
+msgstr "クリックして動画を開くか、ここに動画をドラッグ＆ドロップしてください"
+
+msgid "Clip"
+msgstr "クリップ"
+
+msgid "Clipboard does not contain an image to open"
+msgstr "クリップボードには開く画像が含まれていません"
+
+msgid "Clipboard image unavailable"
+msgstr "クリップボードの画像が利用できません"
+
+msgid "Close anyway"
+msgstr "とにかく閉じる"
+
+msgid "Closing now stops the encode. Your edit session is kept."
+msgstr "「閉じる」をクリックすると、エンコードが停止します。編集セッションは保持されます。"
+
+msgid "Cloud upload not configured"
+msgstr "クラウドへのアップロードが設定されていません"
+
+msgid "Color"
+msgstr "色"
+
+msgid "Color picker"
+msgstr "カラーピッカー"
+
+msgid "Colors"
+msgstr "色"
+
+msgid ""
+"Connect ApexShot Cloud in Settings → Cloud, or switch destination to XBackBone and configure it."
+msgstr "「設定」→「クラウド」でApexShot Cloudを接続するか、保存先をXBackBoneに切り替えて設定を行ってください。"
+
+msgid ""
+"Connect your ApexShot Cloud account to browse everything you have uploaded, right here in History."
+msgstr "ApexShot Cloud アカウントを連携すると、「履歴」画面でアップロードしたすべてのコンテンツを確認できます。"
+
+msgid "Content copied to clipboard"
+msgstr "コンテンツがクリップボードにコピーされました"
+
+msgid "Content extracted"
+msgstr "抽出されたコンテンツ"
+
+msgid "Content extracted, but clipboard copy was unavailable"
+msgstr "コンテンツは抽出されましたが、クリップボードへのコピーはできませんでした"
+
+msgid "Controls"
+msgstr "操作方法"
+
+msgid "Copied"
+msgstr "コピーしました"
+
+msgid ""
+"Copied to clipboard\n"
+"{url}"
+msgstr ""
+"クリップボードにコピーされました\n"
+"{url}"
+
+msgid "Copy"
+msgstr "コピー"
+
+msgid "Copy failed"
+msgstr "コピーに失敗しました"
+
+msgid "Copy file URI"
+msgstr "ファイルのURIをコピー"
+
+msgid "Copy link"
+msgstr "リンクをコピー"
+
+msgid "Copy the recording path to the clipboard"
+msgstr "録画パスをクリップボードにコピーする"
+
+msgid "Corners"
+msgstr "コーナー"
+
+msgid "Could not delete {name}: {message}"
+msgstr "{name} を削除できませんでした: {message}"
+
+msgid "Could not load your cloud uploads"
+msgstr "クラウドへのアップロードを読み込めませんでした"
+
+msgid "Could not save edits: {error}"
+msgstr "編集内容を保存できませんでした：{error}"
+
+msgid "Countdown"
+msgstr "カウントダウン"
+
+msgid "Crop"
+msgstr "トリミング"
+
+msgid "Crop video"
+msgstr "動画をトリミングする"
+
+msgid "Current tool does not support size changes"
+msgstr "現在のツールではサイズの変更に対応していません"
+
+msgid "Cursor"
+msgstr "カーソル"
+
+msgid "Cursor analysis could not place Auto Zooms"
+msgstr "カーソル分析では、自動ズームの位置を特定できませんでした"
+
+msgid "Cursor analysis stopped"
+msgstr "カーソル解析が停止しました"
+
+msgid "Cursor is hidden for this range in preview and export"
+msgstr "プレビューおよびエクスポート時、この範囲のカーソルは非表示になります"
+
+msgid ""
+"Cursor motion was found, but Manual zooms already cover the detected moments."
+msgstr "カーソルの動きは検出されましたが、手動ズームによってすでに検出された瞬間はカバーされています。"
+
+msgid ""
+"Cursor motion was found, but no purposeful pauses were clear enough to place zooms."
+msgstr "カーソルの動きは確認されたが、ズームを挿入できるほど明確な意図的な間が見られなかった。"
+
+msgid ""
+"Cursor replacement is unavailable. Its inferred path can still guide Auto Zoom."
+msgstr "カーソルの置換は利用できません。ただし、その推定パスは引き続き自動ズームの目安となります。"
+
+msgid "Cursor styling requires pointer data from an ApexShot recording."
+msgstr "カーソルのスタイル設定には、ApexShotの記録データに含まれるポインタデータが必要です。"
+
+msgid "Cursor unavailable"
+msgstr "カーソルが使用できません"
+
+msgid "Curved"
+msgstr "湾曲した"
+
+msgid "Cut mode — click timeline to place cuts"
+msgstr "カットモード — タイムラインをクリックしてカットを配置します"
+
+msgid "Date unknown"
+msgstr "日付不明"
+
+msgid "Delete"
+msgstr "削除"
+
+msgid "Delete clip"
+msgstr "クリップを削除"
+
+msgid "Delete hide"
+msgstr "削除 非表示"
+
+msgid "Delete selected"
+msgstr "選択した項目を削除"
+
+msgid "Delete zoom"
+msgstr "ズームを解除"
+
+msgid "Delete zoom or cut"
+msgstr "ズームまたは切り取りを削除"
+
+msgid "Delete {name}?"
+msgstr "{name}を削除しますか？"
+
+msgid "Deleted {name}"
+msgstr "{name} を削除しました"
+
+msgid "Details"
+msgstr "詳細"
+
+msgid "Detect"
+msgstr "検出"
+
+msgid "Detect automatic zooms from clicks and cursor motion"
+msgstr "クリックやカーソルの動きから自動ズームを検出する"
+
+msgid "Detect text"
+msgstr "テキストを検出する"
+
+msgid "Dim screen"
+msgstr "画面が暗い"
+
+msgid "Dimensions"
+msgstr "寸法"
+
+msgid "Dismiss"
+msgstr "閉じる"
+
+msgid "Display scale resolution"
+msgstr "表示スケールの分解能"
+
+msgid "Display {number}"
+msgstr "{number}を表示"
+
+msgid "Do Not Disturb"
+msgstr "「お邪魔しないで」"
+
+msgid "Done"
+msgstr "完了"
+
+msgid "Dot"
+msgstr "ドット"
+
+msgid "Double"
+msgstr "ダブル"
+
+msgid "Download Extension"
+msgstr "拡張機能をダウンロード"
+
+msgid "Drag here"
+msgstr "ここにドラッグしてください"
+
+msgid "Drag here or click to upload"
+msgstr "ここにドラッグするか、クリックしてアップロードしてください"
+
+msgid "Drop a recording to begin"
+msgstr "録音ファイルをドロップして開始してください"
+
+msgid "Drop an image here"
+msgstr "ここに画像をドラッグ＆ドロップしてください"
+
+msgid "Duration"
+msgstr "所要時間"
+
+msgid "Ease"
+msgstr "手軽さ"
+
+msgid "Easing"
+msgstr "緩和"
+
+msgid "Echo"
+msgstr "エコー"
+
+msgid "Edit"
+msgstr "編集"
+
+msgid "Edit quality, resolution and audio after recording"
+msgstr "録画後に画質、解像度、音声を編集する"
+
+msgid "Effects"
+msgstr "効果"
+
+msgid "Empty"
+msgstr "空"
+
+msgid "End {time}"
+msgstr "終了 {time}"
+
+msgid "Estimated export size"
+msgstr "輸出規模の見込み"
+
+msgid "Everything you have uploaded to ApexShot Cloud"
+msgstr "ApexShot Cloudにアップロードしたすべてのデータ"
+
+msgid "Export complete"
+msgstr "エクスポートが完了しました"
+
+msgid "Export failed"
+msgstr "エクスポートに失敗しました"
+
+msgid "Export is still running."
+msgstr "エクスポートは現在も実行中です。"
+
+msgid "Export quality"
+msgstr "エクスポート品質"
+
+msgid "Export the edited MP4"
+msgstr "編集したMP4をエクスポートする"
+
+msgid "Export video"
+msgstr "動画をエクスポートする"
+
+msgid "Export with your current settings, then upload"
+msgstr "現在の設定のままエクスポートしてから、アップロードしてください"
+
+msgid "Extra Large"
+msgstr "特大"
+
+msgid "FRAME"
+msgstr "FRAME"
+
+msgid "Failed to open video"
+msgstr "動画を openings できませんでした"
+
+msgid "Fancy"
+msgstr "ファンシー"
+
+msgid "File copied to clipboard"
+msgstr "ファイルがクリップボードにコピーされました"
+
+msgid "Focus"
+msgstr "焦点"
+
+msgid "Focus background intensity"
+msgstr "フォーカスの背景輝度"
+
+msgid "Focused"
+msgstr "集中した"
+msgid "Follow"
+msgstr "Follow"
+
+msgid "Font"
+msgstr "フォント"
+
+msgid "Font family"
+msgstr "フォントファミリー"
+
+msgid "Frame rate"
+msgstr "フレームレート"
+
+msgid "Freeform"
+msgstr "フリーフォーム"
+
+msgid "Fullscreen"
+msgstr "全画面表示"
+
+msgid "GIF"
+msgstr "GIF"
+
+msgid ""
+"GNOME Shell extension is not installed. Please install the ApexShot GNOME extension first."
+msgstr "GNOME Shell 拡張機能がインストールされていません。まず、ApexShot GNOME 拡張機能をインストールしてください。"
+
+msgid "Geometry"
+msgstr "幾何学"
+
+msgid "Glide"
+msgstr "グライド"
+
+msgid "Got it"
+msgstr "了解しました"
+
+msgid "Gradient"
+msgstr "勾配"
+
+msgid "Gradients"
+msgstr "グラデーション"
+
+msgid "HEIGHT"
+msgstr "高さ"
+
+msgid "HEX"
+msgstr "HEX"
+
+msgid "HiDPI"
+msgstr "HiDPI"
+
+msgid "Hide cursor"
+msgstr "カーソルを非表示にする"
+
+msgid "Hide cursor at playhead"
+msgstr "再生位置でカーソルを非表示にする"
+
+msgid "Hide track"
+msgstr "トラックを非表示にする"
+
+msgid "Hide video"
+msgstr "動画を非表示にする"
+
+msgid "Remove cursor shake"
+msgstr "カーソルの揺れを除去"
+
+msgid "Hide when idle"
+msgstr "アイドル時に非表示にする"
+
+msgid "Loop cursor position"
+msgstr "カーソル位置をループ"
+
+msgid "Loop before end"
+msgstr "終了前のループ"
+
+msgid "Stop at the end"
+msgstr "終了時に停止"
+
+msgid "Hide zoom"
+msgstr "ズームを非表示にする"
+
+msgid "High"
+msgstr "高い"
+
+msgid "Highlighter"
+msgstr "蛍光ペン"
+
+msgid "Idle delay"
+msgstr "アイドル遅延"
+
+msgid "Image"
+msgstr "画像"
+
+msgid "Image copied to clipboard"
+msgstr "画像がクリップボードにコピーされました"
+
+msgid "Images"
+msgstr "画像"
+
+msgid "Insert"
+msgstr "挿入"
+
+msgid "Inspector"
+msgstr "検査官"
+
+msgid "Intensity"
+msgstr "強度"
+
+msgid "Intensity {percent}%"
+msgstr "強度 {percent}%"
+
+msgid "Just now"
+msgstr "ついさっき"
+
+msgid "Keep editing"
+msgstr "編集を続ける"
+
+msgid "Keyboard shortcuts"
+msgstr "キーボードショートカット"
+
+msgid "Large"
+msgstr "大"
+
+msgid "Line"
+msgstr "行"
+
+msgid "Linear"
+msgstr "線形"
+
+msgid "Load more"
+msgstr "さらに表示"
+
+msgid "Loading image…"
+msgstr "画像を読み込み中…"
+
+msgid "Loading your cloud uploads…"
+msgstr "クラウドへのアップロードを読み込んでいます…"
+
+msgid "Loading…"
+msgstr "読み込み中…"
+
+msgid "Lock audio"
+msgstr "音声をロックする"
+
+msgid "Lock track"
+msgstr "トラックのロック"
+
+msgid "Lock video"
+msgstr "動画をロックする"
+
+msgid "Lock zoom"
+msgstr "ズームを固定"
+
+msgid "Low"
+msgstr "低"
+
+msgid "MP4 files"
+msgstr "MP4ファイル"
+
+msgid "MP4 video"
+msgstr "MP4動画"
+
+msgid "Manual"
+msgstr "手動"
+
+msgid "Maximum resolution"
+msgstr "最大解像度"
+
+msgid "Media"
+msgstr "メディア"
+
+msgid "Medium"
+msgstr "中"
+
+msgid "Method"
+msgstr "方法"
+
+msgid "Mic"
+msgstr "マイク"
+
+msgid "Minimal"
+msgstr "ミニマル"
+
+msgid "Motion"
+msgstr "動議"
+
+msgid "Move mode — drag a segment to reorder it"
+msgstr "移動モード — セグメントをドラッグして順序を変更します"
+
+msgid "Mute"
+msgstr "ミュート"
+
+msgid "My colors"
+msgstr "私の色"
+
+msgid "No Auto Zooms added"
+msgstr "自動ズームは追加されていません"
+
+msgid ""
+"No Auto Zooms were added. Manual zooms are preserved, and overlapping detections are skipped."
+msgstr "自動ズームは追加されませんでした。手動ズームは保持され、重複する検出はスキップされます。"
+
+msgid "No audio"
+msgstr "音声なし"
+
+msgid "No clear clicks or purposeful pointer pauses were found."
+msgstr "明確なクリック音や、意図的なポインタの停止は確認されなかった。"
+
+msgid "No cursor samples were captured. Zoom centers will use the frame center."
+msgstr "カーソルサンプルは取得されませんでした。ズームの中心にはフレームの中心が使用されます。"
+
+msgid "No editable cursor data was found."
+msgstr "編集可能なカーソルデータが見つかりませんでした。"
+
+msgid "No geometry"
+msgstr "幾何学なし"
+
+msgid "No media"
+msgstr "メディアなし"
+
+msgid "No object selected"
+msgstr "選択されたオブジェクトはありません"
+
+msgid "No pointer data found"
+msgstr "ポインタデータが見つかりませんでした"
+
+msgid "No recordings yet"
+msgstr "まだ録音はありません"
+
+msgid "No screenshots yet"
+msgstr "スクリーンショットはまだありません"
+
+msgid "No video edits to remove"
+msgstr "削除すべき動画の編集部分はありません"
+
+msgid "No zooms"
+msgstr "ズームなし"
+
+msgid "Noise suppression"
+msgstr "ノイズ抑制"
+
+msgid "Notifications"
+msgstr "通知"
+
+msgid "Number"
+msgstr "番号"
+
+msgid "Number Options"
+msgstr "番号の選択肢"
+
+msgid "OCR"
+msgstr "OCR"
+
+msgid "OCR complete"
+msgstr "OCR処理完了"
+
+msgid "OCR failed"
+msgstr "OCRが失敗しました"
+
+msgid "Obfuscate method"
+msgstr "オブファスケーティング手法"
+
+msgid ""
+"On KDE Plasma, the compositor refused the screenshot. Enable KWin's screenshot plugin (System Settings → Desktop Effects, or set screenshotEnabled=true under [Plugins] in ~/.config/kwinrc) and try again."
+msgstr ""
+"KDE Plasma では、コンポジターがスクリーンショットの取得を拒否しました。KWin のスクリーンショットプラグインを有効にして（「システム設定」→「デスクトップエフェクト」、または ~/.config/kwinrc の [Plugins] セクションで screenshotEnabled=true を設定）、もう一度お試しください。"
+
+msgid "Opacity"
+msgstr "不透明度"
+
+msgid "Open"
+msgstr "開く"
+
+msgid "Open Folder"
+msgstr "フォルダを開く"
+
+msgid ""
+"Open Zoom and choose Detect to analyze visible cursor motion, or use Manual mode to place zooms yourself."
+msgstr "Zoomを開き、「検出」を選択してカーソルの動きを自動で分析するか、または「手動」モードを使用して自分でズーム位置を設定してください。"
+
+msgid "Open color picker"
+msgstr "カラーピッカーを開く"
+
+msgid "Open in browser"
+msgstr "ブラウザで開く"
+
+msgid "Open in editor"
+msgstr "エディタで開く"
+
+msgid "Open video"
+msgstr "動画を再生"
+
+msgid "Open video editor"
+msgstr "動画編集ソフトを開く"
+
+msgid "Opened in your browser"
+msgstr "ブラウザで開きました"
+
+msgid "Opened {name}"
+msgstr "{name}がオープンしました"
+
+msgid "Opening {name} in the {editor}"
+msgstr "{name}で{editor}を開く"
+
+msgid "Optimize GIF"
+msgstr "GIFを最適化"
+
+msgid "Or click to upload"
+msgstr "または、クリックしてアップロードしてください"
+
+msgid "Original"
+msgstr "オリジナル"
+
+msgid "Output size"
+msgstr "出力サイズ"
+
+msgid "PNG, JPEG, or WebP"
+msgstr "PNG、JPEG、またはWebP"
+
+msgid "PRESET"
+msgstr "プリセット"
+
+msgid "Padding"
+msgstr "パディング"
+
+msgid "Composition"
+msgstr "構成"
+
+msgid "Motion Blur"
+msgstr "モーションブラー"
+
+msgid "Rotation & Perspective"
+msgstr "回転と遠近法"
+
+msgid "Scene Shadows"
+msgstr "シーンの影"
+
+msgid "Timing"
+msgstr "タイミング"
+
+msgid "Transform"
+msgstr "変形"
+
+msgid "day"
+msgstr "日"
+
+msgid "hour"
+msgstr "時間"
+
+msgid "minute"
+msgstr "分"
+
+msgid "Background blur"
+msgstr "背景ぼかし"
+
+msgid "Background noise"
+msgstr "背景ノイズ"
+
+msgid "Border Radius"
+msgstr "角丸"
+
+msgid "Highlight mode"
+msgstr "ハイライトモード"
+
+msgid "Marker size"
+msgstr "マーカーサイズ"
+
+msgid "Numbering style"
+msgstr "番号のスタイル"
+
+msgid "Shadow blur"
+msgstr "影のぼかし"
+
+msgid "Shadow opacity"
+msgstr "影の不透明度"
+
+msgid "Shadow position X"
+msgstr "影の位置 X"
+
+msgid "Shadow position Y"
+msgstr "影の位置 Y"
+
+msgid "Watermark inset"
+msgstr "透かしの余白"
+
+msgid "Watermark position X"
+msgstr "透かしの位置 X"
+
+msgid "Watermark position Y"
+msgstr "透かしの位置 Y"
+
+msgid "Watermark size"
+msgstr "透かしのサイズ"
+
+msgid "Palette"
+msgstr "パレット"
+
+msgid "Paste your XBackBone API token"
+msgstr "XBackBone APIトークンを貼り付けてください"
+
+msgid "Pick from screen"
+msgstr "画面から選択"
+
+msgid "Pin"
+msgstr "ピン"
+
+msgid "Pixelate"
+msgstr "ピクセル化"
+
+msgid "Play"
+msgstr "再生"
+
+msgid "Pointer track missing"
+msgstr "ポインタの軌跡が見つかりません"
+
+msgid "Pointer track unavailable"
+msgstr "ポインタトラックが利用できません"
+
+msgid "Primary"
+msgstr "初等"
+
+msgid "QR code decoded"
+msgstr "QRコードの読み取り完了"
+
+msgid "Quality"
+msgstr "品質"
+
+msgid "Ratio"
+msgstr "比率"
+
+msgid "Record audio in mono"
+msgstr "オーディオをモノラルで録音する"
+
+msgid "Recording failed"
+msgstr "記録に失敗しました"
+
+msgid "Window recording unavailable"
+msgstr "ウィンドウ録画を利用できません"
+
+msgid "Recording not saved"
+msgstr "録画が保存されませんでした"
+
+msgid "Recording path copied"
+msgstr "記録パスをコピーしました"
+
+msgid "Recording saved"
+msgstr "記録が保存されました"
+
+msgid "Recording setup"
+msgstr "録音の設定"
+
+msgid ""
+"Recording will continue with the OS cursor hidden. Enable the ApexShot GNOME extension for the editor."
+msgstr "OSのカーソルを非表示にしたまま、録画を続行します。エディタでApexShot GNOME拡張機能を有効にしてください。"
+
+msgid "Recordings"
+msgstr "録音"
+
+msgid "Reduce file size and upload time"
+msgstr "ファイルサイズとアップロード時間を短縮する"
+
+msgid "Refresh"
+msgstr "更新"
+
+msgid "Remember last area"
+msgstr "前のエリアを覚えていますか"
+
+msgid "Remove audio track"
+msgstr "オーディオトラックを削除する"
+
+msgid "Remove custom color"
+msgstr "カスタムカラーを削除する"
+
+msgid "Remove track"
+msgstr "トラックを削除する"
+
+msgid "Remove video track"
+msgstr "ビデオトラックを削除する"
+
+msgid "Remove zoom track"
+msgstr "ズームトラックを削除する"
+
+msgid "Rename video"
+msgstr "動画の名前を変更する"
+
+msgid "Reset"
+msgstr "リセット"
+
+msgid "Reset video edits"
+msgstr "動画の編集内容をリセットする"
+
+msgid "Reset transforms"
+msgstr "変換をリセット"
+
+msgid "Retry"
+msgstr "再試行"
+
+msgid "Reverse direction"
+msgstr "進行方向を逆にする"
+
+msgid "Revert cuts"
+msgstr "削減を撤回する"
+
+msgid "Ripple"
+msgstr "リップル"
+
+msgid "Save is disabled in After capture settings"
+msgstr "「キャプチャ後の設定」では、「保存」が無効になっています"
+
+msgid "Saved {file} ({size})"
+msgstr "{file} ({size}) を保存しました"
+
+msgid "Screen Recording"
+msgstr "画面録画"
+
+msgid "Screen recordings you make will show up here."
+msgstr "録画した画面はここに表示されます。"
+
+msgid "Screenshot failed"
+msgstr "スクリーンショットの取得に失敗しました"
+
+msgid "Screenshot not saved"
+msgstr "スクリーンショットが保存されませんでした"
+
+msgid "Scroll"
+msgstr "スクロール"
+
+msgid "Scroll Capture"
+msgstr "スクロールキャプチャ"
+
+msgid "Scroll capture requires the ApexShot"
+msgstr "スクロールのキャプチャにはApexShotが必要です"
+
+msgid "Search isn't available for Cloud"
+msgstr "Cloudでは検索機能は利用できません"
+
+msgid "Search recordings"
+msgstr "録画を検索"
+
+msgid "Search screenshots"
+msgstr "スクリーンショットを検索"
+
+msgid "Select a Window"
+msgstr "ウィンドウを選択してください"
+
+msgid "Select a display"
+msgstr "表示方法を選択してください"
+
+msgid "Select a video, begin your creation."
+msgstr "動画を選んで、制作を始めましょう。"
+
+msgid ""
+"Select a zoom to adjust it; timeline detection uses clicks and pointer pauses"
+msgstr "ズームレベルを選択して調整してください。タイムラインの検出には、クリックやポインタの停止が使用されます。"
+
+msgid "Select any annotation on the canvas to inspect it."
+msgstr "キャンバス上の任意の注釈を選択して、その詳細を確認してください。"
+
+msgid "Selection"
+msgstr "選択"
+
+msgid "Set a fixed focus point for this zoom"
+msgstr "このズームのフォーカスポイントを固定する"
+
+msgid ""
+"Set the instance URL and API token in Settings → Cloud, or switch to ApexShot Cloud and sign in."
+msgstr "「設定」→「Cloud」でインスタンスのURLとAPIトークンを設定するか、ApexShot Cloudに切り替えてログインしてください。"
+
+msgid "Shadow"
+msgstr "シャドウ"
+
+msgid "Share link copied to clipboard"
+msgstr "リンクがクリップボードにコピーされました"
+
+msgid "Share link: {url}"
+msgstr "リンクを共有：{url}"
+
+msgid "Show in files"
+msgstr "ファイル内で表示"
+
+msgid "Show less"
+msgstr "表示を縮小"
+
+msgid "Show more"
+msgstr "もっと見る"
+
+msgid "Show video"
+msgstr "動画を再生"
+
+msgid "Show zoom"
+msgstr "ズーム表示"
+
+msgid "Showing {name} in your files"
+msgstr "ファイル内の {name} を表示しています"
+
+msgid "Shown over the recording in preview and export"
+msgstr "プレビューおよびエクスポート時に、録画映像の上に表示されます"
+
+msgid "Sign in"
+msgstr "ログイン"
+
+msgid "Sign in to ApexShot Cloud"
+msgstr "ApexShot Cloud にログインしてください"
+
+msgid "Size"
+msgstr "サイズ"
+
+msgid "Skip back 1s"
+msgstr "1秒前に戻る"
+
+msgid "Skip forward 1s"
+msgstr "1秒先へスキップ"
+
+msgid "Small"
+msgstr "小"
+
+msgid "Smooth"
+msgstr "滑らか"
+
+msgid "Smoothing"
+msgstr "平滑化"
+
+msgid "Snappy"
+msgstr "スナッピー"
+
+msgid "Softer follow"
+msgstr "よりソフトなフォロー"
+
+msgid "Speaker"
+msgstr "講演者"
+
+msgid "Speed"
+msgstr "速度"
+
+msgid "Split"
+msgstr "スプリット"
+
+msgid "Split at playhead"
+msgstr "再生位置で分割"
+
+msgid "Spotlight"
+msgstr "スポットライト"
+
+msgid "Square"
+msgstr "スクエア"
+
+msgid "Standard"
+msgstr "標準"
+
+msgid "Start"
+msgstr "開始"
+
+msgid "Start with:"
+msgstr "まずは以下から始めましょう："
+
+msgid "Start {time}"
+msgstr "開始 {time}"
+
+msgid "Stroke Thickness"
+msgstr "ストロークの太さ"
+
+msgid "Stroke size"
+msgstr "ストロークサイズ"
+
+msgid "Style"
+msgstr "スタイル"
+
+msgid "Sway"
+msgstr "スウェイ"
+
+msgid "Tahoe"
+msgstr "タホ"
+
+msgid "Tahoe Inverted"
+msgstr "タホの逆さ映り"
+
+msgid "Text"
+msgstr "テキスト"
+
+msgid "Text copied to clipboard"
+msgstr "テキストがクリップボードにコピーされました"
+
+msgid "Text extracted"
+msgstr "抽出されたテキスト"
+
+msgid "Text extracted, but clipboard copy was unavailable"
+msgstr "テキストは抽出されましたが、クリップボードへのコピーはできませんでした"
+
+msgid "Text size"
+msgstr "文字サイズ"
+
+msgid ""
+"The analysis worker stopped unexpectedly. Manual Zoom is still available."
+msgstr "分析ワーカーが予期せず停止しました。手動ズームは引き続きご利用いただけます。"
+
+msgid "The cursor is baked into this imported video."
+msgstr "このインポートされた動画には、カーソルが埋め込まれています。"
+
+msgid "The saved camera pose is paused while drawing."
+msgstr "描画中は保存したカメラ位置が一時停止します。"
+
+msgid "The video editor only supports MP4 recordings"
+msgstr "この動画編集ソフトは、MP4形式の録画ファイルのみに対応しています"
+
+msgid "Thick"
+msgstr "厚い"
+
+msgid "Thickness"
+msgstr "厚さ"
+
+msgid "Thin"
+msgstr "薄い"
+
+msgid "This page covers ApexShot Cloud"
+msgstr "このページでは、ApexShot Cloudについて解説しています"
+
+msgid "This permanently removes the file from disk."
+msgstr "これにより、ファイルがディスクから完全に削除されます。"
+
+msgid "This upload has no link to open"
+msgstr "このアップロードには、開くためのリンクがありません"
+
+msgid "This upload has no share link"
+msgstr "このアップロードには共有リンクがありません"
+
+msgid "Tighter, faster"
+msgstr "よりタイトに、より速く"
+
+msgid "Tilt"
+msgstr "チルト"
+
+msgid "Timer"
+msgstr "タイマー"
+
+msgid "Tool options coming soon"
+msgstr "ツールのオプションは近日公開予定です"
+
+msgid "Trail"
+msgstr "トレイル"
+
+msgid "URL copied to clipboard"
+msgstr "URLがクリップボードにコピーされました"
+
+msgid "Unlock audio"
+msgstr "音声のロックを解除"
+
+msgid "Unlock video"
+msgstr "動画のロックを解除"
+
+msgid "Unlock zoom"
+msgstr "ズームのロックを解除"
+
+msgid "Unmute"
+msgstr "ミュート解除"
+
+msgid "Untitled"
+msgstr "無題"
+
+msgid "Upload complete"
+msgstr "アップロードが完了しました"
+
+msgid "Upload failed"
+msgstr "アップロードに失敗しました"
+
+msgid "Upload failed: {message}"
+msgstr "アップロードに失敗しました：{message}"
+
+msgid "Upload media"
+msgstr "メディアをアップロードする"
+
+msgid "Upload to cloud"
+msgstr "クラウドにアップロード"
+
+msgid "Uploaded {name}"
+msgstr "{name} をアップロードしました"
+
+msgid "Uploading…"
+msgstr "アップロード中…"
+
+msgid "Use the Thickness panel for highlighter"
+msgstr "蛍光ペンの設定には「太さ」パネルを使用します"
+
+msgid "Very Thick"
+msgstr "とても分厚い"
+
+msgid "Video"
+msgstr "動画"
+
+msgid "Videos"
+msgstr "動画"
+
+msgid "WIDTH"
+msgstr "幅"
+
+msgid "Waiting for sign-in…"
+msgstr "サインインを待機中…"
+
+msgid "Wallpaper"
+msgstr "壁紙"
+
+msgid "Waveform unavailable"
+msgstr "波形が表示されません"
+
+msgid "While recording"
+msgstr "録音中に"
+
+msgid "White"
+msgstr "白"
+
+msgid "XBackBone upload not configured"
+msgstr "XBackBoneのアップロードが設定されていません"
+
+msgid "Yaru"
+msgstr "ヤル"
+
+msgid "Yesterday"
+msgstr "昨日"
+
+msgid "You have not uploaded anything to ApexShot Cloud yet."
+msgstr "ApexShot Cloudにはまだ何もアップロードされていません。"
+
+msgid "You're connected"
+msgstr "接続されています"
+
+msgid "Your next screenshot gets a share link."
+msgstr "次のスクリーンショットには、共有用リンクが付きます。"
+
+msgid ""
+"Your uploads currently go to a self-hosted XBackBone instance. Switch your upload destination to ApexShot Cloud in Settings to browse those uploads here."
+msgstr ""
+"現在、アップロードされたファイルは、自社ホスト型のXBackBoneインスタンスに保存されています。「設定」でアップロード先をApexShot Cloudに変更すると、こちらでそれらのアップロードを確認できるようになります。"
+
+msgid "Zoom"
+msgstr "ズーム"
+
+msgid "Zoom In"
+msgstr "拡大"
+
+msgid "Zoom Out"
+msgstr "ズームアウト"
+
+msgid "Zoom controls"
+msgstr "Zoomの操作方法"
+
+msgid "Zoom in timeline"
+msgstr "タイムラインを拡大する"
+
+msgid "Zoom out timeline"
+msgstr "タイムラインを縮小する"
+
+msgid "Zoom to Selection"
+msgstr "選択範囲を拡大"
+
+msgid "a, b, c, d..."
+msgstr "a、b、c、d……"
+
+msgid "browser extension."
+msgstr "ブラウザ拡張機能。"
+
+msgid "i, ii, iii, iv..."
+msgstr "i、ii、iii、iv…"
+
+msgid "macOS"
+msgstr "macOS"
+
+msgid "{count} {unit}s ago"
+msgstr "{count} {unit}s前"
+
+msgid "{name} is no longer on disk"
+msgstr "{name} はディスク上に存在しません"
+
+msgid "{name} was already gone"
+msgstr "{name}はすでにいなくなっていた"
+
+msgid "＋ Add to My Colors"
+msgstr "＋ 「マイカラー」に追加"
+
+msgid "Box"
+msgstr "ボックス"
+
+msgid "Circle"
+msgstr "サークル"
+
+msgid "Obfuscate"
+msgstr "難読化"
+
+msgid "Pen"
+msgstr "ペン"
+
+msgid "Choose the solid color used when Background is set to plain color"
+msgstr "「背景」が「単色」に設定されている場合に使用する単色を選択してください"
+
+msgid "ApexShot update available"
+msgstr "ApexShot のアップデートを利用できます"
+
+msgid "Update available · v{version}"
+msgstr "アップデートを利用できます · v{version}"
+
+msgid "Version {version} is ready. Open the ApexShot menu to view it."
+msgstr "バージョン {version} の準備ができました。ApexShot メニューを開いて確認してください。"
+
+msgid "Static"
+msgstr "静止"
+
+msgid "Switch to Static"
+msgstr "静止に切り替え"
+
+msgid "Switch to Motion"
+msgstr "Motion に切り替え"
+
+msgid "Pause"
+msgstr "一時停止"
+
+msgid "Continue"
+msgstr "続ける"
+
+msgid "Don't show this again"
+msgstr "次回から表示しない"
+
+msgid "Annotations will be applied"
+msgstr "注釈が適用されます"
+
+msgid "Motion will play a snapshot of your annotations. Returning to Static restores the live tools. Your original image is not flattened until Done."
+msgstr "Motion は注釈のスナップショットを再生します。静止に戻すとツールが復元されます。元の画像は完了するまで統合されません。"
+
+msgid "Motion effects will be cleared"
+msgstr "Motion 効果がクリアされます"
+
+msgid "Motion effect segments can't be edited in Static mode and will be cleared if you continue."
+msgstr "Motion セグメントは静止モードでは編集できず、続行すると削除されます。"
+
+msgid "Add motion at playhead"
+msgstr "再生位置に Motion を追加"
+
+msgid "Click a clip, or double-click a track to add a move or text"
+msgstr "クリップをクリック、またはトラックをダブルクリックして動きやテキストを追加"
+
+msgid "Move"
+msgstr "動き"
+
+msgid "Yaw"
+msgstr "ヨー"
+
+msgid "Scale"
+msgstr "スケール"
+
+msgid "Pitch"
+msgstr "ピッチ"
+
+msgid "Roll"
+msgstr "ロール"
+
+msgid "Perspective"
+msgstr "パース"
+
+msgid "Motion blur"
+msgstr "モーションブラー"
+
+msgid "X"
+msgstr "X"
+
+msgid "Y"
+msgstr "Y"
+
+msgid "Add text at playhead"
+msgstr "再生位置にテキストを追加"
+
+msgid "Fade"
+msgstr "フェード"
+
+msgid "Slide"
+msgstr "スライド"
+
+msgid "Title"
+msgstr "タイトル"
+
+msgid "Drag on the preview to place the title"
+msgstr "プレビューをドラッグしてタイトルを配置"
+
+msgid "Click or drag on the image to place the zoom anchor; double-click to recenter"
+msgstr "画像をクリックまたはドラッグしてズームアンカーを配置、ダブルクリックで中央に戻す"
+
+msgid "Anchor X"
+msgstr "アンカー X"
+msgid "Anchor Y"
+msgstr "アンカー Y"
+msgid "Blur shutter"
+msgstr "ブラ―シャッター"
+msgid "Blur trail"
+msgstr "ブラ―トレイル"
+msgid "Ease X1"
+msgstr "イージング X1"
+msgid "Ease X2"
+msgstr "イージング X2"
+msgid "Ease Y1"
+msgstr "イージング Y1"
+msgid "Ease Y2"
+msgstr "イージング Y2"
+msgid "Scope"
+msgstr "範囲"
+msgid "Unpin"
+msgstr "ピン留めを解除"
+
+msgid "Appearance"
+msgstr "外観"
+
+msgid "Border Color"
+msgstr "枠線の色"
+
+msgid "Choose"
+msgstr "選択"
+
+msgid "Choose Watermark Image"
+msgstr "透かし画像を選択"
+
+msgid "Choose…"
+msgstr "選択…"
+
+msgid "Hex color"
+msgstr "16進カラー"
+
+msgid "No image selected"
+msgstr "画像が選択されていません"
+
+msgid "Remove"
+msgstr "削除"
+
+msgid "Show all wallpapers"
+msgstr "すべての壁紙を表示"
+
+msgid "Wallpapers"
+msgstr "壁紙"
+
+msgid "Watermark"
+msgstr "透かし"
+
+msgid "Double-click to add motion"
+msgstr "ダブルクリックでモーションを追加"
+
+msgid "Double-click to add text"
+msgstr "ダブルクリックでテキストを追加"
+
+msgid "Show all gradients"
+msgstr "すべてのグラデーションを表示"
+
+msgid "Instagram"
+msgstr "Instagram"
+
+msgid "YouTube"
+msgstr "YouTube"
+
+msgid "Original canvas aspect"
+msgstr "元のキャンバスのアスペクト比"
+
+msgid "Square 1:1 output"
+msgstr "正方形 1:1 出力"
+
+msgid "Widescreen 16:9 output"
+msgstr "ワイド画面 16:9 出力"
+
+msgid "X (Twitter) link-card 1.91:1 output"
+msgstr "X（Twitter）リンクカード 1.91:1 出力"
+
+msgid "24 FPS"
+msgstr "24 FPS"
+
+msgid "30 FPS"
+msgstr "30 FPS"
+
+msgid "50 FPS"
+msgstr "50 FPS"
+
+msgid "60 FPS"
+msgstr "60 FPS"
+
+msgid "Needs a background fill to appear in exports"
+msgstr "エクスポート時に表示されるように、背景を塗りつぶす必要があります"
+
+msgid "Quick Capture"
+msgstr "クイックキャプチャ"
+
+msgid "Redo"
+msgstr "やり直し"
+
+msgid "Selected gradient color"
+msgstr "選択されたグラデーションの色"
+
+msgid "Shade above the card"
+msgstr "カードの上にある影"
+
+msgid "Shade beneath the card"
+msgstr "カードの下にある日陰"
+
+msgid "Underlay"
+msgstr "下地"
+
+msgid "Undo"
+msgstr "元に戻す"
+
+msgid "Bounce"
+msgstr "バウンス"
+
+msgid "Custom"
+msgstr "カスタム"
+
+msgid "Gentle"
+msgstr "やわらか"
+
+msgid "Bouncy"
+msgstr "弾む"
+
+msgid "Spring"
+msgstr "スプリング"
+
+msgid "Theme"
+msgstr "テーマ"
+
+msgid "Light"
+msgstr "ライト"
+
+msgid "Dark"
+msgstr "ダーク"
+
+msgid "System"
+msgstr "システム"
+
+msgid "1440p"
+msgstr "1440p"
+
+msgid "2160p"
+msgstr "2160p"
+
+msgid "480p"
+msgstr "480p"
+
+msgid "900p"
+msgstr "900p"
+
+msgid "Balanced"
+msgstr "バランス"
+
+msgid "Frame height in pixels"
+msgstr "フレームの高さ（ピクセル）"
+
+msgid "Frame width in pixels"
+msgstr "フレームの幅（ピクセル）"
+
+msgid "Freehand"
+msgstr "フリーハンド"
+
+msgid "MP4 with mic and system audio when your desktop allows it"
+msgstr "デスクトップが許可すればマイクとシステム音声付きの MP4"
+
+msgid "More frame sizes"
+msgstr "その他のフレームサイズ"
+
+msgid "Number of the selected marker"
+msgstr "選択したマーカーの番号"
+
+msgid "Number the next marker starts at"
+msgstr "次のマーカーが始まる番号"
+
+msgid "Pinterest"
+msgstr "Pinterest"
+
+msgid "Recording quality"
+msgstr "録画品質"
+
+msgid "Text-aware"
+msgstr "テキストに沿う"
+
+msgid "Twitter"
+msgstr "Twitter"
+
+msgid "Ultra"
+msgstr "ウルトラ"
+
+msgid "Background color"
+msgstr "背景色"
+
+msgid "COLOR"
+msgstr "カラー"
+
+msgid "Choose background color"
+msgstr "背景色を選択"
+
+msgid "WALLPAPER"
+msgstr "壁紙"
+
+msgid ""
+"Wallpaper or color fills the canvas behind the video in preview and export"
+msgstr "壁紙または色が、プレビューと書き出し時に動画の背後のキャンバスを塗りつぶします"
+
+msgid "Select a text clip, or add one at the playhead"
+msgstr "テキストクリップを選択、または再生位置に追加"
+
+msgid "Add Text"
+msgstr "テキストを追加"
+
+msgid "Drag to place the title; double-click to reset"
+msgstr "ドラッグしてタイトルを配置、ダブルクリックでリセット"
+
+msgid "Edited"
+msgstr "編集済み"
+
+msgid "Motion Edits"
+msgstr "モーション編集"
+
+msgid "Motion edit"
+msgstr "モーション編集"
+
+msgid "Video Edits"
+msgstr "動画編集"
+
+msgid "Video edit"
+msgstr "動画編集"
+
+msgid "Delete edit"
+msgstr "編集を削除"
+
+msgid "Removed the saved edit"
+msgstr "保存された編集を削除しました"
+
+msgid "Search motion edits"
+msgstr "モーション編集を検索"
+
+msgid "Search video edits"
+msgstr "動画編集を検索"
+
+msgid "No motion edits yet"
+msgstr "モーション編集はまだありません"
+
+msgid "No video edits yet"
+msgstr "動画編集はまだありません"
+
+msgid "Motion edits you make will show up here."
+msgstr "作成したモーション編集はここに表示されます。"
+
+msgid "Video edits you make will show up here."
+msgstr "作成した動画編集はここに表示されます。"
+
+msgid "This removes the saved edit and keeps the original file."
+msgstr "保存された編集を削除し、元のファイルは保持します。"
+
+msgid "{count} motion edits"
+msgstr "モーション編集 {count} 件"
+
+msgid "{count} video edits"
+msgstr "動画編集 {count} 件"
+
+msgid "Freeze"
+msgstr "フリーズ"
+
+msgid "Hold the last frame on screen"
+msgstr "最後のフレームを画面に保持"
+
+msgid "Add stop"
+msgstr "ストップを追加"
+
+msgid "Angular"
+msgstr "角度"
+
+msgid "Custom Wallpaper"
+msgstr "カスタム壁紙"
+
+msgid "Cut"
+msgstr "切り取り"
+
+msgid "Diamond"
+msgstr "ダイヤ"
+
+msgid "Duplicate"
+msgstr "複製"
+
+msgid "Edit custom fill"
+msgstr "カスタム塗りつぶしを編集"
+
+msgid "Flip gradient"
+msgstr "グラデーションを反転"
+
+msgid "Frames"
+msgstr "フレーム"
+
+msgid "Occupied"
+msgstr "使用中"
+
+msgid "Paste"
+msgstr "貼り付け"
+
+msgid "Radial"
+msgstr "放射状"
+
+msgid "Radius"
+msgstr "角丸"
+
+msgid "Rotate gradient"
+msgstr "グラデーションを回転"
+
+msgid "Select background image"
+msgstr "背景画像を選択"
+
+msgid "Select image..."
+msgstr "画像を選択..."
+
+msgid "Choose Background Image"
+msgstr "背景画像を選択"
+
+msgid "Stops"
+msgstr "ストップ"
+
+msgid "Takes"
+msgstr "テイク"
+
+msgid "Takes — coming soon"
+msgstr "テイク — 近日公開"
+
+msgid "rgb"
+msgstr "rgb"
+
+msgid "Drag to adjust duration"
+msgstr "ドラッグして長さを調整"
+
+msgid "Detection"
+msgstr "検出"
+
+msgid "Clicks"
+msgstr "クリック"
+
+msgid "Clicks + Hovers"
+msgstr "クリック + ポインタの停止"
+
+msgid "Zoom only where the recording captured a click"
+msgstr "録画でクリックが記録された場所だけをズームします"
+
+msgid "Also zoom on a purposeful pointer pause that no click covers"
+msgstr "クリックでカバーされない意図的なポインタの停止でもズームします"
+
+msgid "Applies the next time Detect runs"
+msgstr "次回の検出時に適用されます"
+
+msgid "Detect uses recorded clicks only"
+msgstr "検出は記録されたクリックのみを使用します"
+
+msgid "Detect uses recorded clicks"
+msgstr "検出は記録されたクリックを使用します"
+
+msgid "Detect uses recorded clicks and purposeful pointer pauses"
+msgstr "検出は記録されたクリックと意図的なポインタの停止を使用します"
+
+msgid "Apply"
+msgstr "適用"
+
+msgid "Add the staged zooms to the timeline"
+msgstr "準備されたズームをタイムラインに追加します"
+
+msgid "Discard"
+msgstr "破棄"
+
+msgid "Throw the staged zooms away"
+msgstr "準備されたズームを破棄します"
+
+msgid "{count} zoom suggestions ready to review"
+msgstr "確認待ちのズーム候補が{count}件あります"
+
+msgid "Add a Manual zoom from the timeline"
+msgstr "タイムラインから手動ズームを追加"
+
+msgid "Detect automatic zooms from recorded clicks"
+msgstr "記録されたクリックから自動ズームを検出"
+
+msgid "No clear clicks were found."
+msgstr "明確なクリックが見つかりませんでした。"
+
+msgid "No new zooms were added. Manual zooms are preserved."
+msgstr "新しいズームは追加されませんでした。手動ズームは保持されます。"
+
+msgid "Open Zoom and choose Detect to place zooms from the recorded clicks, or use Manual mode to place them yourself."
+msgstr "Zoom を開いて「検出」を選ぶと、記録されたクリックにズームを配置します。手動モードで自分で配置することもできます。"
+
+msgid "This video has no recorded clicks, so there is nothing to zoom on."
+msgstr "この動画には記録されたクリックがないため、ズームする対象がありません。"
+
+msgid "Instant animation"
+msgstr "Instant animation"
+
+msgid "If enabled, the zoom will be applied instantly without any animation."
+msgstr "If enabled, the zoom will be applied instantly without any animation."
+
+msgid "Save Last Screenshot:"
+msgstr "最後のスクリーンショットを保存:"
+
+msgid "No screenshot is available to save"
+msgstr "保存できるスクリーンショットがありません"
+
+msgid "Camera follows the recorded pointer"
+msgstr "カメラが記録されたカーソルを追従します"
+
+msgid "These settings apply to every zoom."
+msgstr "これらの設定はすべてのズームに適用されます。"
+
+msgid "Camera speed"
+msgstr "カメラ速度"
+
+msgid "Smoothness"
+msgstr "滑らかさ"
+
+msgid "Start animation early"
+msgstr "アニメーションを早めに開始"
+
+msgid "Begin the camera move 0.35 seconds before each zoom."
+msgstr "各ズームの 0.35 秒前からカメラの動きを開始します。"
+
+msgid "Played once, when the capture freezes. Saving or cropping stays silent."
+msgstr "キャプチャがフリーズしたときに一度だけ再生されます。保存や切り抜きは無音のままです。"
+
+msgid "Your desktop controls the capture sound on this route, so ApexShot cannot replace or disable it here and will not play an additional sound."
+msgstr "この経路ではキャプチャ音をデスクトップ側が制御するため、ApexShot がここで置き換えたり無効にしたりすることはできず、追加の音も再生されません。"
+
+msgid "Bold"
+msgstr "太字"
+
+msgid "Canvas"
+msgstr "キャンバス"
+
+msgid "Center"
+msgstr "中央"
+
+msgid "Character"
+msgstr "文字"
+
+msgid "Choose how Typewriter reveals the text"
+msgstr "タイプライター効果でテキストを表示する単位を選択"
+
+msgid "Content"
+msgstr "内容"
+
+msgid "Drag to place the headline on the composition; double-click to reset"
+msgstr "ドラッグして構図内に見出しを配置し、ダブルクリックでリセット"
+
+msgid "Drag to place the title on the image; double-click to reset"
+msgstr "ドラッグして画像上にタイトルを配置し、ダブルクリックでリセット"
+
+msgid "Edit text color"
+msgstr "文字色を編集"
+
+msgid "Entrance duration for slides and fades"
+msgstr "スライドとフェードの表示アニメーションの長さ"
+
+msgid "From bottom"
+msgstr "下から"
+
+msgid "From left"
+msgstr "左から"
+
+msgid "From right"
+msgstr "右から"
+
+msgid "From top"
+msgstr "上から"
+
+msgid "Italic"
+msgstr "斜体"
+
+msgid "Letter spacing"
+msgstr "文字間隔"
+
+msgid "Line spacing"
+msgstr "行間"
+
+msgid "No fonts found"
+msgstr "フォントが見つかりません"
+
+msgid "Outline"
+msgstr "輪郭"
+
+msgid "Paragraph width; Auto keeps the natural line width"
+msgstr "段落の幅。「自動」では自然な行幅を維持"
+
+msgid "Placement"
+msgstr "配置"
+
+msgid "Rotation"
+msgstr "回転"
+
+msgid "Search fonts…"
+msgstr "フォントを検索…"
+
+msgid "Text color"
+msgstr "文字色"
+
+msgid "Time to reveal all text"
+msgstr "テキスト全体の表示にかかる時間"
+
+msgid "Type your text; press Enter for a new line"
+msgstr "テキストを入力し、Enterキーで改行"
+
+msgid "Typewriter"
+msgstr "タイプライター"
+
+msgid "Typography"
+msgstr "文字設定"
+
+msgid "Width"
+msgstr "幅"
+
+msgid "Word"
+msgstr "単語"
+
+msgid "Available when your desktop supports the GlobalShortcuts portal"
+msgstr "デスクトップがGlobalShortcutsポータルに対応している場合に利用できます"
+
+msgid "Desktop notification settings are managed outside Flatpak."
+msgstr "デスクトップの通知設定はFlatpakの外部で管理されます。"
+
+msgid "Download GNOME Extension"
+msgstr "GNOME拡張機能をダウンロード"
+
+msgid "Download extension archive"
+msgstr "拡張機能のアーカイブをダウンロード"
+
+msgid "Enable GNOME Extension"
+msgstr "GNOME拡張機能を有効にする"
+
+msgid "Extension Enabled ✓"
+msgstr "拡張機能が有効です ✓"
+
+msgid "Extension installation failed — try again"
+msgstr "拡張機能のインストールに失敗しました — もう一度お試しください"
+
+msgid "Extension is installed but inactive — enable it in GNOME Extensions"
+msgstr "拡張機能はインストール済みですが無効です — GNOME拡張機能アプリで有効にしてください"
+
+msgid ""
+"Host-installed browsers need scripts/install-flatpak-browser-host.py run on the host. This bridge does not support browsers installed as Flatpaks."
+msgstr ""
+"ホストにインストールされたブラウザーを使用するには、ホスト上でscripts/install-flatpak-browser-host.pyを実行する必要があります。このブリッジはFlatpakとしてインストールされたブラウザーには対応していません。"
+
+msgid ""
+"The GNOME extension is installed but not active. Use Enable GNOME Extension or enable it in GNOME Extensions."
+msgstr ""
+"GNOME拡張機能はインストール済みですが無効です。「GNOME拡張機能を有効にする」を使用するか、GNOME拡張機能アプリで有効にしてください。"
+
+msgid ""
+"The tray daemon starts when you finish. Capture from its menu; global hotkeys depend on desktop portal support and approval."
+msgstr ""
+"完了するとトレイのデーモンが起動します。そのメニューからキャプチャしてください。グローバルホットキーを使用するには、デスクトップポータルの対応と許可が必要です。"
+
+msgid ""
+"These defaults require desktop GlobalShortcuts portal support and approval. Use the tray if shortcuts are unavailable."
+msgstr ""
+"これらの既定値を使用するには、デスクトップのGlobalShortcutsポータルの対応と許可が必要です。ショートカットが利用できない場合はトレイを使用してください。"
+
+msgid ""
+"This Flatpak cannot install extensions into your host desktop. Open the release page and download the GNOME extension archive, then install and enable it on the host in GNOME Extensions or run `gnome-extensions install --force ~/Downloads/apexshot-gnome-integration.zip` followed by `gnome-extensions enable apexshot-gnome-integration@apexshot.github.io` in a host terminal. ApexShot will detect it when the extension is enabled."
+msgstr ""
+"このFlatpakはホストのデスクトップに拡張機能をインストールできません。リリースページを開いてGNOME拡張機能のアーカイブをダウンロードし、ホストのGNOME拡張機能アプリでインストールして有効にするか、ホストの端末で`gnome-extensions install --force ~/Downloads/apexshot-gnome-integration.zip`を実行した後、`gnome-extensions enable apexshot-gnome-integration@apexshot.github.io`を実行してください。拡張機能が有効になるとApexShotが検出します。"
+
+msgid ""
+"You may need to log out and back in for the extension to appear in GNOME."
+msgstr "GNOMEに拡張機能を表示するには、ログアウトしてから再度ログインする必要がある場合があります。"
+
+msgid "Back"
+msgstr "戻る"
+
+msgid "Cloud sharing"
+msgstr "クラウド共有"
+
+msgid "Connect ApexShot Cloud"
+msgstr "ApexShot Cloud を接続"
+
+msgid "Connect your account"
+msgstr "アカウントを接続"
+
+msgid "Copy code"
+msgstr "コードをコピー"
+
+msgid "Free"
+msgstr "無料"
+
+msgid "Manage your account or disconnect in Settings → Cloud."
+msgstr "アカウントの管理や接続解除は「設定 → クラウド」から行えます。"
+
+msgid ""
+"Not now? Skip with Next. Connect later from Settings → Cloud, or self-host XBackBone."
+msgstr "今はしない？「次へ」でスキップできます。後で「設定 → クラウド」から接続するか、XBackBone をセルフホストできます。"
+
+msgid "Open browser"
+msgstr "ブラウザを開く"
+
+msgid "Optional · capture stays free"
+msgstr "任意 · キャプチャは無料のまま"
+
+msgid "{plan} plan"
+msgstr "{plan} プラン"
+
+msgid "Starting…"
+msgstr "開始しています…"
+
+msgid "Try again"
+msgstr "再試行"
+
+msgid ""
+"Turn a capture into a link you can paste anywhere. Everything else keeps working offline."
+msgstr "キャプチャをどこにでも貼れるリンクに。それ以外はオフラインでも動作します。"
+
+msgid "Uploads are on: your next screenshot gets a share link copied for you."
+msgstr "アップロードが有効です。次のキャプチャでは共有リンクが自動でコピーされます。"
+
+msgid "Waiting for you to authorize…"
+msgstr "承認を待っています…"
+
+msgid "Could not open billing"
+msgstr "請求ページを開けませんでした"
+
+msgid "Go Pro"
+msgstr "Pro にアップグレード"
+
+msgid "Keep working"
+msgstr "作業を続ける"
+
+msgid "Support ApexShot / Go Pro"
+msgstr "ApexShot を支援 / Pro にアップグレード"
+
+msgid "Your capture is saved"
+msgstr "キャプチャを保存しました"
+
+msgid "Your screenshot companion for Linux. Set it up in a few quick steps."
+msgstr "Linux のためのスクリーンショットの相棒。数ステップですぐに設定できます。"
+
+msgid "Authorization was denied in the browser."
+msgstr "ブラウザで認証が拒否されました。"
+
+msgid "Automatic upload is off. Turn it on in Settings → Cloud to get a share link after each capture."
+msgstr "自動アップロードはオフです。「設定 → クラウド」でオンにすると、撮影ごとに共有リンクを取得できます。"
+
+msgid "Captures upload to your XBackBone server. Change the destination in Settings → Cloud."
+msgstr "キャプチャは XBackBone サーバーにアップロードされます。送信先は「設定 → クラウド」で変更できます。"
+
+msgid "Code expires in {minutes} min"
+msgstr "コードの有効期限：あと {minutes} 分"
+
+msgid "Couldn't reach ApexShot Cloud. Check your connection and try again."
+msgstr "ApexShot Cloud に接続できませんでした。接続を確認してもう一度お試しください。"
+
+msgid "Couldn't save your setup. Check that your config folder is writable, then try again."
+msgstr "セットアップを保存できませんでした。設定フォルダーに書き込めるか確認して、もう一度お試しください。"
+
+msgid "Get started"
+msgstr "はじめる"
+
+msgid "Hosted by us. Connect with a one-time code from your browser."
+msgstr "当社がホスト。ブラウザに表示されるワンタイムコードで接続します。"
+
+msgid "Optional. Connect ApexShot Cloud to turn a capture into a link you can paste anywhere. ApexShot works offline without an account, so you can skip this."
+msgstr "任意です。ApexShot Cloud に接続すると、キャプチャを好きな場所に貼れるリンクにできます。ApexShot はアカウントなしでオフラインでも使えるので、この手順は省略できます。"
+
+msgid "Self-host for full control of storage. Set it up later in Settings → Cloud."
+msgstr "ストレージを完全に管理できるセルフホスト型。後から「設定 → クラウド」で設定できます。"
+
+msgid "Share captures as links"
+msgstr "キャプチャをリンクで共有"
+
+msgid "Skip for now"
+msgstr "今はスキップ"
+
+msgid "Step {current} of {total}"
+msgstr "ステップ {current} / {total}"
+
+msgid "This code expired. Try again to get a new one."
+msgstr "コードの有効期限が切れました。もう一度お試しして新しいコードを取得してください。"
+
+msgid "Enter this code in your browser to link this device."
+msgstr "このコードをブラウザーに入力して、このデバイスをリンクします。"
+
+msgid "Opening your browser…"
+msgstr "ブラウザーを開いています…"
+
+msgid "Sent to your browser. If no page opened, copy the link below."
+msgstr "ブラウザーに送信しました。ページが開かない場合は、下のリンクをコピーしてください。"
+
+msgid "Couldn't open a browser: {error}. Copy the link below and open it yourself."
+msgstr "ブラウザーを開けませんでした: {error}。下のリンクをコピーして、ご自身で開いてください。"
+
+msgid "The selected portal will embed the cursor in the video, so it cannot be edited separately."
+msgstr "選択したポータルではカーソルが動画に埋め込まれるため、個別に編集できません。"
+
+msgid "The window cursor remains editable, but Auto Zoom clicks will not be recorded without the ApexShot GNOME extension."
+msgstr "ウィンドウカーソルは編集できますが、ApexShot GNOME 拡張機能がないと自動ズームのクリックは記録されません。"
+
+msgid "Export Motion video"
+msgstr "Motion 動画をエクスポートする"
+
+msgid "Close the editor after a successful export"
+msgstr "エクスポート成功後にエディターを閉じる"
+
+msgid "Overwrite the opened image instead of saving a copy"
+msgstr "コピーを保存せず、開いている画像を上書きする"
+
+msgid "Image files"
+msgstr "画像ファイル"
+
+msgid "Choose a different destination to keep the original image unchanged."
+msgstr "元の画像を変更せずに残すには、別の保存先を選択してください。"
+
+msgid "Export completed, but the editing session could not be saved: {error}"
+msgstr "エクスポートは完了しましたが、編集セッションを保存できませんでした: {error}"
+
+msgid "Motion will play a snapshot of your annotations. Returning to Static restores the live tools. The original image stays unchanged unless you enable overwrite in Settings → Annotate."
+msgstr "Motion では注釈のスナップショットが再生されます。Static に戻ると通常のツールが復元されます。設定 → 注釈で上書きを有効にしない限り、元の画像は変更されません。"
+
+msgid "14-day refund on your first purchase."
+msgstr "初回のご購入は14日間返金に対応します。"
+
+msgid "Activate"
+msgstr "有効化"
+
+msgid "Animate your captures with titles and easing, then export as MP4."
+msgstr "タイトルとイージングでキャプチャをアニメーションさせ、MP4として書き出せます。"
+
+msgid "Camera controls"
+msgstr "カメラコントロール"
+
+msgid "Capture, annotation, recording and clean exports stay free."
+msgstr "キャプチャ、注釈、録画、クリーンな書き出しは引き続き無料です。"
+
+msgid "Entitlement saved. This build isn't covered by the included updates; install a covered build to use Studio output."
+msgstr "ライセンスを保存しました。このビルドは含まれるアップデートの対象外です。Studioの出力を使うには、対象のビルドをインストールしてください。"
+
+msgid "I have a license"
+msgstr "ライセンスを持っています"
+
+msgid "$39 once"
+msgstr "買い切り $39"
+
+msgid "12 months of updates"
+msgstr "12か月分のアップデート"
+
+msgid "14-day refund"
+msgstr "14日間返金"
+
+msgid "Versions you get keep working forever."
+msgstr "入手したバージョンはずっと使い続けられます。"
+
+msgid "Uses {feature}"
+msgstr "{feature}を使用"
+
+msgid "This export uses {features}"
+msgstr "この書き出しでは{features}を使用しています"
+
+msgid "Instant zooms, speed, smoothness and motion blur for recordings."
+msgstr "録画向けのインスタントズーム、速度、なめらかさ、モーションブラー。"
+
+msgid "License saved, but this version is newer than the updates it includes."
+msgstr "ライセンスを保存しましたが、このバージョンは含まれるアップデートより新しいものです。"
+
+msgid "Manage license"
+msgstr "ライセンスを管理"
+
+msgid "Motion text and its animation are Studio previews; final MP4 export needs activation."
+msgstr "Motionのテキストとそのアニメーションは Studio のプレビューです。最終的なMP4の書き出しには有効化が必要です。"
+
+msgid "Motion timeline"
+msgstr "Motionタイムライン"
+
+msgid "Paste Studio entitlement JSON"
+msgstr "StudioライセンスのJSONを貼り付け"
+
+msgid "Paste the signed entitlement you received after purchase. Activation is stored on this device and works offline."
+msgstr "購入後に受け取った署名付きライセンスを貼り付けてください。有効化の情報はこのデバイスに保存され、オフラインでも動作します。"
+
+msgid "Paste your license"
+msgstr "ライセンスを貼り付け"
+
+msgid "Perspective and placement"
+msgstr "パースペクティブと配置"
+
+msgid "Professional tools for presenting your captures."
+msgstr "キャプチャを魅力的に見せるためのプロフェッショナルツール。"
+
+msgid "Purchase or recover Studio"
+msgstr "Studioを購入または復元"
+
+msgid "Recover license"
+msgstr "ライセンスを復元"
+
+msgid "Studio"
+msgstr "Studio"
+
+msgid "Studio activated for this build."
+msgstr "このビルドでStudioを有効化しました。"
+
+msgid "Studio controls. Default zoom and legacy easing stay free; active exports using non-default camera settings or instant animation need activation."
+msgstr "Studioのコントロール。デフォルトのズームと従来のイージングは無料です。デフォルト以外のカメラ設定やインスタントアニメーションを使う書き出しには有効化が必要です。"
+
+msgid "Studio export unavailable"
+msgstr "Studioの書き出しは利用できません"
+
+msgid "Studio is optional. Your free capture, editing, recording, projects, and clean exports remain available without an account or network connection."
+msgstr "Studioは任意です。無料のキャプチャ、編集、録画、プロジェクト、クリーンな書き出しは、アカウントやネットワーク接続なしで引き続き利用できます。"
+
+msgid "Studio isn't available"
+msgstr "Studioは利用できません"
+
+msgid "Studio license couldn't be verified"
+msgstr "Studioライセンスを確認できませんでした"
+
+msgid "Studio preview. A non-default rendered pose needs activation for final images; backgrounds and normal edits stay free."
+msgstr "Studioプレビュー。デフォルト以外のレンダリング済みポーズを最終画像にするには有効化が必要です。背景と通常の編集は無料です。"
+
+msgid "Studio preview. MP4 export needs activation; local editing and project saves remain free."
+msgstr "Studioプレビュー。MP4の書き出しには有効化が必要です。ローカルでの編集とプロジェクトの保存は無料です。"
+
+msgid "Studio status"
+msgstr "Studioのステータス"
+
+msgid "The license saved on this device couldn't be checked. Paste a valid license to unlock Studio."
+msgstr "このデバイスに保存されたライセンスを確認できませんでした。有効なライセンスを貼り付けてStudioをアンロックしてください。"
+
+msgid "This build can't verify Studio licenses, so this export can't be completed."
+msgstr "このビルドではStudioライセンスを確認できないため、この書き出しを完了できません。"
+
+msgid "This build can't verify Studio licenses. Check the official Studio page for build availability or license recovery; buying a license alone can't enable this build."
+msgstr "このビルドではStudioライセンスを確認できません。公式Studioページで対応版の提供状況を確認するか、ライセンスを復元してください。ライセンスを購入するだけでは、このビルドでStudioを有効にできません。"
+
+msgid "Check Studio availability"
+msgstr "Studio の提供状況を確認"
+
+msgid "This version is newer than your license"
+msgstr "このバージョンはライセンスより新しいものです"
+
+msgid "Tilt, rotate and position a still inside its background."
+msgstr "静止画を背景の中で傾け、回転し、配置できます。"
+
+msgid "Unlock ApexShot Studio"
+msgstr "ApexShot Studioをアンロック"
+
+msgid "Upgrade to Studio — $39 once"
+msgstr "Studio にアップグレード — 39ドル（買い切り）"
+
+msgid "Your license includes updates through an earlier release. Versions it covers keep working offline."
+msgstr "ライセンスには以前のリリースまでのアップデートが含まれています。対象のバージョンはオフラインで使い続けられます。"
+
+msgid "That license couldn't be verified. Make sure you pasted all of it."
+msgstr "このライセンスを確認できませんでした。全体を貼り付けたか確認してください。"
+
+msgid "Replace license"
+msgstr "ライセンスを置き換える"
+
+msgid "Active"
+msgstr "有効"
+
+msgid "Copy license"
+msgstr "ライセンスをコピー"
+
+msgid "100% displays export pixels at native screen scale"
+msgstr "100% は書き出しピクセルを画面のネイティブ倍率で表示します。"
+
+msgid "ApexShot lost contact with the copy worker."
+msgstr "ApexShot はコピーワーカーとの接続を失いました。"
+
+msgid "Before / after divider"
+msgstr "ビフォー／アフターの分割線"
+
+msgid "Compare before / after"
+msgstr "ビフォー／アフターを比較"
+
+msgid "Compare neural upscaling"
+msgstr "ニューラルアップスケーリングを比較"
+
+msgid "Could not prepare the comparison image."
+msgstr "比較画像を準備できませんでした。"
+
+msgid "Enhance small screenshots locally before image and Motion exports."
+msgstr "画像と Motion の書き出し前に、小さなスクリーンショットをローカルで高画質化します。"
+
+msgid ""
+"Export preview: {width} × {height} pixels. Check text carefully; missing detail may not be recovered."
+msgstr ""
+"書き出しプレビュー: {width} × {height} ピクセル。テキストを注意深く確認してください。欠けている細部は復元できない場合があります。"
+
+msgid "Exporting…"
+msgstr "書き出し中…"
+
+msgid "Load an image before previewing upscaling."
+msgstr "アップスケーリングをプレビューする前に画像を読み込んでください。"
+
+msgid "Neural 2×"
+msgstr "ニューラル 2×"
+
+msgid "Neural 4×"
+msgstr "ニューラル 4×"
+
+msgid "Neural upscaling"
+msgstr "ニューラルアップスケーリング"
+
+msgid "Neural upscaling for Studio exports"
+msgstr "Studio 書き出し用のニューラルアップスケーリング"
+
+msgid ""
+"Offline neural enhancement for small images. Image exports grow by 2× or 4×; Motion keeps its Frame size. Compare the export for free before enabling Studio enhancement. Supports up to 1 megapixel. Missing detail cannot always be recovered."
+msgstr ""
+"小さな画像向けのオフラインニューラル強化。画像の書き出しは 2× または 4× に拡大されますが、Motion はフレームサイズを維持します。Studio 強化を有効にする前に、書き出しを無料で比較できます。最大 1 メガピクセルに対応。欠けている細部は常に復元できるとは限りません。"
+
+msgid "Preparing before / after preview…"
+msgstr "ビフォー／アフターのプレビューを準備中…"
+
+msgid "Preview neural enhancement without a Studio license"
+msgstr "Studio ライセンスなしでニューラル強化をプレビュー"
+
+msgid ""
+"Standard enlargement on the left, neural enhancement on the right. Move the divider and scroll to inspect rendered export pixels before file compression. This preview is free; enhanced exports require Studio."
+msgstr ""
+"左が標準拡大、右がニューラル強化です。分割線を移動し、スクロールして、ファイル圧縮前の書き出しピクセルを確認してください。このプレビューは無料です。強化された書き出しには Studio が必要です。"
+
+msgid "The upscaling preview worker stopped unexpectedly."
+msgstr "アップスケーリングプレビューのワーカーが予期せず停止しました。"
+
+msgid "Use enhancement"
+msgstr "強化を使用"
+
+msgid "Add a background"
+msgstr "背景を追加"
+
+msgid "Add a background so the shadow appears in the exported result."
+msgstr "背景を追加すると、書き出した結果に影が表示されます。"
+
+msgid "Add a background to enable padding and noise."
+msgstr "背景を追加すると、余白とノイズを有効にできます。"
+
+msgid "Add a background to use Scene Shadows in image mode."
+msgstr "背景を追加すると、画像モードで Scene Shadows を使用できます。"
+
+msgid "Add a background to use this control."
+msgstr "このコントロールを使用するには背景を追加してください。"
+
+msgid ""
+"Add a background, choose an outer frame style, or transform the image to round its corners."
+msgstr "背景を追加するか、外側フレームのスタイルを選択するか、画像を変形して角を丸めてください。"
+
+msgid "Background blur needs a gradient, wallpaper, or image."
+msgstr "背景のぼかしにはグラデーション、壁紙、または画像が必要です。"
+
+msgid "Background blur needs a wallpaper or image in Motion."
+msgstr "Motion では、背景のぼかしに壁紙または画像が必要です。"
+
+msgid ""
+"Border Radius needs a background, an outer frame style, or a transformed image."
+msgstr "角丸には背景、外側フレームのスタイル、または変形した画像が必要です。"
+
+msgid "Choose a Scene Shadows preset before adjusting opacity."
+msgstr "不透明度を調整する前に、Scene Shadows のプリセットを選択してください。"
+
+msgid "Choose a preset to enable Scene Shadows opacity and placement."
+msgstr "プリセットを選択すると、Scene Shadows の不透明度と配置を有効にできます。"
+
+msgid "Could not open that image. Choose a PNG, JPEG, or WebP file."
+msgstr "その画像を開けませんでした。PNG、JPEG、WebP ファイルを選択してください。"
+
+msgid ""
+"Custom sizes use even pixels. Sizes over a 1920-pixel long edge are scaled down."
+msgstr "カスタムサイズは偶数ピクセルを使用します。長辺が 1920 ピクセルを超えるサイズは縮小されます。"
+
+msgid "Frame"
+msgstr "フレーム"
+
+msgid ""
+"Frame sizes need a background in image mode. Add one to change the canvas size."
+msgstr "画像モードでは、フレームサイズの変更に背景が必要です。背景を追加してキャンバスサイズを変更してください。"
+
+msgid "Image export height; select a preset to change the aspect ratio"
+msgstr "画像の書き出し高さ。プリセットを選択するとアスペクト比を変更できます"
+
+msgid "Image export width; select a preset to change the aspect ratio"
+msgstr "画像の書き出し幅。プリセットを選択するとアスペクト比を変更できます"
+
+msgid ""
+"Increase Scene Shadows opacity to see the effect and change its placement."
+msgstr "Scene Shadows の不透明度を上げると、効果を確認して配置を変更できます。"
+
+msgid "Increase Shadow opacity to enable blur and position."
+msgstr "影の不透明度を上げると、ぼかしと位置を有効にできます。"
+
+msgid "Neural 4× is unavailable: {reason}"
+msgstr "ニューラル 4× は利用できません：{reason}"
+
+msgid ""
+"That size was not applied. Width and height must be between 16 and 7680 pixels."
+msgstr "そのサイズは適用されませんでした。幅と高さは 16～7680 ピクセルの範囲で指定してください。"
+
+msgid ""
+"The enhanced canvas exceeds the 16-megapixel output limit. Reduce upscaling or background padding."
+msgstr "強化後のキャンバスが 1600 万ピクセルの出力上限を超えています。アップスケーリングまたは背景の余白を減らしてください。"
+
+msgid "Tilt the image with Yaw or Pitch before adjusting perspective."
+msgstr "パースを調整する前に、ヨーまたはピッチで画像を傾けてください。"
+
+msgid ""
+"Without a background, Underlay is hidden in video exports. Choose Overlay to shade the image."
+msgstr "背景がない場合、下地は動画の書き出しで表示されません。オーバーレイを選択して画像に影を付けます。"
+
+msgid "{name}: {ratio} image aspect ratio"
+msgstr "{name}：{ratio} の画像アスペクト比"
+
+msgid ""
+"{reason} This image is {width} × {height} pixels. Crop it or choose a smaller image to enable enhancement."
+msgstr ""
+"{reason} この画像は {width} × {height} ピクセルです。トリミングするか、より小さい画像を選択すると強化を有効にできます。"
+
+msgid "Device ID"
+msgstr "デバイス ID"
+
+msgid "Copy this machine's Device ID from Settings → Studio and claim the license for it at apexshot.org/studio. Your other device keeps working."
+msgstr "設定 → Studio でこのマシンのデバイス ID をコピーし、apexshot.org/studio でこのデバイス用にライセンスを申請してください。もう一方のデバイスは引き続き利用できます。"
+
+msgid "Paste this at apexshot.org/studio to claim a Studio licence for this device."
+msgstr "apexshot.org/studio にこれを貼り付けて、このデバイス用の Studio ライセンスを申請してください。"
+
+msgid "Claim for this device"
+msgstr "このデバイス用に申請"
+
+msgid "Unavailable on this system"
+msgstr "このシステムでは利用できません"
+
+msgid "This license belongs to another device"
+msgstr "このライセンスは別のデバイスのものです"
+
+msgid "Upgrade to Studio — $39 with 12 months of updates"
+msgstr "Studio にアップグレード — 39 ドル（12 か月のアップデート付き）"
+
+msgid "Shadow softness"
+msgstr "影のやわらかさ"
+
+msgid "Shadow rotation"
+msgstr "影の回転"
+
+msgid "Shadow size"
+msgstr "影のサイズ"
+
+msgid "Shadow horizontal offset"
+msgstr "影の水平オフセット"
+
+msgid "Shadow vertical offset"
+msgstr "影の垂直オフセット"
+
+msgid "Reset every Scene Shadows control."
+msgstr "シーンの影の設定をすべてリセットします。"
+
+msgid "Card shadow"
+msgstr "カードの影"
+
+msgid "Cast light"
+msgstr "投影ライト"
+
+msgid "Light strength"
+msgstr "光の強さ"
+
+msgid "Reset every Cast light control."
+msgstr "投影ライトのすべての設定をリセットします。"
+
+msgid "Add a background to use Cast light in image mode."
+msgstr "画像モードで投影ライトを使うには背景を追加してください。"
+
+msgid "Choose a Cast light preset before adjusting its strength."
+msgstr "強さを調整する前に投影ライトのプリセットを選択してください。"
+
+msgid "Choose a Cast light preset before adjusting its shape."
+msgstr "形を調整する前に投影ライトのプリセットを選択してください。"
+
+msgid "Choose a preset to enable Cast light strength and placement."
+msgstr "プリセットを選択すると、光の強さと配置を変更できます。"
+
+msgid "Increase Cast light strength to see the effect and change its placement."
+msgstr "光の強さを上げると効果が表示され、配置を変更できます。"
+
+msgid "Spread"
+msgstr "広がり"
+
+msgid "Hug"
+msgstr "密着"
+
+msgid "Adaptive"
+msgstr "適応"
+
+msgid "Adjust Light"
+msgstr "光を調整"
+
+msgid "16:9"
+msgstr "16:9"
+
+msgid "9:16"
+msgstr "9:16"
+
+msgid "Add gradient stop"
+msgstr "グラデーションの停止位置を追加"
+
+msgid "ApexShot Video Editor"
+msgstr "ApexShot 動画エディタ"
+
+msgid "Background image"
+msgstr "背景画像"
+
+msgid "Bottom left"
+msgstr "左下"
+
+msgid "Bottom right"
+msgstr "右下"
+
+msgid "Cloud browsing and sign-in are not available in the Windows build yet."
+msgstr "Windows 版ではクラウドの閲覧とサインインはまだ利用できません。"
+
+msgid "Cloud uploads are not available in the Windows build yet"
+msgstr "Windows 版ではクラウドへのアップロードはまだ利用できません"
+
+msgid ""
+"Cloud uploads are not wired in the Windows build yet. Destination and XBackBone settings are saved for a future release."
+msgstr "Windows 版ではクラウドへのアップロードはまだ接続されていません。保存先と XBackBone の設定は今後のリリース用に保存されます。"
+
+msgid "Corner radius"
+msgstr "角の丸み"
+
+msgid "Could not access the Windows clipboard"
+msgstr "Windows のクリップボードにアクセスできませんでした"
+
+msgid "Could not copy file: {message}"
+msgstr "ファイルをコピーできませんでした: {message}"
+
+msgid "Could not copy image: {message}"
+msgstr "画像をコピーできませんでした: {message}"
+
+msgid "Could not open Explorer: {message}"
+msgstr "エクスプローラーを開けませんでした: {message}"
+
+msgid "Could not start the video editor: {message}"
+msgstr "動画エディタを起動できませんでした: {message}"
+
+msgid "Do Not Disturb integration is not available on Windows yet."
+msgstr "Windows では集中モードとの連携はまだ利用できません。"
+
+msgid "Dragging the result card out of the app is not available on Windows yet."
+msgstr "Windows では結果カードをアプリの外へドラッグする操作はまだ利用できません。"
+
+msgid "Edits you save in the video editor will show up here."
+msgstr "動画エディタで保存した編集内容がここに表示されます。"
+
+msgid "Export failed."
+msgstr "書き出しに失敗しました。"
+
+msgid "Exported successfully."
+msgstr "書き出しに成功しました。"
+
+msgid "FINISH"
+msgstr "仕上げ"
+
+msgid "Fill the frame with the camera instead of the bubble."
+msgstr "吹き出しではなくカメラでフレームを埋めます。"
+
+msgid "First available camera"
+msgstr "最初に利用可能なカメラ"
+
+msgid "Flip the camera left to right, the way a mirror shows it."
+msgstr "鏡のようにカメラの映像を左右反転します。"
+
+msgid "Frame changes keep the source footage centred in the preview."
+msgstr "フレームを変えても元の映像はプレビューの中央に保たれます。"
+
+msgid ""
+"Global shortcuts are not available in the Windows build yet. Bindings are saved for a future release."
+msgstr "Windows 版ではグローバルショートカットはまだ利用できません。割り当ては今後のリリース用に保存されます。"
+
+msgid "Hide the camera without removing its track."
+msgstr "トラックを残したままカメラを非表示にします。"
+
+msgid "Horizontal"
+msgstr "横"
+
+msgid "Huge"
+msgstr "特大"
+
+msgid "If enabled, the zoom is applied instantly without any animation."
+msgstr "有効にすると、ズームはアニメーションなしで即座に適用されます。"
+
+msgid "Instant"
+msgstr "即時"
+
+msgid "MP4 recordings"
+msgstr "MP4 録画"
+
+msgid "Maximize"
+msgstr "最大化"
+
+msgid "Mirror camera"
+msgstr "カメラを左右反転"
+
+msgid "Mirror the picture"
+msgstr "画像を左右反転"
+
+msgid "Motion editing is not available in the Windows build yet."
+msgstr "Windows 版ではモーション編集はまだ利用できません。"
+
+msgid "Open recording"
+msgstr "録画を開く"
+
+msgid "Opened {name} in the video editor"
+msgstr "{name} を動画エディタで開きました"
+
+msgid "POSITION"
+msgstr "位置"
+
+msgid "Put the camera back where the recording captured it."
+msgstr "カメラを録画時の位置に戻します。"
+
+msgid "Record a webcam track"
+msgstr "ウェブカメラのトラックを録画"
+
+msgid "Rectangle"
+msgstr "長方形"
+
+msgid "Remove stop"
+msgstr "停止位置を削除"
+
+msgid "Reverse gradient"
+msgstr "グラデーションを反転"
+
+msgid "SHAPE"
+msgstr "形状"
+
+msgid "SIZE"
+msgstr "サイズ"
+
+msgid "STEPS"
+msgstr "ステップ"
+
+msgid "Search isn't available on this page"
+msgstr "このページでは検索を利用できません"
+
+msgid "Select a zoom clip on the timeline"
+msgstr "タイムラインでズームクリップを選択してください"
+
+msgid "Select image…"
+msgstr "画像を選択…"
+
+msgid "Shape"
+msgstr "形状"
+
+msgid "Show camera"
+msgstr "カメラを表示"
+
+msgid "Show in Explorer"
+msgstr "エクスプローラーで表示"
+
+msgid "Strength"
+msgstr "強さ"
+
+msgid "TRANSITION"
+msgstr "トランジション"
+
+msgid "The Windows recorder always captures at native display resolution."
+msgstr "Windows レコーダーは常にディスプレイのネイティブ解像度で録画します。"
+
+msgid "The Windows recorder always shows its controls."
+msgstr "Windows レコーダーは常に操作パネルを表示します。"
+
+msgid ""
+"The Windows shell needs its tray icon until global shortcuts are available."
+msgstr "グローバルショートカットが利用できるまで、Windows シェルにはトレイアイコンが必要です。"
+
+msgid ""
+"The annotate editor is not available in the Windows build yet. These preferences are saved for a future release."
+msgstr "Windows 版では注釈エディタはまだ利用できません。これらの設定は今後のリリース用に保存されます。"
+
+msgid "The annotate editor is not available on Windows yet."
+msgstr "Windows では注釈エディタはまだ利用できません。"
+
+msgid "The export stopped unexpectedly."
+msgstr "書き出しが予期せず停止しました。"
+
+msgid "The image editor is not available in the Windows build yet"
+msgstr "Windows 版では画像エディタはまだ利用できません"
+
+msgid "This recording has no camera track."
+msgstr "この録画にはカメラトラックがありません。"
+
+msgid "Top left"
+msgstr "左上"
+
+msgid "Top right"
+msgstr "右上"
+
+msgid "Transition"
+msgstr "トランジション"
+
+msgid "Untitled recording"
+msgstr "無題の録画"
+
+msgid "Uploading from the result card is not available on Windows yet."
+msgstr "Windows では結果カードからのアップロードはまだ利用できません。"
+
+msgid "Usage telemetry is not sent from the Windows build."
+msgstr "Windows 版は利用状況のテレメトリを送信しません。"
+
+msgid "Vertical"
+msgstr "縦"
+
+msgid "Video export from the Windows editor is not available yet."
+msgstr "Windows エディタからの動画書き出しはまだ利用できません。"
+
+msgid "Webcam"
+msgstr "ウェブカメラ"
+
+msgid "Windows UI translations are not available yet."
+msgstr "Windows の UI 翻訳はまだ利用できません。"
+
+msgid "ZOOM"
+msgstr "ズーム"
+
+msgid "cancelling…"
+msgstr "キャンセル中…"
+
+msgid "estimated:"
+msgstr "推定:"
+
+msgid "finishing…"
+msgstr "完了処理中…"
+
+msgid "Video editing is not available in the Windows build yet."
+msgstr "動画編集は Windows 版ではまだ利用できません。"
+
+# First-run onboarding in the Windows build.
+msgid "Your screenshot companion for Windows. Set it up in a few quick steps."
+msgstr "Windows のためのスクリーンショットの相棒。数ステップですぐに設定できます。"
+
+msgid "ApexShot runs in the background with a tray icon.\nAfter setup, you do not need to open Settings every time."
+msgstr "ApexShot はトレイアイコンでバックグラウンド動作します。\nセットアップ後は毎回設定を開く必要はありません。"
+
+msgid "ApexShot stays in the tray; right-click it for the capture menu."
+msgstr "ApexShot はトレイに常駐します。右クリックでキャプチャメニューが開きます。"
+
+msgid "Bindings are saved; global hotkeys arrive in a later build."
+msgstr "キー割り当ては保存されます。グローバルホットキーは今後のビルドで対応します。"
+
+msgid "ApexShot is ready. It runs from the tray from now on."
+msgstr "ApexShot の準備ができました。以降はトレイから動作します。"
+
+msgid "Signed in, but this device could not save the account."
+msgstr "サインインしましたが、このデバイスはアカウントを保存できませんでした。"
+
+msgid "Add a layout change at the playhead."
+msgstr "再生ヘッドの位置にレイアウト変更を追加します。"
+
+msgid "CAMERA"
+msgstr "カメラ"
+
+msgid "Camera layout changes"
+msgstr "カメラレイアウトの変更"
+
+msgid "Change"
+msgstr "変更"
+
+msgid "Change {time}"
+msgstr "{time} を変更"
+
+msgid "Default"
+msgstr "既定"
+
+msgid "Default layout"
+msgstr "既定のレイアウト"
+
+msgid "Delete this layout change."
+msgstr "このレイアウト変更を削除します。"
+
+msgid "Drag to set the camera's position in the frame; double-click to centre it"
+msgstr "ドラッグしてフレーム内のカメラ位置を決めます。ダブルクリックで中央に戻ります"
+
+msgid "Edit the default layout for the whole recording."
+msgstr "録画全体の既定のレイアウトを編集します。"
+
+msgid "Edit the selected layout change."
+msgstr "選択したレイアウト変更を編集します。"
+
+msgid "Layout change"
+msgstr "レイアウト変更"
+
+msgid "Move this change to another time. A time that collides with another change is rejected."
+msgstr "この変更を別の時間に移動します。他の変更と重なる時間は受け付けられません。"
+
+msgid "Percentage of the frame width."
+msgstr "フレーム幅に対する割合です。"
+
+msgid "Percentage of the free space around the bubble."
+msgstr "バブル周囲の余白に対する割合です。"
+
+msgid "SCREEN SHARE"
+msgstr "画面共有"
+
+msgid "Select a layout change in the timeline to edit it."
+msgstr "タイムラインでレイアウト変更を選択すると編集できます。"
+
+msgid "Select the layout change at the playhead."
+msgstr "再生ヘッドの位置にあるレイアウト変更を選択してください。"
+
+msgid "Shared by every camera layout."
+msgstr "すべてのカメラレイアウトで共有されます。"
+
+msgid "Shared by every cutout layout."
+msgstr "すべての切り抜きレイアウトで共有されます。"
+
+msgid "Shared by every layout change."
+msgstr "すべてのレイアウト変更で共有されます。"
+
+msgid "Shared by every overlay."
+msgstr "すべてのオーバーレイで共有されます。"
+
+msgid "Shared by every split layout."
+msgstr "すべてのスプリットレイアウトで共有されます。"
+
+msgid "The bubble's width, as a percentage of the frame."
+msgstr "バブルの幅をフレームに対する割合で指定します。"
+
+msgid "The camera layer reported: {error}"
+msgstr "カメラレイヤーの報告: {error}"
+
+msgid "The screen's share of the split, as a percentage."
+msgstr "画面の分割の割合をパーセントで指定します。"
+
+msgid "Time"
+msgstr "時間"
+
+msgid "{time} · {layout}"
+msgstr "{time} · {layout}"
+
+msgid "Camera layer"
+msgstr "カメラレイヤー"
+
+msgid "Delete change"
+msgstr "変更を削除"
+
+msgid "Draw the camera over the screen. Off shows the screen alone and keeps your layout changes."
+msgstr "カメラを画面の上に描画します。オフにすると画面だけを表示し、レイアウト変更は保持されます。"
+
+msgid "Turn camera off"
+msgstr "カメラをオフにする"
+
+msgid "Turn camera on"
+msgstr "カメラをオンにする"
+
+msgid "Add change at playhead"
+msgstr "再生位置に変更を追加"
+
+msgid "ApexShot"
+msgstr "ApexShot"
+
+msgid "No settings found"
+msgstr "設定が見つかりません"
+
+msgid "Saved"
+msgstr "保存しました"
+
+msgid "Search settings"
+msgstr "設定を検索"
+
+msgid "This device"
+msgstr "このデバイス"
+
+msgid "Timed capture is not wired into the Windows build yet. The interval is saved for a future release."
+msgstr "タイマー撮影は Windows 版ではまだ利用できません。間隔は今後のリリース用に保存されます。"
+
+msgid "APEXSHOT CLOUD"
+msgstr "APEXSHOT CLOUD"
+
+msgid "Allowance unavailable"
+msgstr "利用上限を取得できません"
+
+msgid "Authorize this device"
+msgstr "このデバイスを認証"
+
+msgid "Back to Cloud"
+msgstr "Cloud に戻る"
+
+msgid "Click Connect to link this device with a one-time code."
+msgstr "「接続」をクリックし、ワンタイムコードでこのデバイスを連携します。"
+
+msgid "Cloud browsing is not available in the Windows build yet. Connect your account in Settings → Cloud."
+msgstr "Windows 版ではクラウドの閲覧はまだ利用できません。設定 → Cloud でアカウントを接続してください。"
+
+msgid "Connect to see your usage"
+msgstr "接続して使用状況を確認"
+
+msgid "Could not refresh. Showing previous values."
+msgstr "更新できませんでした。前回の値を表示しています。"
+
+msgid "Couldn't open your browser. Copy the link and open it yourself."
+msgstr "ブラウザーを開けませんでした。リンクをコピーして開いてください。"
+
+msgid "Go to Cloud settings"
+msgstr "Cloud 設定を開く"
+
+msgid "Less than 0.1% used"
+msgstr "使用率 0.1% 未満"
+
+msgid "Loading usage..."
+msgstr "使用状況を読み込み中..."
+
+msgid "Manage billing"
+msgstr "請求を管理"
+
+msgid "Monthly usage resets in UTC."
+msgstr "月間使用量は UTC に基づいてリセットされます。"
+
+msgid "No monthly limit"
+msgstr "月間上限なし"
+
+msgid "Plan unavailable"
+msgstr "プランを取得できません"
+
+msgid "Refreshing..."
+msgstr "更新中..."
+
+msgid "Sign in to view your uploads, storage and plan."
+msgstr "サインインすると、アップロード、ストレージ、プランを確認できます。"
+
+msgid "Storage"
+msgstr "ストレージ"
+
+msgid "This month"
+msgstr "今月"
+
+msgid "Uploads"
+msgstr "アップロード"
+
+msgid "Usage"
+msgstr "使用状況"
+
+msgid "Usage is unavailable"
+msgstr "使用状況を取得できません"
+
+msgid "Used space"
+msgstr "使用容量"
+
+msgid "We couldn't load your usage. Check your connection and try again."
+msgstr "使用状況を読み込めませんでした。接続を確認して再試行してください。"
+
+msgid "Your session has expired. Connect your account again in Cloud settings."
+msgstr "セッションの有効期限が切れました。Cloud 設定でアカウントを再接続してください。"
+
+msgid "of {limit}"
+msgstr "上限 {limit}"
+
+msgid "of {limit} monthly uploads"
+msgstr "月間上限 {limit} 件"
+
+msgid "{percent}% used"
+msgstr "使用率 {percent}%"
+
+msgid "2160p (4K)"
+msgstr "2160p (4K)"
+
+msgid "Could not pause the shortcut listener. Close this dialog and try again."
+msgstr "ショートカットの待ち受けを一時停止できませんでした。このダイアログを閉じて、もう一度お試しください。"
+
+msgid "Disabled"
+msgstr "無効"
+
+msgid "Off by default. Turning this on sends anonymous usage statistics."
+msgstr "既定ではオフです。オンにすると匿名の使用状況統計が送信されます。"
+
+msgid ""
+"Optional daily heartbeat: app version, Windows, and feature counts. The update window also reports each update download (version and size). No screenshots, paths, or OCR text. APEXSHOT_TELEMETRY=0 turns both off."
+msgstr ""
+"任意の日次ハートビート：アプリのバージョン、Windows、機能の使用回数。更新ウィンドウは各更新のダウンロード（バージョンとサイズ）も報告します。スクリーンショット、パス、OCR テキストは送信しません。APEXSHOT_TELEMETRY=0 で両方を無効にできます。"
+
+msgid "Requires the corresponding Windows OCR language pack."
+msgstr "対応する Windows OCR 言語パックが必要です。"
+
+msgid "Shortcuts work while the ApexShot background shell is running."
+msgstr "ApexShot のバックグラウンドシェルが動作している間、ショートカットが使えます。"
+
+msgid ""
+"The Windows shell uses its tray icon to open capture, Settings, and Quit."
+msgstr "Windows シェルはトレイアイコンからキャプチャ、設定、終了を開きます。"
+
+msgid "The capture shell currently uses its own dark appearance."
+msgstr "キャプチャシェルは現在、独自のダーク表示を使用しています。"
+
+msgid "The capture toolbar can change the timer for an individual screenshot."
+msgstr "キャプチャツールバーでは、個々のスクリーンショットのタイマーを変更できます。"
+
+msgid "This action requires the Windows image editor or overlay backend."
+msgstr "この操作には Windows の画像エディタまたはオーバーレイバックエンドが必要です。"
+
+msgid "Use your configured shortcuts while ApexShot runs in the background."
+msgstr "ApexShot がバックグラウンドで動作している間、設定したショートカットを使えます。"
+
+msgid "When hidden, stop the recording from the tray or with its shortcut."
+msgstr "非表示のときは、トレイまたはショートカットから録画を停止します。"
+
+msgid ""
+"When off, output uses the capture's display scale before applying the maximum resolution."
+msgstr "オフの場合、最大解像度を適用する前にキャプチャの表示スケールを使用します。"
+
+msgid ""
+"When off, recordings remain in the temporary folder for the result card and editor."
+msgstr "オフの場合、録画は結果カードとエディタ用に一時フォルダーに残ります。"
+
+msgid "Beta"
+msgstr "ベータ"
+
+msgid "Hide sidebar"
+msgstr "サイドバーを非表示"
+
+msgid "Show sidebar"
+msgstr "サイドバーを表示"
+
+msgid ""
+"10:21 image aspect ratio; long pins may be cropped in feeds. 2:3 is recommended."
+msgstr "10:21 の画像アスペクト比。縦長のピンはフィードで切り取られる場合があります。2:3 をおすすめします。"
+
+msgid ""
+"16:9 image aspect ratio; banners need at least 2048 x 1152 pixels and may be cropped on some devices."
+msgstr "16:9 の画像アスペクト比。バナーには 2048 x 1152 ピクセル以上が必要で、一部のデバイスでは切り取られる場合があります。"
+
+msgid "Activation"
+msgstr "有効化"
+
+msgid "Add a background and padding to see the shadow."
+msgstr "背景と余白を追加すると影が表示されます。"
+
+msgid ""
+"Add arrows, text, and blur, then set the background, padding, and shadow before you export."
+msgstr "矢印・テキスト・ぼかしを追加し、書き出す前に背景・余白・影を設定します。"
+
+msgid "Annotate and style every capture."
+msgstr "すべてのキャプチャに注釈とスタイルを"
+
+msgid "Annotation color"
+msgstr "注釈の色"
+
+msgid "Automatic"
+msgstr "自動"
+
+msgid "Available"
+msgstr "利用可能"
+
+msgid "Back to editor"
+msgstr "エディターに戻る"
+
+msgid "Capture your screen, mark it up, and export it."
+msgstr "画面をキャプチャして注釈を付け、書き出します。"
+
+msgid "Change any of this later."
+msgstr "これらは後から変更できます。"
+
+msgid "Choose video export options"
+msgstr "動画の書き出しオプションを選択"
+
+msgid "Click a Motion clip, or click the track to add a move."
+msgstr "Motion クリップをクリックするか、トラックをクリックして動きを追加"
+
+msgid "Click or drag to place the watermark; double-click to center it"
+msgstr "クリックまたはドラッグで透かしを配置、ダブルクリックで中央に移動"
+
+msgid "Click or drag to place the zoom anchor; double-click to recenter"
+msgstr "クリックまたはドラッグでズームアンカーを配置、ダブルクリックで中央に戻す"
+
+msgid "Click or drag to position the camera; double-click to recenter"
+msgstr "クリックまたはドラッグでカメラを配置、ダブルクリックで中央に戻す"
+
+msgid "Clipboard is unavailable."
+msgstr "クリップボードを利用できません。"
+
+msgid "Close custom color"
+msgstr "カスタムカラーを閉じる"
+
+msgid "Close export options"
+msgstr "書き出しオプションを閉じる"
+
+msgid "Complete"
+msgstr "完了"
+
+msgid "Could not open background image."
+msgstr "背景画像を開けませんでした。"
+
+msgid "Couldn't open a browser: {error}. Use Copy link and open it yourself."
+msgstr "ブラウザを開けませんでした: {error}。リンクをコピーして、ご自身で開いてください。"
+
+msgid "Custom color"
+msgstr "カスタムカラー"
+
+msgid "Drag to choose what the camera shows"
+msgstr "ドラッグしてカメラに映す範囲を選択"
+
+msgid "Drop a PNG, JPEG, or WebP here, or choose one from disk."
+msgstr "ここに PNG、JPEG、WebP をドロップするか、ディスクから選択してください。"
+
+msgid "Estimated output size"
+msgstr "推定出力サイズ"
+
+msgid "Estimating…"
+msgstr "推定中…"
+
+msgid "Export a file and copy it to the clipboard for pasting into other apps."
+msgstr "ファイルに書き出し、他のアプリに貼り付けられるようクリップボードにコピーします。"
+
+msgid "Export time depends on your hardware and effects."
+msgstr "書き出し時間はハードウェアとエフェクトによって変わります。"
+
+msgid "Export to file"
+msgstr "ファイルに書き出し"
+
+msgid "Exported successfully"
+msgstr "書き出しに成功しました"
+
+msgid "Exporting video"
+msgstr "動画を書き出し中"
+
+msgid "File copied to clipboard. Ready to paste into other apps."
+msgstr "ファイルをクリップボードにコピーしました。他のアプリに貼り付けられます。"
+
+msgid "Finishing…"
+msgstr "完了処理中…"
+
+msgid "Fit to window"
+msgstr "ウィンドウに合わせる"
+
+msgid "Free up space or raise your allowance to keep uploading."
+msgstr "容量を空けるか、利用上限を上げると、アップロードを続けられます。"
+
+msgid "Here’s where to find everything."
+msgstr "各機能の場所はこちらです。"
+
+msgid "Image editor preview with an annotated capture and the Appearance panel"
+msgstr "注釈付きキャプチャと外観パネルを表示した画像エディターのプレビュー"
+
+msgid "Last checked"
+msgstr "最終確認"
+
+msgid "Monthly, UTC"
+msgstr "毎月、UTC"
+
+msgid "Move the light to direct the shadow"
+msgstr "光を動かして影の向きを調整"
+
+msgid "Neural upscaling is not available in the Windows image editor yet"
+msgstr "Windows の画像エディターではニューラルアップスケーリングをまだ利用できません"
+
+msgid "No account needed."
+msgstr "アカウントは不要です。"
+
+msgid "Not set"
+msgstr "未設定"
+
+msgid "Obfuscate intensity"
+msgstr "難読化の強さ"
+
+msgid "One shortcut away."
+msgstr "ショートカット 1 つで始められます。"
+
+msgid "Open ApexShot"
+msgstr "ApexShot を開く"
+
+msgid "Open Image"
+msgstr "画像を開く"
+
+msgid "Open an image to annotate"
+msgstr "注釈する画像を開く"
+
+msgid "Open image"
+msgstr "画像を開く"
+
+msgid "Opening {name}…"
+msgstr "{name} を開いています…"
+
+msgid ""
+"Optional. Link your account now so it’s ready when uploads arrive on Windows."
+msgstr "任意です。今のうちにアカウントを連携しておくと、Windows でアップロードが利用できるようになったときにすぐ使えます。"
+
+msgid "Preparing export…"
+msgstr "書き出しの準備中…"
+
+msgid "Remove the watermark"
+msgstr "透かしを削除"
+
+msgid "Resets"
+msgstr "リセット"
+
+msgid "Retention"
+msgstr "保持期間"
+
+msgid "Reverse"
+msgstr "反転"
+
+msgid "Right-click for your capture menu."
+msgstr "右クリックでキャプチャメニューを表示します。"
+
+msgid "Save annotated image"
+msgstr "注釈付き画像を保存"
+
+msgid "Save the annotated image"
+msgstr "注釈付き画像を保存"
+
+msgid "Select image"
+msgstr "画像を選択"
+
+msgid "Shortcuts work while ApexShot runs in the background."
+msgstr "ApexShot がバックグラウンドで動作している間もショートカットを使えます。"
+
+msgid "Start a capture from your keyboard or the tray menu."
+msgstr "キーボードまたはトレイメニューからキャプチャを開始できます。"
+
+msgid "Status"
+msgstr "ステータス"
+
+msgid "Stop export"
+msgstr "書き出しを停止"
+
+msgid "Stopping export…"
+msgstr "書き出しを停止しています…"
+
+msgid "Storage is full"
+msgstr "ストレージがいっぱいです"
+
+msgid "Storage is nearly full"
+msgstr "ストレージがほぼいっぱいです"
+
+msgid "Storage is within your allowance"
+msgstr "ストレージは利用上限内です"
+
+msgid "Storage used"
+msgstr "ストレージ使用量"
+
+msgid "Stroke"
+msgstr "ストローク"
+
+msgid "Switch to Motion: not available in the Windows image editor yet"
+msgstr "Motion に切り替え: Windows の画像エディターではまだ利用できません"
+
+msgid "That file is not a supported image. Choose a PNG, JPEG, or WebP."
+msgstr "このファイルは対応している画像形式ではありません。PNG、JPEG、WebP のいずれかを選択してください。"
+
+msgid "The image could not be read."
+msgstr "画像を読み取れませんでした。"
+
+msgid "The image is empty."
+msgstr "画像が空です。"
+
+msgid "They reset monthly in UTC."
+msgstr "毎月 UTC にリセットされます。"
+
+msgid "This month's uploads are used up"
+msgstr "今月のアップロード枠を使い切りました"
+
+msgid "Video exported, but could not copy to clipboard:"
+msgstr "動画は書き出しましたが、クリップボードにコピーできませんでした:"
+
+msgid "Exported, but the sound could not be added:"
+msgstr "書き出しましたが、音声を追加できませんでした:"
+
+msgid "Wait for the background image to finish loading."
+msgstr "背景画像の読み込みが完了するまでお待ちください。"
+
+msgid "Your shortcuts work while ApexShot runs."
+msgstr "ApexShot の動作中はショートカットを使えます。"
+
+msgid "You’re all set."
+msgstr "準備完了です。"
+
+msgid "left"
+msgstr "残り"
+
+msgid "of {limit} allowance"
+msgstr "利用上限 {limit} 中"
+
+msgid "of {limit} this month"
+msgstr "今月の上限 {limit} 件"
+
+msgid "{current} / {total}"
+msgstr "{current} / {total}"
+
+msgid "{days} days"
+msgstr "{days} 日間"
+
+msgid "{remaining} remains before your allowance is reached."
+msgstr "利用上限まで残り {remaining} です。"
+
+msgid "{remaining} remains of your {limit} allowance."
+msgstr "{remaining} が残っています（利用上限 {limit} のうち）。"
+
+msgid "ApexShot Update"
+msgstr "ApexShot のアップデート"
+
+msgid "ApexShot v{version} is ready to install."
+msgstr "ApexShot v{version} をインストールできます。"
+
+msgid "ApexShot v{version} is on its way. Keep this window open."
+msgstr "ApexShot v{version} をダウンロードしています。このウィンドウを開いたままにしてください。"
+
+msgid "ApexShot v{version} has finished downloading."
+msgstr "ApexShot v{version} のダウンロードが完了しました。"
+
+msgid "ApexShot v{version} could not be updated."
+msgstr "ApexShot v{version} をアップデートできませんでした。"
+
+msgid "Update available"
+msgstr "アップデートがあります"
+
+msgid "Downloading update"
+msgstr "アップデートをダウンロード中"
+
+msgid "Update ready"
+msgstr "アップデートの準備完了"
+
+msgid "Update failed"
+msgstr "アップデートに失敗しました"
+
+msgid "Update now"
+msgstr "今すぐアップデート"
+
+msgid "Later"
+msgstr "後で"
+
+msgid "Cancel download"
+msgstr "ダウンロードをキャンセル"
+
+msgid "Install now"
+msgstr "今すぐインストール"
+
+msgid "Installed version"
+msgstr "インストール済みバージョン"
+
+msgid "Latest version"
+msgstr "最新バージョン"
+
+msgid "Download size"
+msgstr "ダウンロードサイズ"
+
+msgid "Download speed"
+msgstr "ダウンロード速度"
+
+msgid "Downloaded"
+msgstr "ダウンロード済み"
+
+msgid "Downloading..."
+msgstr "ダウンロード中..."
+
+msgid "Starting..."
+msgstr "開始しています..."
+
+msgid "Filename"
+msgstr "ファイル名"
+
+msgid "File size"
+msgstr "ファイルサイズ"
+
+msgid "Progress"
+msgstr "進行状況"
+
+msgid "Release notes"
+msgstr "リリースノート"
+
+msgid "Failed"
+msgstr "失敗"
+
+msgid "Could not start the installer: {error}"
+msgstr "インストーラーを起動できませんでした: {error}"
+
+msgid "Captures and recordings can now upload from this PC."
+msgstr "撮影した画面と録画をこの PC からアップロードできるようになりました。"
+
+msgid "Close the result card when its Upload action starts an upload."
+msgstr "Upload アクションでアップロードが始まると、結果カードを閉じます。"
+
+msgid "Could not open the Motion encoder input."
+msgstr "Motion エンコーダーの入力を開けませんでした。"
+
+msgid "Could not render the Motion frame."
+msgstr "Motion のフレームをレンダリングできませんでした。"
+
+msgid "Could not start the image editor: {message}"
+msgstr "画像エディターを起動できませんでした: {message}"
+
+msgid "Motion has no still to export."
+msgstr "Motion に書き出す静止画がありません。"
+
+msgid "Opened {name} in the image editor"
+msgstr "{name} を画像エディターで開きました"
+
+msgid "Optional. Link your account to upload screenshots and recordings to ApexShot Cloud."
+msgstr "任意。アカウントをリンクすると、スクリーンショットと録画を ApexShot Cloud にアップロードできます。"
+
+msgid "Share link copied to clipboard: {url}"
+msgstr "共有リンクをクリップボードにコピーしました: {url}"
+
+msgid "The Motion encoder is not running."
+msgstr "Motion エンコーダーが実行されていません。"
+
+msgid "The Windows image editor names each color when you point at its swatch."
+msgstr "Windows 画像エディターでは、色見本にポインターを合わせると色の名前が表示されます。"
+
+msgid "Upload"
+msgstr "アップロード"
+
+msgid "Uploaded"
+msgstr "アップロード済み"
+
+msgid "Uploaded {name} and copied its share link"
+msgstr "{name} をアップロードし、共有リンクをコピーしました"
+
+msgid "Uploads each saved screenshot and recording and copies the share link. Does nothing until you Connect."
+msgstr "保存されたスクリーンショットと録画をアップロードし、共有リンクをコピーします。接続するまで何もしません。"
+
+msgid "ffmpeg failed to encode the Motion video."
+msgstr "ffmpeg が Motion 動画をエンコードできませんでした。"
+
+msgid "Upgrade to Studio"
+msgstr "Studio にアップグレード"
+
+msgid "Add zoom: click the preview to place it"
+msgstr "ズームを追加：プレビューをクリックして配置"
+
+msgid "Adds a zoom that automatically follows the mouse activity"
+msgstr "マウスの動きに自動で追従するズームを追加します"
+
+msgid "Automatic zoom"
+msgstr "自動ズーム"
+
+msgid "Click where to zoom in"
+msgstr "ズームする位置をクリック"
+
+msgid "Click where to zoom in, or use Automatic zoom"
+msgstr "ズームする位置をクリック、または自動ズームを使用"
+
+msgid "Hardware acceleration"
+msgstr "ハードウェアアクセラレーション"
+
+msgid "Use the GPU encoder when one is available. Falls back to the CPU automatically."
+msgstr "利用可能な場合は GPU エンコーダーを使用します。自動的に CPU にフォールバックします。"
+
+msgid "Always use the default cursor"
+msgstr "常に既定のカーソルを使用"
+
+msgid "Base angle"
+msgstr "基準角度"
+
+msgid "Point along movement"
+msgstr "移動方向に合わせる"
+
+msgid "Tilt amount"
+msgstr "傾きの量"
+
+msgid "Tilt with motion"
+msgstr "動きに合わせて傾ける"
+
+msgid "Codec"
+msgstr "コーデック"
+
+msgid "Smaller files at the same quality, but not every app or browser plays HEVC."
+msgstr "同じ画質でファイルが小さくなりますが、HEVC を再生できないアプリやブラウザーもあります。"
+msgid "Hardware encoding uses a bitrate, so file sizes follow the estimate; the software encoder uses a constant quality."
+msgstr "ハードウェアエンコードはビットレートを使うため、ファイルサイズは見積もりに沿います。ソフトウェアエンコーダーは一定の品質を使います。"
+
+msgid "Estimated output size: {size}"
+msgstr "推定ファイルサイズ: {size}"
+
+msgid "Export time ≈ {time}"
+msgstr "書き出し時間 ≈ {time}"
+
+msgid "Frame styles and shadows"
+msgstr "フレームスタイルと影"
+
+msgid "Frame styles and shadows for stills."
+msgstr "静止画のフレームスタイルと影。"
+
+msgid "Included with Studio"
+msgstr "Studio に含まれます"
+
+msgid "Studio preview. A non-default rendered pose needs activation for final images."
+msgstr "Studioプレビュー。デフォルト以外のレンダリング済みポーズを最終画像にするには有効化が必要です。"
+
+msgid "Automatic width"
+msgstr "自動の幅"
+
+msgid "Camera delay"
+msgstr "カメラの遅延"
+
+msgid "Camera side"
+msgstr "カメラの位置"
+
+msgid "Edge inset"
+msgstr "端の余白"
+
+msgid "Edge softness"
+msgstr "端のぼかし"
+
+msgid "Fill"
+msgstr "塗りつぶし"
+
+msgid "Hide during silence"
+msgstr "無音中は非表示"
+
+msgid "Hide the camera while nobody is talking, and bring it back when they do."
+msgstr "誰も話していない間はカメラを隠し、話し始めると再び表示します。"
+
+msgid "Keep the screen's shape and give the camera the rest of the frame."
+msgstr "画面の形を保ち、残りのフレームをカメラに割り当てます。"
+
+msgid "Layout"
+msgstr "レイアウト"
+
+msgid "Layout settings"
+msgstr "レイアウト設定"
+
+msgid "Leave the Background padding between the screen and the camera, with rounded corners."
+msgstr "画面とカメラの間に背景のパディングを残し、角を丸くします。"
+
+msgid "Make the camera smaller while the screen is zoomed, so it covers less of the recording."
+msgstr "画面をズームしている間はカメラを小さくして、録画の見える範囲を広げます。"
+
+msgid "Minimum silence"
+msgstr "最小の無音時間"
+
+msgid "Padded"
+msgstr "余白あり"
+
+msgid "Rounded"
+msgstr "角丸"
+
+msgid "Roundness"
+msgstr "丸み"
+
+msgid "Screen width"
+msgstr "画面の幅"
+
+msgid "Shift the camera against the screen and sound. Raise it if your lips move after the words, lower it if they move before."
+msgstr "カメラを画面と音声に対してずらします。言葉より後に唇が動く場合は値を上げ、先に動く場合は下げてください。"
+
+msgid "Shrink during zoom"
+msgstr "ズーム中に縮小"
+
+msgid "Shrink size"
+msgstr "縮小サイズ"
+
+msgid "The camera's longest side, as a percentage of the frame's shortest side."
+msgstr "カメラの長辺を、フレームの短辺に対する割合で指定します。"
+
+msgid "The person's size, as a percentage of the frame's shortest side."
+msgstr "人物の大きさを、フレームの短辺に対する割合で指定します。"
+
+msgid "The split fills the frame edge to edge."
+msgstr "スプリットがフレームの端から端までを占めます。"
+
+msgid "Transitions"
+msgstr "トランジション"
+
+msgid "1:1"
+msgstr "1:1"
+
+msgid "4:3"
+msgstr "4:3"
+
+msgid "All typing suggestions are handled. Undo brings them back."
+msgstr "入力の提案はすべて処理済みです。元に戻すと復元されます。"
+
+msgid "Apply all suggestions"
+msgstr "すべての提案を適用"
+
+msgid "Apply suggestion"
+msgstr "提案を適用"
+
+msgid "Apply to this project"
+msgstr "このプロジェクトに適用"
+
+msgid "Built-in defaults"
+msgstr "組み込みの既定値"
+
+msgid "Could not open the preset's folder."
+msgstr "プリセットのフォルダーを開けませんでした。"
+
+msgid "Create"
+msgstr "作成"
+
+msgid "Default for new recordings"
+msgstr "新しい録画の既定"
+
+msgid "Default video preset"
+msgstr "既定の動画プリセット"
+
+msgid "Editor"
+msgstr "エディター"
+
+msgid "Keyboard"
+msgstr "キーボード"
+
+msgid "Movement"
+msgstr "動き"
+
+msgid "Name the preset before saving it."
+msgstr "保存する前にプリセットに名前を付けてください。"
+
+msgid "New preset from this project"
+msgstr "このプロジェクトから新しいプリセットを作成"
+
+msgid "No presets yet"
+msgstr "プリセットはまだありません"
+
+msgid "No typing to speed up in this recording."
+msgstr "この録画には早送りできる入力区間がありません。"
+
+msgid "Preset name"
+msgstr "プリセット名"
+
+msgid "Preset options"
+msgstr "プリセットのオプション"
+
+msgid "Presets"
+msgstr "プリセット"
+
+msgid "Press + to save this project's background, cursor, camera and captions as a preset."
+msgstr "+ を押すと、このプロジェクトの背景、カーソル、カメラ、キャプションをプリセットとして保存できます。"
+
+msgid "Preview"
+msgstr "プレビュー"
+
+msgid "Put every zoom animation setting back to its default."
+msgstr "ズームアニメーションの設定をすべて既定に戻します。"
+
+msgid "Record keystrokes"
+msgstr "キー入力を記録"
+
+msgid "Remove as default"
+msgstr "既定から外す"
+
+msgid "Remove suggestion"
+msgstr "提案を削除"
+
+msgid "Rename"
+msgstr "名前を変更"
+
+msgid "Renamed to {name}."
+msgstr "{name} に名前を変更しました。"
+
+msgid "Set as default"
+msgstr "既定に設定"
+
+msgid "Show in folder"
+msgstr "フォルダーで表示"
+
+msgid "Show keyboard shortcuts"
+msgstr "キーボードショートカットを表示"
+
+msgid "Show single letters"
+msgstr "単独の文字を表示"
+
+msgid "Soft"
+msgstr "ソフト"
+
+msgid "Sound"
+msgstr "サウンド"
+
+msgid "That preset is no longer on disk."
+msgstr "そのプリセットはディスク上にありません。"
+
+msgid "This recording has no keystrokes. Turn on Record keystrokes in Settings, under Recording, then record again."
+msgstr "この録画にはキー入力がありません。設定の「録画」で「キー入力を記録」をオンにしてから、もう一度録画してください。"
+
+msgid "This zoom"
+msgstr "このズーム"
+
+msgid "Typing"
+msgstr "入力"
+
+msgid "Unavailable preset"
+msgstr "利用できないプリセット"
+
+msgid "Update with current look"
+msgstr "現在の外観で更新"
+
+msgid "Visibility"
+msgstr "表示"
+
+msgid "Volume"
+msgstr "音量"
+
+msgid "{name} deleted."
+msgstr "{name} を削除しました。"
+
+msgid "{name} now holds the current look."
+msgstr "{name} を現在の外観に更新しました。"
+
+msgid "{name} saved."
+msgstr "{name} を保存しました。"
+
+msgid "Motion videos you export appear in Recordings. Saved Motion projects are not kept on Windows yet."
+msgstr "書き出したモーション動画は「録音」に表示されます。保存したモーションプロジェクトは、Windows ではまだ保持されません。"
+
+msgid "Expires in {time}"
+msgstr "有効期限まで {time}"
+
+msgid "Background music"
+msgstr "BGM"
+
+msgid "Choose background music"
+msgstr "BGM を選択"
+
+msgid "Clip {current} of {total}"
+msgstr "クリップ {current} / {total}"
+
+msgid "Clips"
+msgstr "クリップ"
+
+msgid "Length {original}"
+msgstr "長さ {original}"
+
+msgid "Microphone"
+msgstr "マイク"
+
+msgid "Microphone volume"
+msgstr "マイクの音量"
+
+msgid "Music volume"
+msgstr "BGM の音量"
+
+msgid "Mute clip"
+msgstr "クリップをミュート"
+
+msgid "Mute microphone"
+msgstr "マイクをミュート"
+
+msgid "Mute music"
+msgstr "BGM をミュート"
+
+msgid "Mute system sound"
+msgstr "システム音声をミュート"
+
+msgid "Muted"
+msgstr "ミュート済み"
+
+msgid "Remove music"
+msgstr "BGM を削除"
+
+msgid "Select a clip on the timeline to change its speed and sound."
+msgstr "タイムラインでクリップを選択すると、速度とサウンドを変更できます。"
+
+msgid "Select music…"
+msgstr "BGM を選択…"
+
+msgid "System sound"
+msgstr "システム音声"
+
+msgid "System sound volume"
+msgstr "システム音声の音量"
+
+msgid "This recording has no sound. Turn on the microphone or system audio before recording."
+msgstr "この録画には音がありません。録画前にマイクまたはシステム音声をオンにしてください。"
+
+msgid "{original} at 1× · {now} at {speed}"
+msgstr "{original}（1×）· {now}（{speed}）"
+
+msgid "Loud"
+msgstr "ラウド"
+
+msgid "Noise reduction"
+msgstr "ノイズ低減"
+
+msgid "Podcast"
+msgstr "ポッドキャスト"
+
+msgid "Warm"
+msgstr "ウォーム"
+
+msgid "Even, natural voice"
+msgstr "自然で均一な声"
+
+msgid "Punchy and compressed"
+msgstr "力強く圧縮された声"
+
+msgid "Removes steady noise"
+msgstr "一定のノイズを除去"
+
+msgid "Warm, polished voice"
+msgstr "温かみのある整った声"
+
+msgid "Fuller, deeper tone"
+msgstr "より豊かで深い音色"
+
+msgid "As recorded"
+msgstr "録音そのまま"
+
+msgid "Evens out your voice so it stays at one level."
+msgstr "声の音量を一定に整えます。"
+
+msgid "Louder, compressed voice that cuts through music."
+msgstr "音楽の中でも埋もれない、より大きく圧縮された声。"
+
+msgid "Removes steady background noise, then evens out the voice."
+msgstr "一定の背景ノイズを除去してから、声を整えます。"
+
+msgid "Full, warm voice with softened hiss and sibilance."
+msgstr "歯擦音やサーッというノイズを抑えた、豊かで温かい声。"
+
+msgid "Adds body to thin microphones."
+msgstr "薄い音のマイクに厚みを加えます。"
+
+msgid "Keeps the microphone exactly as it was recorded."
+msgstr "マイクの音を録音したままに保ちます。"
+
+msgid "Output"
+msgstr "出力"
+
+msgid "Format"
+msgstr "形式"
+
+msgid "Estimated size"
+msgstr "推定サイズ"
+
+msgid "Export time"
+msgstr "書き出し時間"
+
+msgid "Resolution"
+msgstr "解像度"
+
+msgid "Remove recording"
+msgstr "録画を削除"
+
+msgid "This recording has no audio."
+msgstr "この録画には音声がありません。"
+
+msgid "Hide cursor here"
+msgstr "ここでカーソルを隠す"
+
+msgid "Exporting {percent}%"
+msgstr "エクスポート中 {percent}%"
+
+msgid "Export cancelled"
+msgstr "エクスポートをキャンセルしました"
+
+msgid "Could not render the image."
+msgstr "画像をレンダリングできませんでした。"
+
+msgid "Compare enhancement"
+msgstr "補正を比較"
+
+msgid "Drag the divider across the image."
+msgstr "仕切りを画像の上でドラッグします。"
+
+msgid "Enhancing the image…"
+msgstr "画像を補正しています…"
+
+msgid "Free preview. Exporting with enhancement needs Studio."
+msgstr "無料プレビューです。補正付きの書き出しには Studio が必要です。"
+
+msgid "Sharpens small screenshots on this device, up to 1 megapixel. Missing detail cannot always be recovered."
+msgstr "このデバイス上で小さなスクリーンショットを最大 1 メガピクセルまで鮮明にします。失われた細部は必ずしも復元できません。"
+
+msgid "Source"
+msgstr "元画像"
+
+msgid "Use Neural 2×"
+msgstr "ニューラル 2× を使用"
+
+msgid "16:9 image aspect ratio; banners may be cropped on some devices."
+msgstr "画像のアスペクト比 16:9。バナーは一部のデバイスで切り取られる場合があります。"
+
+msgid "Exports at {width} × {height} px."
+msgstr "{width} × {height} px で書き出します。"
+
+msgid "Ratio presets change the aspect ratio; platform presets also export at the size that platform asks for. W/H shows the export size. Click the selected preset again to reset."
+msgstr "比率プリセットはアスペクト比を変更します。プラットフォームのプリセットは、そのプラットフォームが求めるサイズでも書き出します。W/H には書き出しサイズが表示されます。選択中のプリセットをもう一度クリックするとリセットされます。"
+
+msgid "This image is large, so enhancing it takes a while on this device. {percent}% done, about {left} left. You can close the preview to stop."
+msgstr "画像が大きいため、このデバイスでは補正に時間がかかります。{percent}% 完了、残り約 {left}。プレビューを閉じると中止できます。"
+
+msgid "Enhancing… {percent}%, about {left} left"
+msgstr "補正中… {percent}%、残り約 {left}"
+
+msgid "{minutes} min"
+msgstr "{minutes} 分"
+
+msgid "{seconds} s"
+msgstr "{seconds} 秒"
+msgid "A link to the exported file was copied"
+msgstr "エクスポートしたファイルへのリンクをコピーしました"
+
+msgid "ApexShot could not reserve a file for the export."
+msgstr "ApexShot はエクスポート用のファイルを確保できませんでした。"
+
+msgid "Checking encoder support…"
+msgstr "エンコーダーの対応状況を確認しています…"
+
+msgid "Copy exported file"
+msgstr "エクスポートしたファイルをコピー"
+
+msgid "Depends on hardware"
+msgstr "ハードウェアによって異なります"
+
+msgid "Disk space is almost full"
+msgstr "ディスクの空き容量がほとんどありません"
+
+msgid "Encode with HEVC"
+msgstr "HEVC でエンコード"
+
+msgid "Export stopped"
+msgstr "エクスポートを停止しました"
+
+msgid "Hardware encoding failed; the export restarted on the software encoder"
+msgstr "ハードウェアエンコードに失敗したため、ソフトウェアエンコーダーでエクスポートをやり直しました"
+
+msgid "Open failed"
+msgstr "開けませんでした"
+
+msgid "Recording stopped"
+msgstr "録画を停止しました"
+
+msgid "Retrying on the software encoder…"
+msgstr "ソフトウェアエンコーダーで再試行しています…"
+
+msgid "Show in Files"
+msgstr "ファイルで表示"
+
+msgid "The partial file was removed"
+msgstr "途中まで書き出したファイルを削除しました"
+
+msgid "The selected codec cannot encode on this machine"
+msgstr "選択したコーデックはこのマシンではエンコードできません"
+
+msgid "This ffmpeg build has no HEVC encoder"
+msgstr "この ffmpeg ビルドには HEVC エンコーダーがありません"
+
+msgid "Uploaded, but the link could not be copied: {error}"
+msgstr "アップロードしましたが、リンクをコピーできませんでした: {error}"
+
+msgid "Motion isn't available for long screenshots"
+msgstr "長いスクリーンショットではモーションを使用できません"
+
+msgid "This screenshot is too long to animate. Scrolling captures and other long images stay in Static, where every annotation and export tool still works."
+msgstr "このスクリーンショットは長すぎてアニメーションできません。スクロールキャプチャなどの長い画像は静止モードのままで、すべての注釈ツールと書き出しツールを引き続き使用できます。"
+
+msgid "Account"
+msgstr "アカウント"
+
+msgid "Cloud storage"
+msgstr "クラウドストレージ"
+
+msgid "Email"
+msgstr "メールアドレス"
+
+msgid "Last updated"
+msgstr "最終更新"
+
+msgid "Loading usage…"
+msgstr "使用状況を読み込み中…"
+
+msgid "Plan"
+msgstr "プラン"
+
+msgid "Refreshing…"
+msgstr "更新中…"
+
+msgid ""
+"System default uses your desktop language. Changes are saved automatically."
+msgstr "システムのデフォルトはデスクトップの言語を使用します。変更は自動的に保存されます。"
+
+msgid "Unlimited"
+msgstr "無制限"
+
+msgid "Used"
+msgstr "使用済み"
+
+msgid "{used} of {limit}"
+msgstr "{used}（上限 {limit}）"
+
+msgid "Activate a license"
+msgstr "ライセンスを有効化"
+
+msgid "ApexShot Studio"
+msgstr "ApexShot Studio"
+
+msgid "Included updates ended {date}."
+msgstr "付属のアップデートは {date} に終了しました。"
+
+msgid "License"
+msgstr "ライセンス"
+
+msgid "License key"
+msgstr "ライセンスキー"
+
+msgid "Needs attention"
+msgstr "要確認"
+
+msgid "Not activated on this device."
+msgstr "このデバイスでは有効化されていません。"
+
+msgid "Open ApexShot anytime for Settings, shortcuts, and preferences"
+msgstr "設定、ショートカット、環境設定はいつでも ApexShot を開いて変更できます"
+
+msgid "Other device"
+msgstr "別のデバイス"
+
+msgid "Paste your license key"
+msgstr "ライセンスキーを貼り付け"
+
+msgid "Replace…"
+msgstr "置き換え…"
+
+msgid "The saved license couldn't be verified."
+msgstr "保存されたライセンスを検証できませんでした。"
+
+msgid "This build can't verify Studio licenses."
+msgstr "このビルドでは Studio ライセンスを検証できません。"
+
+msgid "This license belongs to another device."
+msgstr "このライセンスは別のデバイスに紐付いています。"
+
+msgid "Unavailable"
+msgstr "利用不可"
+
+msgid "Updates ended"
+msgstr "アップデート終了"
+
+msgid "Updates included through {date}."
+msgstr "{date} までのアップデートが含まれます。"
+
+msgid "0 B/s"
+msgstr "0 B/s"
+
+msgid "An export is still running. Let it finish, then try again."
+msgstr "書き出しがまだ実行中です。完了してからもう一度お試しください。"
+
+msgid "ApexShot could not close every window. Close them, then try again."
+msgstr "ApexShot がすべてのウィンドウを閉じられませんでした。ウィンドウを閉じてから、もう一度お試しください。"
+
+msgid "ApexShot is up to date"
+msgstr "ApexShot は最新です"
+
+msgid "ApexShot v{version} is being installed. Keep this window open."
+msgstr "ApexShot v{version} をインストールしています。このウィンドウは開いたままにしてください。"
+
+msgid "ApexShot v{version} is installed."
+msgstr "ApexShot v{version} をインストールしました。"
+
+msgid "ApexShot v{version} is ready. Your current work will not be interrupted."
+msgstr "ApexShot v{version} の準備ができました。現在の作業は中断されません。"
+
+msgid "ApexShot window"
+msgstr "ApexShot ウィンドウ"
+
+msgid "Could not check the release: {error}"
+msgstr "リリースを確認できませんでした: {error}"
+
+msgid "Could not create the update folder: {error}"
+msgstr "アップデート用フォルダーを作成できませんでした: {error}"
+
+msgid "Could not find a local cache folder for the update."
+msgstr "アップデート用のローカルキャッシュフォルダーが見つかりませんでした。"
+
+msgid "Could not finish the update: {error}"
+msgstr "アップデートを完了できませんでした: {error}"
+
+msgid "Could not install the GNOME extension update."
+msgstr "GNOME 拡張機能のアップデートをインストールできませんでした。"
+
+msgid "Could not reach the Flatpak service: {error}"
+msgstr "Flatpak サービスに接続できませんでした: {error}"
+
+msgid "Could not reach the package service: {error}"
+msgstr "パッケージサービスに接続できませんでした: {error}"
+
+msgid "Could not read the checksums: {error}"
+msgstr "チェックサムを読み取れませんでした: {error}"
+
+msgid "Could not save the update: {error}"
+msgstr "アップデートを保存できませんでした: {error}"
+
+msgid "Could not start the package manager: {error}"
+msgstr "パッケージマネージャーを起動できませんでした: {error}"
+
+msgid "Enhancement works up to 1 MP and 4096 px per edge. Crop this {width} × {height} image to use it."
+msgstr "高画質化は 1 MP、1 辺 4096 px までの画像に対応します。この {width} × {height} の画像を切り抜くと使用できます。"
+
+msgid "Finish your recording first"
+msgstr "先に録画を終了してください"
+
+msgid "Image editor"
+msgstr "画像エディター"
+
+msgid "Installation was cancelled."
+msgstr "インストールはキャンセルされました。"
+
+msgid "Installing restarts ApexShot, which would stop the recording in progress."
+msgstr "インストールすると ApexShot が再起動し、進行中の録画が停止します。"
+
+msgid "Installing update"
+msgstr "アップデートをインストール中"
+
+msgid "Log out and back in to finish updating the GNOME extension."
+msgstr "GNOME 拡張機能のアップデートを完了するには、ログアウトしてから再度ログインしてください。"
+
+msgid "Preparing to install"
+msgstr "インストールの準備中"
+
+msgid "Refreshing the GNOME extension..."
+msgstr "GNOME 拡張機能を更新中..."
+
+msgid "Restart ApexShot"
+msgstr "ApexShot を再起動"
+
+msgid "Restart ApexShot to use the new version."
+msgstr "新しいバージョンを使うには ApexShot を再起動してください。"
+
+msgid "Saving your work…"
+msgstr "作業内容を保存しています…"
+
+msgid "Setup"
+msgstr "セットアップ"
+
+msgid "The Flatpak update could not start: {error}"
+msgstr "Flatpak のアップデートを開始できませんでした: {error}"
+
+msgid "The Flatpak update failed."
+msgstr "Flatpak のアップデートに失敗しました。"
+
+msgid "The Flatpak update stopped without finishing."
+msgstr "Flatpak のアップデートが完了前に停止しました。"
+
+msgid "The download did not match the published checksum."
+msgstr "ダウンロードしたファイルが公開されているチェックサムと一致しません。"
+
+msgid "The download stopped: {error}"
+msgstr "ダウンロードが停止しました: {error}"
+
+msgid "The installer starts as soon as these windows have saved and closed."
+msgstr "これらのウィンドウが保存されて閉じると、すぐにインストーラーが起動します。"
+
+msgid "The package manager could not install the update."
+msgstr "パッケージマネージャーでアップデートをインストールできませんでした。"
+
+msgid "The package service could not install the update."
+msgstr "パッケージサービスでアップデートをインストールできませんでした。"
+
+msgid "The package service refused the update: {error}"
+msgstr "パッケージサービスがアップデートを拒否しました: {error}"
+
+msgid "The package service stopped without finishing."
+msgstr "パッケージサービスが完了前に停止しました。"
+
+msgid "The release did not publish a checksum for {name}."
+msgstr "このリリースには {name} のチェックサムが公開されていません。"
+
+msgid "The release did not publish checksums."
+msgstr "このリリースにはチェックサムが公開されていません。"
+
+msgid "The server sent an empty download."
+msgstr "サーバーから空のファイルが送られてきました。"
+
+msgid "The update package is missing."
+msgstr "アップデートパッケージが見つかりません。"
+
+msgid "These windows close while ApexShot updates and reopen with your edits afterwards:"
+msgstr "以下のウィンドウは ApexShot の更新中に閉じ、更新後に編集内容を保ったまま再び開きます:"
+
+msgid "This installation is managed by Nix. Update the ApexShot flake input and rebuild your configuration, or upgrade its Nix profile entry."
+msgstr "このインストールは Nix で管理されています。ApexShot の flake 入力を更新して構成を再ビルドするか、Nix プロファイルのエントリをアップグレードしてください。"
+
+msgid "This release does not include a package for this system."
+msgstr "このリリースにはこのシステム用のパッケージが含まれていません。"
+
+msgid "This system needs the terminal updater."
+msgstr "このシステムではターミナルのアップデーターが必要です。"
+
+msgid "This version is not in your Flatpak repository yet. Try again later."
+msgstr "このバージョンはまだ Flatpak リポジトリにありません。後でもう一度お試しください。"
+
+msgid "Tidying the startup entries..."
+msgstr "スタートアップ項目を整理中..."
+
+msgid "Update ApexShot"
+msgstr "ApexShot をアップデート"
+
+msgid "Updating..."
+msgstr "アップデート中..."
+
+msgid "Verifying download..."
+msgstr "ダウンロードを検証中..."
+
+msgid "Video editor"
+msgstr "動画エディター"
+
+msgid "Waiting for permission..."
+msgstr "許可を待っています..."
+
+msgid "Your windows will reopen with your edits."
+msgstr "ウィンドウは編集内容を保ったまま再び開きます。"
+
+msgid "Your work will reopen"
+msgstr "作業内容は再び開きます"
+
+msgid "{label} ({count})"
+msgstr "{label}（{count}）"
+
+msgid "Uploading video"
+msgstr "動画をアップロード中"
+
+msgid "{sent} of {total}"
+msgstr "{sent} / {total}"
+
+msgid "Link copied to clipboard"
+msgstr "リンクをクリップボードにコピーしました"
+
+msgid "The link will be copied when you return to this window"
+msgstr "このウィンドウに戻るとリンクがコピーされます"
+
+msgid "Switch back to the editor to copy the link"
+msgstr "エディターに戻ってリンクをコピーしてください"
+
+msgid "Open link"
+msgstr "リンクを開く"
+
+msgid "Exported Motion video"
+msgstr "書き出した Motion 動画"
+
+msgid "Motion edits you make and Motion videos you export will show up here."
+msgstr "作成したモーション編集と書き出した Motion 動画はここに表示されます。"
+
+msgid "60 FPS makes animation smoother and takes longer to export."
+msgstr "60 FPS ではアニメーションが滑らかになりますが、書き出しに時間がかかります。"
+
+msgid "Export cannot recover detail missing from the screenshot."
+msgstr "スクリーンショットにない細部は、書き出しで復元できません。"
+
+msgid "Keystroke captions"
+msgstr "キー操作の字幕"
+
+msgid "Show the shortcuts you press on screen in recordings."
+msgstr "録画中に押したショートカットを画面に表示します。"
+
+msgid "Camera cutout"
+msgstr "カメラの切り抜き"
+
+msgid "Cut yourself out of the camera and set yourself on the screen."
+msgstr "カメラ映像から自分を切り抜いて画面上に配置します。"
+
+msgid "Microphone unavailable"
+msgstr "マイクを利用できません"
+
+msgid "Recording continues without the microphone."
+msgstr "マイクなしで録画を続行します。"
+
+msgid "System audio unavailable"
+msgstr "システム音声を利用できません"
+
+msgid "Recording continues without system audio."
+msgstr "システム音声なしで録画を続行します。"
+
+msgid "Recording all system audio"
+msgstr "すべてのシステム音声を録音します"
+
+msgid "{app} is not playing audio, so the recording captures every app."
+msgstr "{app} は音声を再生していないため、すべてのアプリの音声を録音します。"
+
+msgid "Pause Recording"
+msgstr "録画を一時停止"
+
+msgid "Resume Recording"
+msgstr "録画を再開"
+
+msgid "Restart Recording"
+msgstr "録画をやり直す"
+
+msgid "Discard Recording"
+msgstr "録画を破棄"
+
+msgid "Choose your screen"
+msgstr "画面を選択してください"
+
+msgid "A virtual screen records an empty display. Pick your screen in the sharing dialog."
+msgstr "仮想画面には何も表示されず、空の映像が録画されます。共有ダイアログで画面を選択してください。"
+
+msgid "Almost out of free uploads"
+msgstr "無料アップロードの残りがわずかです"
+
+msgid "Could not open the dashboard"
+msgstr "ダッシュボードを開けませんでした"
+
+msgid "Delete old uploads, or Go Pro for 50 GB."
+msgstr "古いアップロードを削除するか、Pro にアップグレードして 50 GB を利用しましょう。"
+
+msgid "See Studio"
+msgstr "Studio を確認"
+
+msgid "What's new"
+msgstr "新機能"
+
+msgid "What's new in ApexShot {version}"
+msgstr "ApexShot {version} の新機能"
+
+msgid "Explore Studio"
+msgstr "Studio を見る"
+
+msgid "Exported with Studio. 1 free Studio export left."
+msgstr "Studio で書き出しました。残りの無料 Studio 書き出しは 1 回です。"
+
+msgid "Exported with Studio. {count} free Studio exports left."
+msgstr "Studio で書き出しました。残りの無料 Studio 書き出しは {count} 回です。"
+
+msgid "Go Pro for 50 GB."
+msgstr "Pro にアップグレードして 50 GB を利用しましょう。"
+
+msgid "Go Pro for unlimited uploads."
+msgstr "Pro にアップグレードしてアップロードを無制限にしましょう。"
+
+msgid "Manage uploads"
+msgstr "アップロードを管理"
+
+msgid "Not uploaded"
+msgstr "アップロードされませんでした"
+
+msgid "Studio exports left on the free trial"
+msgstr "無料トライアルで残っている Studio 書き出し"
+
+msgid "Studio · 1 free export left"
+msgstr "Studio · 無料書き出し残り 1 回"
+
+msgid "Studio · {count} free exports left"
+msgstr "Studio · 無料書き出し残り {count} 回"
+
+msgid "That was your last free Studio export. Get Studio to keep these styles."
+msgstr "これが最後の無料 Studio 書き出しでした。これらのスタイルを使い続けるには Studio を入手してください。"
+
+msgid "Uploads come back next month."
+msgstr "アップロードは来月また利用できます。"
+
+msgid "Uploads come back on {date}."
+msgstr "アップロードは {date} にまた利用できます。"
+
+msgid "You've used this month's free uploads"
+msgstr "今月の無料アップロードを使い切りました"
+
+msgid "You've used your 3 free Studio exports"
+msgstr "3 回の無料 Studio 書き出しを使い切りました"
+
+msgid "Your capture is saved on this computer."
+msgstr "キャプチャはこのコンピューターに保存されています。"
+
+msgid "Your free Cloud storage is almost full"
+msgstr "無料のクラウドストレージがほぼいっぱいです"
+
+msgid "Your free Cloud storage is full"
+msgstr "無料のクラウドストレージがいっぱいです"
+
+msgid "{used} of {max} free Cloud storage used."
+msgstr "無料のクラウドストレージを {used} / {max} 使用しています。"
+
+msgid "{used} of {max} free uploads used this month."
+msgstr "今月の無料アップロードを {used} / {max} 回使用しました。"
+
+msgid "{used} of {max} free uploads used."
+msgstr "無料アップロードを {used} / {max} 回使用しました。"
+
+msgid "{used} of {max} used this month."
+msgstr "今月は {used} / {max} を使用しました。"
+
+msgid "{used} of {max} used."
+msgstr "{used} / {max} を使用しています。"
+
+msgid "Try Studio free"
+msgstr "Studio を無料で試す"
+
+msgid "Buying Studio takes one step"
+msgstr "Studio の購入はワンステップ"
+
+msgid "Capture, annotation, recording, and the editors' core tools stay free."
+msgstr "キャプチャ、注釈、録画、エディターの基本ツールは引き続き無料です。"
+
+msgid "Studio is active on this device"
+msgstr "このデバイスで Studio が有効になりました"
+
+msgid "Studio activation failed"
+msgstr "Studio を有効にできませんでした"
+
+msgid "Uses Studio · 1 free export left"
+msgstr "Studio を使用 · 無料エクスポート残り 1 回"
+
+msgid "Uses Studio · {count} free exports left"
+msgstr "Studio を使用 · 無料エクスポート残り {count} 回"
+
+msgid "Exported with Studio."
+msgstr "Studio でエクスポートしました。"
+
+msgid "1 free Studio export left."
+msgstr "無料の Studio エクスポートは残り 1 回です。"
+
+msgid "{count} free Studio exports left."
+msgstr "無料の Studio エクスポートは残り {count} 回です。"
+
+msgid "That was your last free Studio export."
+msgstr "これが最後の無料 Studio エクスポートでした。"
+
+msgid "Get Studio to keep these styles."
+msgstr "これらのスタイルを続けるには Studio を入手してください。"
+
+msgid "Get Studio"
+msgstr "Studio を入手"
+
+msgid "Your next 3 Studio exports are on us. After each one, ApexShot shows how many are left."
+msgstr "次の 3 回の Studio 書き出しは無料です。書き出すたびに ApexShot が残り回数を表示します。"
+
+msgid "Choose Studio in ApexShot, sign in, and pay. ApexShot turns Studio on for you, with no licence file to copy or import."
+msgstr "ApexShot で Studio を選び、サインインして支払うだけ。ApexShot が Studio を有効にするので、ライセンスファイルのコピーやインポートは不要です。"
+
+msgid "Name"
+msgstr "名前"
+
+msgid "New preset"
+msgstr "新しいプリセット"
+
+msgid "New recordings open with this look"
+msgstr "新しい録画はこの外観で開きます"
+
+msgid "Save current look"
+msgstr "現在の外観を保存"
+
+msgid "Save this project's background, cursor and click sound, then put them on any recording."
+msgstr "このプロジェクトの背景・カーソル・クリック音を保存して、どの録画にも適用できます。"
+
+msgid "Save this project's background, cursor, camera and captions, then put them on any recording."
+msgstr "このプロジェクトの背景・カーソル・カメラ・キャプションを保存して、どの録画にも適用できます。"
+
+msgid "ApexShot on X11 desktops"
+msgstr "X11 デスクトップで ApexShot"
+
+msgid "Cinnamon, Xfce, MATE, and other X11 desktops now get shortcuts, window recordings, scrolling capture, and Auto Zoom."
+msgstr "Cinnamon、Xfce、MATE などの X11 デスクトップで、ショートカット、ウィンドウ録画、スクロールキャプチャ、自動ズームが使えるようになりました。"
+
+msgid "Record on Fedora"
+msgstr "Fedora で録画"
+
+msgid "Screen recording now works on Fedora. On KDE Plasma, recordings keep an editable cursor, clicks, and Auto Zoom."
+msgstr "Fedora で画面録画ができるようになりました。KDE Plasma では、編集可能なカーソル、クリック、自動ズームが録画に残ります。"
+
+msgid "Presets in the video editor"
+msgstr "動画エディターのプリセット"
+
+msgid "Save a recording's background, cursor, and click sound as a preset, apply it in one click, or make it the default for new recordings."
+msgstr "録画の背景、カーソル、クリック音をプリセットとして保存し、ワンクリックで適用したり、新しい録画の既定にしたりできます。"
+
+msgid "Hide the cursor with one switch"
+msgstr "スイッチひとつでカーソルを非表示"
+
+msgid "Turn on Hide cursor in the Cursor panel to take the cursor out of the whole video."
+msgstr "「カーソル」パネルで「カーソルを非表示にする」をオンにすると、動画全体からカーソルが消えます。"
+
+msgid "Recording works again"
+msgstr "録画が再び使えるように"
+
+msgid "Screen and webcam recordings start again. In 0.3.1 the bundled ffmpeg stopped every recording from starting."
+msgstr "画面とウェブカメラの録画が再び開始できます。0.3.1 では同梱の ffmpeg が原因で録画を開始できませんでした。"
+
+msgid "Choose your mic and speaker"
+msgstr "マイクとスピーカーを選択"
+
+msgid "In Video mode, right-click Mic or Speaker to pick a device. The toolbar shows the device you chose and a live level meter."
+msgstr "「Video」モードで「Mic」または「Speaker」を右クリックしてデバイスを選べます。ツールバーには選んだデバイスとリアルタイムのレベルメーターが表示されます。"
+
+msgid "Record one app's sound"
+msgstr "1 つのアプリの音を録音"
+
+msgid "The Speaker menu records every app, a single app, or no system sound at all."
+msgstr "「Speaker」メニューで、すべてのアプリ、1 つのアプリ、またはシステム音なしを選んで録音できます。"
+
+msgid "Faster downloads and updates"
+msgstr "より速いダウンロードと更新"
+
+msgid "ApexShot now downloads from its own download servers, so installs and updates finish sooner."
+msgstr "ApexShot は専用のダウンロードサーバーから取得するようになり、インストールと更新がより早く終わります。"
+
+msgid "Updates skip the setup wizard"
+msgstr "更新でセットアップウィザードを省略"
+
+msgid "Updating goes straight to installing, without asking you to accept the licence again."
+msgstr "更新はすぐにインストールへ進み、ライセンスへの同意を再度求めません。"
+
+msgid "Quick Access in your recordings"
+msgstr "録画にクイックアクセスを表示"
+
+msgid "A Quick Access card that appears while you record now shows in the video, so you can record yourself capturing and editing."
+msgstr "録画中に表示されたクイックアクセスのカードが動画に映るようになり、キャプチャや編集の様子を録画できます。"
+
+msgid "Stop any recording"
+msgstr "どの録画も停止可能に"
+
+msgid "A recording started without the controls bar now stops from the tray, with apexshot record stop, or with Ctrl+C."
+msgstr "コントロールバーなしで開始した録画も、トレイ、apexshot record stop、または Ctrl+C で停止できるようになりました。"
+
+msgid "Not now"
+msgstr "今はしない"
+
+msgid "Your capture is saved. Connect a free ApexShot account and every upload becomes a link in your clipboard."
+msgstr "キャプチャは保存されています。無料の ApexShot アカウントを接続すると、アップロードがクリップボードのリンクになります。"
+
+msgid "Connected as {email}"
+msgstr "{email} として接続しました"
+
+msgid "Uploading your capture…"
+msgstr "キャプチャをアップロードしています…"
+
+msgid "Your next capture gets a share link."
+msgstr "次回のキャプチャに共有リンクが付きます。"
+
+msgid "Sign in to get a share link"
+msgstr "ログインして共有リンクを取得しましょう。"
+
+msgid "Connect your ApexShot account in Settings → Cloud to get share links."
+msgstr "設定 → クラウドで ApexShot アカウントを接続すると、共有リンクを取得できます。"
+
+msgid ""
+"Every capture becomes a link in your clipboard. Free: 20 uploads a month."
+msgstr "キャプチャはすべてクリップボード内のリンクになります。無料: 月 20 回までアップロードできます。"
+
+msgid "Go Pro for unlimited uploads and links that last 90 days."
+msgstr "Pro にアップグレードして、アップロードを無制限にし、リンクを 90 日間保持しましょう。"
+
+msgid ""
+"Link copied. Free links stay up for 7 days.\n"
+"{url}"
+msgstr ""
+"リンクをコピーしました。無料リンクは 7 日間有効です。\n"
+"{url}"
+
+msgid ""
+"Free links stay up for 7 days.\n"
+"{url}"
+msgstr ""
+"無料リンクは 7 日間有効です。\n"
+"{url}"

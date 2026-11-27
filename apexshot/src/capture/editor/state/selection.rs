@@ -1,0 +1,438 @@
+use super::super::color::{selection_handle_hit_radius_for_scale, selection_hit_padding_for_scale};
+use super::super::render::arrow_geometry;
+use super::super::selection::{
+    action_contains_point_with_padding, action_resize_handle_at_point_with_radius, resize_action,
+    translate_action,
+};
+use super::super::types::{AnnotationAction, Point};
+use super::EditorState;
+
+impl EditorState {
+    pub fn can_remove_selected_action(&self) -> bool {
+        self.selected_action_index
+            .is_some_and(|index| index < self.actions.len())
+    }
+
+    pub fn selected_action(&self) -> Option<&AnnotationAction> {
+        self.selected_action_index
+            .and_then(|index| self.actions.get(index))
+    }
+
+    /// Drop the current selection without touching the actions.
+    pub fn clear_selection(&mut self) {
+        self.selected_action_index = None;
+        self.select_drag_anchor = None;
+        self.select_resize_handle = None;
+    }
+
+    pub fn select_action_at_point_with_scale(&mut self, point: Point, view_scale: f64) -> bool {
+        let hit_padding = selection_hit_padding_for_scale(view_scale);
+
+        self.selected_action_index = self
+            .actions
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, action)| action_contains_point_with_padding(action, point, hit_padding))
+            .map(|(index, _)| index);
+        self.select_drag_anchor = None;
+        self.select_resize_handle = None;
+        self.selected_action_index.is_some()
+    }
+
+    /// Select an existing number marker under the point, ignoring other actions.
+    ///
+    /// The Number tool uses this to re-open the floating bar on a marker instead
+    /// of stacking a second marker on top of it; `false` means "place a new one".
+    pub fn select_number_action_at_point_with_scale(
+        &mut self,
+        point: Point,
+        view_scale: f64,
+    ) -> bool {
+        let hit_padding = selection_hit_padding_for_scale(view_scale);
+
+        self.selected_action_index = self
+            .actions
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, action)| {
+                matches!(action, AnnotationAction::Number { .. })
+                    && action_contains_point_with_padding(action, point, hit_padding)
+            })
+            .map(|(index, _)| index);
+        self.select_drag_anchor = None;
+        self.select_resize_handle = None;
+        self.selected_action_index.is_some()
+    }
+
+    pub fn begin_select_drag_with_scale(&mut self, point: Point, view_scale: f64) -> bool {
+        let handle_hit_radius = selection_handle_hit_radius_for_scale(view_scale);
+
+        if let Some(selected) = self.selected_action() {
+            if let Some(handle) =
+                action_resize_handle_at_point_with_radius(selected, point, handle_hit_radius)
+            {
+                self.select_resize_handle = Some(handle);
+                self.select_drag_anchor = Some(point);
+                return true;
+            }
+        }
+
+        self.select_resize_handle = None;
+        let selected = self.select_action_at_point_with_scale(point, view_scale);
+        if selected {
+            self.select_drag_anchor = Some(point);
+        }
+        selected
+    }
+
+    pub fn update_select_drag(&mut self, point: Point) -> bool {
+        let Some(anchor) = self.select_drag_anchor else {
+            return false;
+        };
+        let Some(index) = self.selected_action_index else {
+            return false;
+        };
+
+        let dx = point.x - anchor.x;
+        let dy = point.y - anchor.y;
+        let img_w = self.base_image.width() as i32;
+        let img_h = self.base_image.height() as i32;
+        let canvas_bounds = self.canvas_bounds_for_dimensions(img_w as u32, img_h as u32);
+        let resize_handle = self.select_resize_handle;
+        let before = self.document_snapshot();
+        let (moved, effect_action) = if let Some(action) = self.actions.get_mut(index) {
+            let moved = if let Some(handle) = resize_handle {
+                resize_action(action, handle, dx, dy)
+            } else {
+                translate_action(action, dx, dy)
+            };
+
+            if moved {
+                clamp_action_to_canvas(action, canvas_bounds);
+            }
+
+            let effect_action = matches!(
+                action,
+                AnnotationAction::Obfuscate { .. } | AnnotationAction::Focus { .. }
+            );
+            (moved, effect_action)
+        } else {
+            self.selected_action_index = None;
+            self.select_drag_anchor = None;
+            return false;
+        };
+
+        if !moved {
+            return false;
+        }
+
+        self.history_interaction_before.get_or_insert(before);
+        self.select_drag_anchor = Some(point);
+        self.clear_redo_history();
+        if effect_action {
+            self.select_drag_effect_dirty = true;
+        }
+        true
+    }
+
+    #[cfg(test)]
+    pub fn end_select_drag(&mut self) -> bool {
+        let rebuild = self.select_drag_effect_dirty;
+        if rebuild {
+            self.rebuild_effect_layer();
+            self.select_drag_effect_dirty = false;
+        }
+        self.end_select_drag_without_rebuild();
+        rebuild
+    }
+
+    pub fn end_select_drag_without_rebuild(&mut self) {
+        self.finish_history_interaction();
+        self.select_drag_anchor = None;
+        self.select_resize_handle = None;
+        self.drag_start = None;
+        self.drag_current = None;
+        self.drag_start_view = None;
+        self.drag_path.clear();
+    }
+
+    pub fn end_select_drag_without_rebuild_and_check_effect(&mut self) -> bool {
+        let rebuild = self.select_drag_effect_dirty;
+        self.select_drag_effect_dirty = false;
+        self.end_select_drag_without_rebuild();
+        rebuild
+    }
+
+    pub fn remove_selected_action(&mut self) -> bool {
+        if self.remove_selected_action_without_rebuild() {
+            self.rebuild_effect_layer();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn remove_selected_action_without_rebuild(&mut self) -> bool {
+        let Some(index) = self.selected_action_index.take() else {
+            return false;
+        };
+
+        if index >= self.actions.len() {
+            return false;
+        }
+
+        let before = self.document_snapshot();
+        let removed = self.actions.remove(index);
+        let next_number_after_remove = match &removed {
+            AnnotationAction::Number { number, style, .. } if *style == self.numbering_style => {
+                Some(*number)
+            }
+            _ => None,
+        };
+        self.select_drag_anchor = None;
+        self.select_resize_handle = None;
+        self.clear_redo_history();
+        if let Some(next_number) = next_number_after_remove {
+            self.next_number = next_number;
+        } else {
+            self.sync_next_number();
+        }
+        self.commit_history_change(before, super::history::HistoryKind::Edit);
+        true
+    }
+}
+
+/// Clamp annotations to the screenshot and its current Appearance surround.
+fn clamp_action_to_canvas(action: &mut AnnotationAction, bounds: (f64, f64, f64, f64)) {
+    let (min_x, min_y, max_x, max_y) = bounds;
+    let width = (max_x - min_x).max(1.0);
+    let height = (max_y - min_y).max(1.0);
+    match action {
+        AnnotationAction::Obfuscate { rect, .. }
+        | AnnotationAction::Focus { rect, .. }
+        | AnnotationAction::Box { rect, .. }
+        | AnnotationAction::Circle { rect, .. } => {
+            let w = (rect.width as f64).min(width) as i32;
+            let h = (rect.height as f64).min(height) as i32;
+            rect.width = w;
+            rect.height = h;
+            rect.x = (rect.x as f64).max(min_x).min(max_x - w as f64).round() as i32;
+            rect.y = (rect.y as f64).max(min_y).min(max_y - h as f64).round() as i32;
+        }
+        AnnotationAction::Text {
+            position,
+            text,
+            font,
+            max_width,
+            ..
+        } => {
+            let surface = match gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, 1, 1)
+            {
+                Ok(s) => s,
+                Err(_) => return,
+            };
+            let context = match gtk4::cairo::Context::new(&surface) {
+                Ok(c) => c,
+                Err(_) => return,
+            };
+            let available_width = max_width.unwrap_or(font.size * 1.8).max(font.size * 1.8);
+            let bounds = super::super::render::text_action_bounds(
+                &context,
+                *position,
+                text,
+                font,
+                Some(available_width),
+            );
+            let box_w = bounds.rect.width as f64;
+            let box_h = bounds.rect.height as f64;
+            let new_box_left = (bounds.rect.x as f64)
+                .max(min_x)
+                .min((max_x - box_w).max(min_x));
+            position.x = new_box_left;
+            let padding_y = 8.0;
+            let new_box_top = (bounds.rect.y as f64)
+                .max(min_y)
+                .min((max_y - box_h).max(min_y));
+            position.y = new_box_top + font.size + padding_y;
+        }
+        AnnotationAction::Number { position, .. } => {
+            position.x = position.x.max(min_x).min(max_x);
+            position.y = position.y.max(min_y).min(max_y);
+        }
+        AnnotationAction::Pen { points, .. } | AnnotationAction::Highlighter { points, .. } => {
+            for p in points {
+                p.x = p.x.max(min_x).min(max_x);
+                p.y = p.y.max(min_y).min(max_y);
+            }
+        }
+        AnnotationAction::Line { start, end, .. } => {
+            start.x = start.x.max(min_x).min(max_x);
+            start.y = start.y.max(min_y).min(max_y);
+            end.x = end.x.max(min_x).min(max_x);
+            end.y = end.y.max(min_y).min(max_y);
+        }
+        AnnotationAction::Arrow {
+            start,
+            end,
+            control_points,
+            stroke_size,
+            style,
+            ..
+        } => {
+            let Some(geometry) = arrow_geometry(*start, *end, *stroke_size, *style, control_points)
+            else {
+                return;
+            };
+            // Keep the whole stroke, chevrons included, on the canvas.
+            let margin = geometry.line_width / 2.0;
+            let (mut left, mut top, mut right, mut bottom) =
+                (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+            for point in geometry.body.iter().chain(geometry.heads.iter().flatten()) {
+                left = left.min(point.x);
+                top = top.min(point.y);
+                right = right.max(point.x);
+                bottom = bottom.max(point.y);
+            }
+
+            let shift_x = if left < min_x + margin {
+                min_x + margin - left
+            } else if right > max_x - margin {
+                max_x - margin - right
+            } else {
+                0.0
+            };
+            let shift_y = if top < min_y + margin {
+                min_y + margin - top
+            } else if bottom > max_y - margin {
+                max_y - margin - bottom
+            } else {
+                0.0
+            };
+            if shift_x != 0.0 || shift_y != 0.0 {
+                start.x += shift_x;
+                start.y += shift_y;
+                end.x += shift_x;
+                end.y += shift_y;
+                if let Some(cps) = control_points.as_mut() {
+                    for cp in cps.iter_mut() {
+                        cp.x += shift_x;
+                        cp.y += shift_y;
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use image::RgbaImage;
+
+    use crate::capture::editor::color::{DRAW_COLORS, STROKE_WIDTH};
+    use crate::capture::editor::types::{AnnotationAction, Point, Rect};
+
+    use super::EditorState;
+
+    #[test]
+    fn can_remove_selected_action_requires_valid_selection() {
+        let mut state = EditorState::new(RgbaImage::new(32, 32));
+        state.push_action(AnnotationAction::Box {
+            rect: Rect {
+                x: 4,
+                y: 4,
+                width: 10,
+                height: 10,
+            },
+            color: DRAW_COLORS[0],
+            stroke_size: STROKE_WIDTH,
+            shadow: false,
+        });
+
+        assert!(state.can_remove_selected_action());
+        state.selected_action_index = None;
+        assert!(!state.can_remove_selected_action());
+        state.selected_action_index = Some(9);
+        assert!(!state.can_remove_selected_action());
+    }
+
+    #[test]
+    fn selection_drag_marks_effect_actions_dirty_and_clamps_to_image() {
+        let mut state = EditorState::new(RgbaImage::new(32, 32));
+        state.push_action(AnnotationAction::Obfuscate {
+            rect: Rect {
+                x: 20,
+                y: 20,
+                width: 8,
+                height: 8,
+            },
+            method: crate::capture::editor::types::ObfuscateMethod::Pixelate,
+            amount: 8.0,
+        });
+
+        state.select_drag_anchor = Some(Point { x: 24.0, y: 24.0 });
+        assert!(state.update_select_drag(Point { x: 44.0, y: 44.0 }));
+        assert!(state.select_drag_effect_dirty);
+        assert!(state.end_select_drag());
+
+        match &state.actions[0] {
+            AnnotationAction::Obfuscate { rect, .. } => {
+                assert_eq!(rect.x, 24);
+                assert_eq!(rect.y, 24);
+            }
+            other => panic!("expected obfuscate action, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn selection_drag_keeps_annotations_inside_new_background_canvas_bounds() {
+        let mut state = EditorState::new(RgbaImage::new(32, 32));
+        state.background_style = super::super::super::types::BackgroundStyle::PlainColor(
+            crate::capture::editor::types::DrawColor::new(0.1, 0.2, 0.3, 1.0),
+        );
+        state.push_action(AnnotationAction::Box {
+            rect: Rect {
+                x: 2,
+                y: 2,
+                width: 6,
+                height: 6,
+            },
+            color: DRAW_COLORS[0],
+            stroke_size: STROKE_WIDTH,
+            shadow: false,
+        });
+        state.selected_action_index = Some(0);
+        state.select_drag_anchor = Some(Point { x: 3.0, y: 3.0 });
+        assert!(state.update_select_drag(Point { x: -3.0, y: -3.0 }));
+
+        match &state.actions[0] {
+            AnnotationAction::Box { rect, .. } => {
+                assert!(rect.x < 0);
+                assert!(rect.y < 0);
+            }
+            other => panic!("expected box, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn selection_prefers_the_topmost_matching_action() {
+        let mut state = EditorState::new(RgbaImage::new(64, 64));
+        for (x, color) in [(8, DRAW_COLORS[0]), (14, DRAW_COLORS[1])] {
+            state.push_action(AnnotationAction::Box {
+                rect: Rect {
+                    x,
+                    y: x,
+                    width: 22,
+                    height: 22,
+                },
+                color,
+                stroke_size: STROKE_WIDTH,
+                shadow: false,
+            });
+        }
+
+        assert!(state.select_action_at_point_with_scale(Point { x: 20.0, y: 20.0 }, 1.0));
+        assert_eq!(state.selected_action_index, Some(1));
+    }
+}

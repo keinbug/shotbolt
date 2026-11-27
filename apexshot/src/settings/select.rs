@@ -1,0 +1,423 @@
+//! Settings dropdowns, matching the History window action popover.
+//!
+//! Native `ComboBoxText` still looks like a GTK combobox. History menus use a
+//! frameless button list in a rounded popover — this widget is the same
+//! control, wired as a labeled picker.
+
+use gtk4::prelude::*;
+use gtk4::{Align, Box as GtkBox, Button, Image, Label, Orientation, Popover};
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+
+use crate::capture::editor::window::icon_names;
+
+/// Height of one option row, matching the trigger's own height scale.
+const OPTION_HEIGHT: i32 = 32;
+
+/// Space between a trigger and the menu it drops.
+const MENU_GAP: i32 = 6;
+
+type ChangeListeners = Rc<RefCell<Vec<Rc<dyn Fn()>>>>;
+
+#[derive(Clone)]
+pub struct SettingsSelect {
+    button: Button,
+    ids: Rc<Vec<String>>,
+    selected: Rc<Cell<usize>>,
+    apply: Rc<dyn Fn(usize, bool)>,
+    on_changed: ChangeListeners,
+}
+
+impl SettingsSelect {
+    pub fn new<I, Id, L>(items: I, current: &str) -> Self
+    where
+        I: IntoIterator<Item = (Id, L)>,
+        Id: AsRef<str>,
+        L: AsRef<str>,
+    {
+        let mut ids = Vec::new();
+        let mut labels = Vec::new();
+        for (id, label) in items {
+            ids.push(id.as_ref().to_string());
+            labels.push(label.as_ref().to_string());
+        }
+        debug_assert!(
+            !ids.is_empty(),
+            "SettingsSelect requires at least one option"
+        );
+
+        let selected_index = ids.iter().position(|id| id == current).unwrap_or(0);
+        let ids = Rc::new(ids);
+        let labels = Rc::new(labels);
+        let selected = Rc::new(Cell::new(selected_index));
+        let on_changed: ChangeListeners = Rc::new(RefCell::new(Vec::new()));
+
+        let button = Button::new();
+        button.add_css_class("settings-select");
+        button.set_valign(Align::Center);
+        button.set_vexpand(false);
+        button.set_hexpand(false);
+        button.set_has_frame(false);
+
+        let row = GtkBox::new(Orientation::Horizontal, 8);
+        let label = Label::new(Some(&labels[selected_index]));
+        label.set_xalign(0.0);
+        label.set_hexpand(true);
+        label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+        let arrow = Image::from_icon_name(icon_names::CHEVRON_DOWN_REGULAR);
+        arrow.add_css_class("settings-select-arrow");
+        arrow.set_pixel_size(12);
+        row.append(&label);
+        row.append(&arrow);
+        button.set_child(Some(&row));
+
+        let popover = Popover::new();
+        popover.add_css_class("history-action-popover");
+        popover.add_css_class("settings-select-popover");
+        popover.set_has_arrow(false);
+        popover.set_autohide(true);
+        popover.set_position(gtk4::PositionType::Bottom);
+        // The menu hangs off its trigger's left edge rather than centring on it.
+        popover.set_halign(Align::Start);
+        // A small gap under the trigger keeps the menu reading as a separate
+        // surface instead of a continuation of the field.
+        popover.set_offset(0, MENU_GAP);
+        popover.set_parent(&button);
+
+        let menu = GtkBox::new(Orientation::Vertical, 2);
+        menu.add_css_class("settings-select-menu");
+        let mut option_buttons = Vec::with_capacity(labels.len());
+        let mut option_checks: Vec<Image> = Vec::with_capacity(labels.len());
+        for (index, option_label) in labels.iter().enumerate() {
+            let option = Button::new();
+            option.add_css_class("history-action-btn");
+            option.set_has_frame(false);
+            option.set_focus_on_click(false);
+            if index == selected_index {
+                option.add_css_class("settings-select-option-active");
+            }
+            option.set_size_request(-1, OPTION_HEIGHT);
+            let row = GtkBox::new(Orientation::Horizontal, 8);
+            let option_text = Label::new(Some(option_label));
+            // The row's text fills whatever the row is given and keeps its
+            // left edge; a start-aligned label would render at its capped
+            // natural width as a bare ellipsis.
+            option_text.set_halign(Align::Fill);
+            option_text.set_xalign(0.0);
+            option_text.set_hexpand(true);
+            // The menu is never wider than its trigger, so an option longer
+            // than the field ends in an ellipsis instead of widening the panel.
+            option_text.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+            // The chosen option is marked, not filled: the row keeps the same
+            // surface as its neighbours and only the tick sets it apart.
+            let check = Image::from_icon_name(icon_names::custom::CHECK_SYMBOLIC);
+            check.set_pixel_size(12);
+            check.add_css_class("settings-select-check");
+            check.set_valign(Align::Center);
+            check.set_visible(index == selected_index);
+            row.append(&option_text);
+            row.append(&check);
+            option.set_child(Some(&row));
+            menu.append(&option);
+            option_buttons.push(option);
+            option_checks.push(check);
+        }
+        popover.set_child(Some(&menu));
+        let option_buttons = Rc::new(option_buttons);
+        let option_checks = Rc::new(option_checks);
+
+        let apply = {
+            let label = label.clone();
+            let labels = Rc::clone(&labels);
+            let option_buttons = Rc::clone(&option_buttons);
+            let option_checks = Rc::clone(&option_checks);
+            let selected = Rc::clone(&selected);
+            let on_changed = Rc::clone(&on_changed);
+            Rc::new(move |index: usize, notify: bool| {
+                selected.set(index);
+                if let Some(text) = labels.get(index) {
+                    label.set_text(text);
+                }
+                for (i, option) in option_buttons.iter().enumerate() {
+                    if i == index {
+                        option.add_css_class("settings-select-option-active");
+                    } else {
+                        option.remove_css_class("settings-select-option-active");
+                    }
+                }
+                for (i, check) in option_checks.iter().enumerate() {
+                    check.set_visible(i == index);
+                }
+                if notify {
+                    for callback in on_changed.borrow().iter() {
+                        callback();
+                    }
+                }
+            }) as Rc<dyn Fn(usize, bool)>
+        };
+
+        for (index, option) in option_buttons.iter().enumerate() {
+            let apply = Rc::clone(&apply);
+            let popover = popover.clone();
+            option.connect_clicked(move |_| {
+                apply(index, true);
+                popover.popdown();
+            });
+        }
+
+        {
+            let popover = popover.clone();
+            let button_for_width = button.clone();
+            button.connect_clicked(move |_| {
+                // The menu is an extension of its trigger: the same width, on
+                // the same left edge.
+                crate::settings::ui_support::align_popover_to_trigger(
+                    &popover,
+                    &button_for_width,
+                    false,
+                );
+                popover.popup();
+            });
+        }
+
+        Self {
+            button,
+            ids,
+            selected,
+            apply,
+            on_changed,
+        }
+    }
+
+    pub fn widget(&self) -> &Button {
+        &self.button
+    }
+
+    pub fn active_id(&self) -> Option<String> {
+        self.ids.get(self.selected.get()).cloned()
+    }
+
+    pub fn set_active_id(&self, id: &str) -> bool {
+        let Some(index) = self.ids.iter().position(|item| item == id) else {
+            return false;
+        };
+        (self.apply)(index, false);
+        true
+    }
+
+    pub fn set_sensitive(&self, sensitive: bool) {
+        self.button.set_sensitive(sensitive);
+    }
+
+    pub fn connect_changed<F: Fn() + 'static>(&self, callback: F) {
+        self.on_changed.borrow_mut().push(Rc::new(callback));
+    }
+}
+
+pub fn language_combo(current: &str) -> SettingsSelect {
+    let items = crate::i18n::UI_LANGUAGES.iter().map(|lang| {
+        let label = if lang.code == crate::i18n::SYSTEM_LANGUAGE {
+            crate::i18n::t("System default")
+        } else {
+            lang.native_name.to_string()
+        };
+        (lang.code, label)
+    });
+    SettingsSelect::new(items, &crate::i18n::sanitize_ui_language(current))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_select_reuses_history_popover_classes() {
+        let source = include_str!("select.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production_source.contains("history-action-popover"),
+            "settings dropdown popover no longer reuses the History menu surface"
+        );
+        assert!(
+            production_source.contains("history-action-btn"),
+            "settings dropdown options no longer reuse History menu rows"
+        );
+        assert!(
+            production_source.contains("set_valign(Align::Center)"),
+            "settings dropdown still stretches with the row"
+        );
+        assert!(
+            production_source.contains("align_popover_to_trigger(")
+                && production_source.contains("&button_for_width"),
+            "settings dropdown menu should match its trigger width"
+        );
+    }
+
+    fn select_popover(select: &SettingsSelect) -> Popover {
+        let mut child = select.widget().first_child();
+        while let Some(widget) = child {
+            if let Ok(popover) = widget.clone().downcast::<Popover>() {
+                return popover;
+            }
+            child = widget.next_sibling();
+        }
+        panic!("settings select popover");
+    }
+
+    #[test]
+    fn settings_select_menu_lines_up_with_its_trigger() {
+        let Some(()) = crate::test_support::with_gtk(|| {
+            let select = SettingsSelect::new(
+                [
+                    ("first", "A first option far longer than this field"),
+                    ("second", "Second option"),
+                ],
+                "first",
+            );
+            let popover = select_popover(&select);
+            assert_eq!(
+                popover.halign(),
+                Align::Start,
+                "the menu must open on the trigger's left edge, not centred on it"
+            );
+
+            let menu = popover
+                .child()
+                .expect("popover child")
+                .downcast::<GtkBox>()
+                .expect("menu box");
+            let mut labels = 0;
+            let mut row = menu.first_child();
+            while let Some(widget) = row {
+                let next = widget.next_sibling();
+                let row_box = widget
+                    .downcast::<Button>()
+                    .expect("option row")
+                    .child()
+                    .expect("row content")
+                    .downcast::<GtkBox>()
+                    .expect("row box");
+                let text = row_box
+                    .first_child()
+                    .expect("option label")
+                    .downcast::<Label>()
+                    .expect("label widget");
+                assert_eq!(
+                    text.ellipsize(),
+                    gtk4::pango::EllipsizeMode::End,
+                    "an option longer than the field has to end in an ellipsis"
+                );
+                assert_eq!(
+                    text.halign(),
+                    Align::Fill,
+                    "a capped option label has to fill its row, or it renders as a bare ellipsis"
+                );
+                assert_eq!(
+                    text.xalign(),
+                    0.0,
+                    "filling the row must not move the option text off its left edge"
+                );
+                labels += 1;
+                row = next;
+            }
+            assert_eq!(labels, 2);
+        }) else {
+            eprintln!("skipping: GTK unavailable");
+            return;
+        };
+    }
+
+    #[test]
+    fn settings_select_rows_carry_trailing_checks_and_selection_syncs() {
+        let Some(()) = crate::test_support::with_gtk(|| {
+            let select = SettingsSelect::new(
+                [("first", "First option"), ("second", "Second option")],
+                "first",
+            );
+            assert_eq!(select.active_id().as_deref(), Some("first"));
+
+            let popover = select_popover(&select);
+            let menu = popover
+                .child()
+                .expect("popover child")
+                .downcast::<GtkBox>()
+                .expect("menu box");
+
+            let mut rows = Vec::new();
+            let mut child = menu.first_child();
+            while let Some(widget) = child {
+                let next = widget.next_sibling();
+                rows.push(widget.downcast::<Button>().expect("option row"));
+                child = next;
+            }
+            assert_eq!(rows.len(), 2);
+
+            let checks: Vec<Image> = rows
+                .iter()
+                .map(|row| {
+                    assert_eq!(row.size_request(), (-1, OPTION_HEIGHT));
+                    let row_box = row
+                        .child()
+                        .expect("row content")
+                        .downcast::<GtkBox>()
+                        .expect("row box");
+                    let mut last = row_box.first_child();
+                    let mut check = None;
+                    while let Some(widget) = last {
+                        if let Ok(image) = widget.clone().downcast::<Image>() {
+                            check = Some(image);
+                        }
+                        last = widget.next_sibling();
+                    }
+                    let check = check.expect("trailing check image");
+                    assert_eq!(
+                        check.icon_name().as_deref(),
+                        Some(icon_names::custom::CHECK_SYMBOLIC)
+                    );
+                    assert_eq!(check.pixel_size(), 12);
+                    check
+                })
+                .collect();
+            assert!(checks[0].get_visible());
+            assert!(!checks[1].get_visible());
+
+            let trigger_label = select
+                .widget()
+                .child()
+                .expect("trigger content")
+                .downcast::<GtkBox>()
+                .expect("trigger row")
+                .first_child()
+                .expect("trigger label")
+                .downcast::<Label>()
+                .expect("label widget");
+
+            let calls = Rc::new(Cell::new(0));
+            {
+                let calls = Rc::clone(&calls);
+                select.connect_changed(move || calls.set(calls.get() + 1));
+            }
+
+            assert!(select.set_active_id("second"));
+            assert_eq!(select.active_id().as_deref(), Some("second"));
+            assert!(!checks[0].get_visible());
+            assert!(checks[1].get_visible());
+            assert_eq!(trigger_label.label().as_str(), "Second option");
+            assert_eq!(calls.get(), 0);
+
+            rows[0].emit_clicked();
+            assert_eq!(select.active_id().as_deref(), Some("first"));
+            assert!(checks[0].get_visible());
+            assert_eq!(trigger_label.label().as_str(), "First option");
+            assert_eq!(calls.get(), 1);
+
+            let selection_before = select.active_id();
+            assert!(!select.set_active_id("missing"));
+            assert_eq!(select.active_id(), selection_before);
+            assert!(checks[0].get_visible());
+        }) else {
+            eprintln!("skipping: GTK unavailable");
+            return;
+        };
+    }
+}

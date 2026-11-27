@@ -1,0 +1,253 @@
+id: org.apexshot.ApexShot
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.llvm20
+command: apexshot
+
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+  - --share=network
+  - --socket=pulseaudio
+  - --filesystem=xdg-pictures
+  - --filesystem=xdg-videos
+  - --talk-name=org.apexshot.ApexShot.ShellOverlay
+  - --talk-name=org.apexshot.ApexShot.WindowList
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --talk-name=org.freedesktop.Notifications
+  - --env=TESSDATA_PREFIX=/app/share/tessdata
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/llvm20/bin:/app/bin
+  prepend-ld-library-path: /usr/lib/sdk/llvm20/lib:/app/lib:/app/lib/x86_64-linux-gnu
+  env:
+    CARGO_HOME: /run/build/apexshot/cargo
+    CARGO_NET_OFFLINE: 'true'
+    CMAKE_PREFIX_PATH: /app
+    LIBCLANG_PATH: /usr/lib/sdk/llvm20/lib
+    PKG_CONFIG_PATH: /app/lib/pkgconfig:/app/lib/x86_64-linux-gnu/pkgconfig
+    RUST_BACKTRACE: '1'
+
+modules:
+  - name: gtk4-layer-shell
+    buildsystem: meson
+    config-opts:
+      - -Dexamples=false
+      - -Ddocs=false
+      - -Dtests=false
+      - -Dlibdir=lib
+    sources:
+      - type: archive
+        url: https://github.com/wmww/gtk4-layer-shell/archive/refs/tags/v1.0.3.tar.gz
+        sha256: 4d669c30b3dbc68ad69ade9752e6ebbe7be132db21a5a4734d42bc09c5481c34
+
+  - name: qtbase
+    buildsystem: simple
+    build-commands:
+      - ./configure -prefix /app -libdir /app/lib -hostprefix /app -release -opensource -confirm-license -nomake examples -nomake tests -no-opengl -xcb -qpa xcb
+      - make -j${FLATPAK_BUILDER_N_JOBS}
+      - make install
+    sources:
+      - type: archive
+        url: https://download.qt.io/archive/qt/5.15/5.15.17/submodules/qtbase-everywhere-opensource-src-5.15.17.tar.xz
+        sha256: db1513cbb3f4a5bd2229f759c0839436f7fe681a800ff2bc34c4960b09e756ff
+
+  - name: qtx11extras
+    buildsystem: simple
+    build-commands:
+      - qmake
+      - make -j${FLATPAK_BUILDER_N_JOBS}
+      - make install
+    sources:
+      - type: archive
+        url: https://download.qt.io/archive/qt/5.15/5.15.17/submodules/qtx11extras-everywhere-opensource-src-5.15.17.tar.xz
+        sha256: eeb17b1faac1f7c20fbb81c167c9d48536111801a46b159fa4746422555bb090
+
+  - name: qtwayland
+    buildsystem: simple
+    build-commands:
+      - qmake QT_CONFIG+=wayland-client QT_CONFIG-=wayland-server CONFIG-=wayland-compositor
+      - make -j${FLATPAK_BUILDER_N_JOBS}
+      - make install
+      - rm -f /app/lib/libQt5WaylandCompositor.*
+    sources:
+      - type: archive
+        url: https://download.qt.io/archive/qt/5.15/5.15.17/submodules/qtwayland-everywhere-opensource-src-5.15.17.tar.xz
+        sha256: 55512f387399271c00d564db50f24e5dd028a3e7526e0ebf456735d72c40e3df
+
+  - name: leptonica
+    buildsystem: cmake-ninja
+    builddir: true
+    config-opts:
+      - -DBUILD_PROG=OFF
+      - -DBUILD_TESTS=OFF
+      - -DBUILD_SHARED_LIBS=ON
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_INSTALL_LIBDIR=lib
+      - -DCMAKE_INSTALL_PREFIX=/app
+    sources:
+      - type: archive
+        url: https://github.com/DanBloomberg/leptonica/releases/download/1.87.0/leptonica-1.87.0.tar.gz
+        sha256: c73363397f96eb1295602bf44d708a994ad42046c791bf03ea0505d829bdb6a7
+
+  - name: tesseract
+    buildsystem: cmake-ninja
+    builddir: true
+    config-opts:
+      - -DBUILD_TESTS=OFF
+      - -DBUILD_TRAINING_TOOLS=OFF
+      - -DBUILD_SHARED_LIBS=ON
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_INSTALL_LIBDIR=lib
+      - -DCMAKE_INSTALL_PREFIX=/app
+      - -DCMAKE_PREFIX_PATH=/app
+      - -DDISABLE_ARCHIVE=ON
+      - -DDISABLE_CURL=ON
+      - -DGRAPHICS_DISABLED=ON
+      - -DOPENMP_BUILD=OFF
+    sources:
+      - type: archive
+        url: https://github.com/tesseract-ocr/tesseract/archive/refs/tags/5.5.1.tar.gz
+        sha256: a7a3f2a7420cb6a6a94d80c24163e183cf1d2f1bed2df3bbc397c81808a57237
+
+  - name: tesseract-data
+    buildsystem: simple
+    build-commands:
+      - install -Dm644 eng.traineddata /app/share/tessdata/eng.traineddata
+    sources:
+      - type: file
+        url: https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/eng.traineddata
+        sha256: 7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2
+        dest-filename: eng.traineddata
+
+  - name: gst-plugins-good-x11
+    buildsystem: meson
+    config-opts:
+      - -Dexamples=disabled
+      - -Dtests=disabled
+      - -Ddoc=disabled
+      - -Dlibdir=lib
+      - -Dximagesrc=enabled
+    sources:
+      - type: archive
+        url: https://gstreamer.freedesktop.org/src/gst-plugins-good/gst-plugins-good-1.26.11.tar.xz
+        mirror-urls:
+          - https://mirror.math.princeton.edu/pub/redcorelinux/amd64/distfiles/gst-plugins-good-1.26.11.tar.xz
+        sha256: 001deb0876d5d743cd3448abf74a27adec3fd850012fcb1b00994861bd6c1145
+
+  - name: wl-clipboard
+    buildsystem: meson
+    config-opts:
+      - -Dprotocols=enabled
+      - -Dfishcompletiondir=no
+      - -Dzshcompletiondir=no
+    sources:
+      - type: archive
+        url: https://github.com/bugaevc/wl-clipboard/archive/refs/tags/v2.2.1.tar.gz
+        sha256: 6eb8081207fb5581d1d82c4bcd9587205a31a3d47bea3ebeb7f41aa1143783eb
+
+  - name: libXmu
+    buildsystem: autotools
+    config-opts:
+      - --libdir=/app/lib
+    sources:
+      - type: archive
+        url: https://www.x.org/releases/individual/lib/libXmu-1.2.1.tar.xz
+        mirror-urls:
+          - https://distfiles.macports.org/xorg-libXmu/libXmu-1.2.1.tar.xz
+        sha256: fcb27793248a39e5fcc5b9c4aec40cc0734b3ca76aac3d7d1c264e7f7e14e8b2
+
+  - name: xclip
+    buildsystem: simple
+    build-commands:
+      - ./bootstrap
+      - CPPFLAGS=-I/app/include ./configure --prefix=/app
+      - make -j${FLATPAK_BUILDER_N_JOBS}
+      - make install
+    sources:
+      - type: archive
+        url: https://github.com/astrand/xclip/archive/refs/tags/0.13.tar.gz
+        sha256: ca5b8804e3c910a66423a882d79bf3c9450b875ac8528791fb60ec9de667f758
+
+  - name: ocrs-models
+    buildsystem: simple
+    build-commands:
+      - install -Dm644 text-detection.onnx /app/share/apexshot/ocr-models/text-detection.onnx
+      - install -Dm644 text-recognition.onnx /app/share/apexshot/ocr-models/text-recognition.onnx
+    sources:
+      - type: file
+        url: https://ocrs-models.s3.amazonaws.com/text-detection.onnx
+        sha256: a917b23dbd9524b465df7e922641b3ff2981623df4ded5a0234004ef2fee7cfe
+        dest-filename: text-detection.onnx
+      - type: file
+        url: https://ocrs-models.s3.amazonaws.com/text-recognition.onnx
+        sha256: 86c145c2edb96c8caed5b1ebb8f44d706408922211451c309c625157dd6061c5
+        dest-filename: text-recognition.onnx
+
+  - name: apexshot
+    buildsystem: simple
+    build-commands:
+      # The official Studio build configuration is optional for a test
+      # package: an official package embeds it, and a package without it still
+      # builds and runs as the free program with Studio output unavailable.
+      - >-
+        if [ -f flatpak/.studio-build-config.env ]; then
+        set -a && . flatpak/.studio-build-config.env && set +a;
+        fi &&
+        cargo build --offline --release --locked --features flatpak --verbose
+      - install -Dm755 ./target/release/apexshot /app/libexec/apexshot.bin
+      - install -Dm755 ./target/release/apexshot-capture /app/bin/apexshot-capture
+      - install -Dm755 flatpak/apexshot-launcher.sh /app/bin/apexshot
+      - install -Dm644 flatpak/org.apexshot.ApexShot.desktop /app/share/applications/org.apexshot.ApexShot.desktop
+      - install -Dm644 flatpak/org.apexshot.ApexShot.metainfo.xml /app/share/metainfo/org.apexshot.ApexShot.metainfo.xml
+      - install -Dm644 packaging/apexshot.svg /app/share/icons/hicolor/scalable/apps/org.apexshot.ApexShot.svg
+      - install -Dm644 packaging/apexshot-recording.svg /app/share/icons/hicolor/scalable/apps/org.apexshot.ApexShot-recording.svg
+      - install -d /app/share/apexshot/background-images
+      - install -Dm644 src/capture/editor/background-images/*.jpg /app/share/apexshot/background-images/
+      - |
+        if [ -d target/locale ]; then
+          for mo in target/locale/*/LC_MESSAGES/apexshot.mo; do
+            [ -f "$mo" ] || continue
+            lang=$(basename "$(dirname "$(dirname "$mo")")")
+            install -Dm644 "$mo" "/app/share/locale/${lang}/LC_MESSAGES/apexshot.mo"
+          done
+        fi
+      - install -Dm644 assets/fonts/InterVariable.ttf /app/share/fonts/InterVariable.ttf
+      - install -Dm644 assets/upscaling/LICENSE /app/share/licenses/apexshot/upscaling.LICENSE
+      - install -Dm644 assets/upscaling/README.md /app/share/licenses/apexshot/upscaling.md
+      - rm -rf /app/include /app/lib/cmake /app/lib/pkgconfig /app/mkspecs /app/doc /app/examples /app/tests /app/translations /app/qml /app/libexec/qt* /app/share/doc /app/share/man
+      - rm -f /app/lib/libQt5WaylandCompositor.*
+      - rm -f /app/bin/qmake /app/bin/moc /app/bin/rcc /app/bin/uic /app/bin/qtpaths /app/bin/qdbuscpp2xml /app/bin/qdbusxml2cpp
+    sources:
+      - cargo-sources.json
+      - type: dir
+        path: ..
+        skip:
+          - .git
+          - .env
+          - .env.*
+          - AGENTS.local.md
+          - .agents
+          - .antigravitycli
+          - .cache
+          - .claude
+          - .codex
+          - .commandcode
+          - .kilo
+          - .flatpak-builder
+          - .tmp-inspect
+          - .worktrees
+          - apexshot-studio-implementation-prompt.md
+          - attached_assets
+          - build
+          - capture-overlay/build
+          - capture-overlay/dist
+          - capture-overlay/out
+          - node_modules
+          - target
+          - build-dir

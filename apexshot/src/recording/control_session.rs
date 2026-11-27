@@ -1,0 +1,489 @@
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc, Mutex, OnceLock,
+};
+
+use anyhow::Context;
+use tokio::{sync::mpsc, task::JoinHandle};
+
+pub const RECORDING_CONTROL_OBJECT_PATH: &str = "/org/apexshot/RecordingControl";
+const RECORDING_CONTROL_INTERFACE: &str = "org.apexshot.RecordingControl";
+fn recording_control_bus_prefix() -> &'static str {
+    if crate::app_identity::portal_only() {
+        "org.apexshot.ApexShot.RecordingControl.p"
+    } else {
+        "org.apexshot.RecordingControl.p"
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RecordingControlCommand {
+    Pause,
+    Resume,
+    Restart,
+    StopSave,
+    StopDiscard,
+}
+
+impl RecordingControlCommand {
+    pub fn ends_session(self) -> bool {
+        matches!(self, Self::StopSave | Self::StopDiscard)
+    }
+
+    fn dbus_method(self) -> &'static str {
+        match self {
+            Self::Pause => "PauseActive",
+            Self::Resume => "ResumeActive",
+            Self::Restart => "RestartActive",
+            Self::StopSave => "StopActive",
+            Self::StopDiscard => "DiscardActive",
+        }
+    }
+}
+
+#[derive(Clone)]
+struct ActiveRecordingControl {
+    command_tx: Arc<Mutex<Option<mpsc::UnboundedSender<RecordingControlCommand>>>>,
+    paused: Arc<AtomicBool>,
+}
+
+fn active_recording_control() -> &'static Mutex<Option<ActiveRecordingControl>> {
+    static ACTIVE_RECORDING_CONTROL: OnceLock<Mutex<Option<ActiveRecordingControl>>> =
+        OnceLock::new();
+    ACTIVE_RECORDING_CONTROL.get_or_init(|| Mutex::new(None))
+}
+
+pub fn has_active_recording_control() -> bool {
+    active_recording_control()
+        .lock()
+        .ok()
+        .and_then(|guard| guard.as_ref().cloned())
+        .is_some()
+}
+
+/// 0 means free. Non-zero is the id of the guard that currently owns capture.
+static RECORDING_BUSY_OWNER: AtomicU64 = AtomicU64::new(0);
+static RECORDING_BUSY_NEXT: AtomicU64 = AtomicU64::new(1);
+
+fn end_recording_busy() {
+    RECORDING_BUSY_OWNER.store(0, Ordering::Release);
+}
+
+/// Drop capture exclusivity as soon as the portal/stream is gone so a
+/// screenshot or new recording can start while ffmpeg still finalizes.
+pub(super) fn release_recording_busy() {
+    end_recording_busy();
+}
+
+/// Process-wide lock so a second Record click cannot stack portal sessions.
+///
+/// Drop is generation-safe: releasing early (so encode can finish in the
+/// background) and then dropping this guard must not clear a newer session.
+pub struct RecordingBusyGuard {
+    id: u64,
+}
+
+impl RecordingBusyGuard {
+    pub fn acquire() -> anyhow::Result<Self> {
+        let id = RECORDING_BUSY_NEXT.fetch_add(1, Ordering::Relaxed);
+        if RECORDING_BUSY_OWNER
+            .compare_exchange(0, id, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            return Ok(Self { id });
+        }
+        anyhow::bail!("A recording is already in progress")
+    }
+}
+
+impl Drop for RecordingBusyGuard {
+    fn drop(&mut self) {
+        let _ =
+            RECORDING_BUSY_OWNER.compare_exchange(self.id, 0, Ordering::AcqRel, Ordering::Acquire);
+    }
+}
+
+fn apply_command_side_effects(command: RecordingControlCommand, paused: &AtomicBool) {
+    match command {
+        RecordingControlCommand::Pause => paused.store(true, Ordering::Relaxed),
+        RecordingControlCommand::Resume
+        | RecordingControlCommand::Restart
+        | RecordingControlCommand::StopSave
+        | RecordingControlCommand::StopDiscard => paused.store(false, Ordering::Relaxed),
+    }
+}
+
+/// Turn a known paused state into the command that flips it.
+///
+/// Used by the in-process toggle and by the control service's
+/// `TogglePauseActive` method, which lets an external process toggle without
+/// knowing the current state.
+fn toggle_pause_command(paused: bool) -> RecordingControlCommand {
+    if paused {
+        RecordingControlCommand::Resume
+    } else {
+        RecordingControlCommand::Pause
+    }
+}
+
+fn register_active_recording_control(
+    command_tx: Arc<Mutex<Option<mpsc::UnboundedSender<RecordingControlCommand>>>>,
+    paused: Arc<AtomicBool>,
+) {
+    if let Ok(mut guard) = active_recording_control().lock() {
+        *guard = Some(ActiveRecordingControl { command_tx, paused });
+    }
+}
+
+fn clear_active_recording_control(
+    command_tx: &Arc<Mutex<Option<mpsc::UnboundedSender<RecordingControlCommand>>>>,
+) {
+    if let Ok(mut guard) = active_recording_control().lock() {
+        if guard
+            .as_ref()
+            .is_some_and(|active| Arc::ptr_eq(&active.command_tx, command_tx))
+        {
+            *guard = None;
+        }
+    }
+}
+
+pub fn send_active_recording_command(command: RecordingControlCommand) -> bool {
+    let active = active_recording_control()
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone());
+    let Some(active) = active else {
+        return false;
+    };
+
+    let tx = active
+        .command_tx
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone());
+    let Some(tx) = tx else {
+        return false;
+    };
+
+    if tx.send(command).is_err() {
+        return false;
+    }
+
+    apply_command_side_effects(command, &active.paused);
+    true
+}
+
+pub fn send_external_recording_command(command: RecordingControlCommand) -> bool {
+    call_external_recording_method(command.dbus_method())
+}
+
+/// Flip the pause state of a recording owned by another ApexShot process.
+///
+/// The recording process answers `TogglePauseActive` by turning the call into
+/// a concrete `Pause` or `Resume`, so the caller does not need to know the
+/// remote state.
+pub fn send_external_toggle_pause() -> bool {
+    call_external_recording_method("TogglePauseActive")
+}
+
+fn call_external_recording_method(method: &'static str) -> bool {
+    crate::utils::run_off_tokio(move || {
+        let Ok(connection) = zbus::blocking::Connection::session() else {
+            return false;
+        };
+        let Ok(reply) = connection.call_method(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            Some("org.freedesktop.DBus"),
+            "ListNames",
+            &(),
+        ) else {
+            return false;
+        };
+        let Ok(names) = reply.body().deserialize::<Vec<String>>() else {
+            return false;
+        };
+
+        names
+            .into_iter()
+            .filter(|name| name.starts_with(recording_control_bus_prefix()))
+            .any(|name| {
+                let Ok(reply) = connection.call_method(
+                    Some(name.as_str()),
+                    RECORDING_CONTROL_OBJECT_PATH,
+                    Some(RECORDING_CONTROL_INTERFACE),
+                    method,
+                    &(),
+                ) else {
+                    return false;
+                };
+                reply.body().deserialize::<bool>().unwrap_or(false)
+            })
+    })
+}
+
+pub fn toggle_active_recording_pause() -> bool {
+    let active = active_recording_control()
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone());
+    let Some(active) = active else {
+        return false;
+    };
+
+    let command = toggle_pause_command(active.paused.load(Ordering::Relaxed));
+    send_active_recording_command(command)
+}
+
+#[derive(Clone)]
+struct RecordingControlIface {
+    session_id: String,
+    command_tx: Arc<Mutex<Option<mpsc::UnboundedSender<RecordingControlCommand>>>>,
+    paused: Arc<AtomicBool>,
+}
+
+impl RecordingControlIface {
+    fn send(&self, session_id: &str, command: RecordingControlCommand) -> zbus::fdo::Result<bool> {
+        if session_id != self.session_id {
+            return Ok(false);
+        }
+
+        let Some(tx) = self.command_tx.lock().ok().and_then(|guard| guard.clone()) else {
+            return Ok(false);
+        };
+
+        tx.send(command).map_err(|err| {
+            zbus::fdo::Error::Failed(format!("recording command channel unavailable: {err}"))
+        })?;
+        apply_command_side_effects(command, &self.paused);
+        Ok(true)
+    }
+}
+
+#[zbus::interface(name = "org.apexshot.RecordingControl")]
+impl RecordingControlIface {
+    async fn stop(&self, session_id: &str) -> zbus::fdo::Result<bool> {
+        self.send(session_id, RecordingControlCommand::StopSave)
+    }
+
+    async fn discard(&self, session_id: &str) -> zbus::fdo::Result<bool> {
+        self.send(session_id, RecordingControlCommand::StopDiscard)
+    }
+
+    async fn pause(&self, session_id: &str) -> zbus::fdo::Result<bool> {
+        self.send(session_id, RecordingControlCommand::Pause)
+    }
+
+    async fn resume(&self, session_id: &str) -> zbus::fdo::Result<bool> {
+        self.send(session_id, RecordingControlCommand::Resume)
+    }
+
+    async fn restart(&self, session_id: &str) -> zbus::fdo::Result<bool> {
+        self.send(session_id, RecordingControlCommand::Restart)
+    }
+
+    async fn stop_active(&self) -> zbus::fdo::Result<bool> {
+        self.send(&self.session_id, RecordingControlCommand::StopSave)
+    }
+
+    async fn discard_active(&self) -> zbus::fdo::Result<bool> {
+        self.send(&self.session_id, RecordingControlCommand::StopDiscard)
+    }
+
+    async fn pause_active(&self) -> zbus::fdo::Result<bool> {
+        self.send(&self.session_id, RecordingControlCommand::Pause)
+    }
+
+    async fn resume_active(&self) -> zbus::fdo::Result<bool> {
+        self.send(&self.session_id, RecordingControlCommand::Resume)
+    }
+
+    async fn restart_active(&self) -> zbus::fdo::Result<bool> {
+        self.send(&self.session_id, RecordingControlCommand::Restart)
+    }
+
+    /// Toggle without the caller knowing whether the recording is paused.
+    async fn toggle_pause_active(&self) -> zbus::fdo::Result<bool> {
+        let command = toggle_pause_command(self.paused.load(Ordering::Relaxed));
+        self.send(&self.session_id, command)
+    }
+}
+
+pub struct RecordingControlServer {
+    command_tx: Arc<Mutex<Option<mpsc::UnboundedSender<RecordingControlCommand>>>>,
+    paused: Arc<AtomicBool>,
+    task: JoinHandle<()>,
+}
+
+impl RecordingControlServer {
+    pub async fn start(session_id: String) -> anyhow::Result<Self> {
+        let bus_name = format!("{}{}", recording_control_bus_prefix(), std::process::id());
+        let command_tx = Arc::new(Mutex::new(None));
+        let paused = Arc::new(AtomicBool::new(false));
+        let iface = RecordingControlIface {
+            session_id,
+            command_tx: command_tx.clone(),
+            paused: paused.clone(),
+        };
+        let task = tokio::spawn(async move {
+            let result = async {
+                let builder = zbus::connection::Builder::session()
+                    .context("failed to open session bus for recording controls")?;
+                let _conn = builder
+                    .name(bus_name.as_str())?
+                    .serve_at(RECORDING_CONTROL_OBJECT_PATH, iface)?
+                    .build()
+                    .await
+                    .context("failed to build recording control D-Bus service")?;
+                futures_util::future::pending::<()>().await;
+                #[allow(unreachable_code)]
+                Ok::<(), anyhow::Error>(())
+            }
+            .await;
+
+            if let Err(err) = result {
+                eprintln!("[recording] Recording control service failed: {err}");
+            }
+        });
+
+        Ok(Self {
+            command_tx,
+            paused,
+            task,
+        })
+    }
+
+    pub fn set_command_sender(&self, tx: mpsc::UnboundedSender<RecordingControlCommand>) {
+        if let Ok(mut guard) = self.command_tx.lock() {
+            *guard = Some(tx);
+        }
+        self.paused.store(false, Ordering::Relaxed);
+        register_active_recording_control(self.command_tx.clone(), self.paused.clone());
+    }
+
+    pub fn clear_command_sender(&self) {
+        if let Ok(mut guard) = self.command_tx.lock() {
+            *guard = None;
+        }
+        self.paused.store(false, Ordering::Relaxed);
+        clear_active_recording_control(&self.command_tx);
+    }
+}
+
+impl Drop for RecordingControlServer {
+    fn drop(&mut self) {
+        clear_active_recording_control(&self.command_tx);
+        self.task.abort();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        end_recording_busy, has_active_recording_control, release_recording_busy,
+        send_active_recording_command, toggle_pause_command, RecordingBusyGuard,
+        RecordingControlCommand, RecordingControlServer,
+    };
+    use std::sync::{Mutex, OnceLock};
+    use tokio::sync::mpsc;
+
+    fn recording_busy_test_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    #[test]
+    fn recording_busy_flag_is_exclusive() {
+        let _serial = recording_busy_test_lock().lock().unwrap();
+        end_recording_busy();
+        let first = RecordingBusyGuard::acquire().expect("first acquire");
+        assert!(RecordingBusyGuard::acquire().is_err());
+        drop(first);
+        let second = RecordingBusyGuard::acquire().expect("acquire after drop");
+        drop(second);
+    }
+
+    #[test]
+    fn early_release_allows_a_new_recording_without_old_guard_clobbering_it() {
+        let _serial = recording_busy_test_lock().lock().unwrap();
+        end_recording_busy();
+        let first = RecordingBusyGuard::acquire().expect("first acquire");
+        release_recording_busy();
+        let second = RecordingBusyGuard::acquire().expect("acquire after early release");
+        drop(first);
+        assert!(
+            RecordingBusyGuard::acquire().is_err(),
+            "dropping the old guard must not clear a newer session"
+        );
+        drop(second);
+        assert!(RecordingBusyGuard::acquire().is_ok());
+        end_recording_busy();
+    }
+
+    #[test]
+    fn session_ending_commands_are_limited_to_stop_and_discard() {
+        assert!(RecordingControlCommand::StopSave.ends_session());
+        assert!(RecordingControlCommand::StopDiscard.ends_session());
+        assert!(!RecordingControlCommand::Pause.ends_session());
+        assert!(!RecordingControlCommand::Resume.ends_session());
+        assert!(!RecordingControlCommand::Restart.ends_session());
+    }
+
+    #[test]
+    fn external_control_methods_match_recording_commands() {
+        assert_eq!(
+            RecordingControlCommand::StopSave.dbus_method(),
+            "StopActive"
+        );
+        assert_eq!(
+            RecordingControlCommand::StopDiscard.dbus_method(),
+            "DiscardActive"
+        );
+        assert_eq!(RecordingControlCommand::Pause.dbus_method(), "PauseActive");
+        assert_eq!(
+            RecordingControlCommand::Resume.dbus_method(),
+            "ResumeActive"
+        );
+        assert_eq!(
+            RecordingControlCommand::Restart.dbus_method(),
+            "RestartActive"
+        );
+    }
+
+    #[test]
+    fn toggle_pause_flips_between_pause_and_resume() {
+        assert_eq!(toggle_pause_command(false), RecordingControlCommand::Pause);
+        assert_eq!(toggle_pause_command(true), RecordingControlCommand::Resume);
+    }
+
+    #[test]
+    fn recording_control_namespace_matches_the_installation() {
+        assert_eq!(
+            super::recording_control_bus_prefix(),
+            if crate::app_identity::portal_only() {
+                "org.apexshot.ApexShot.RecordingControl.p"
+            } else {
+                "org.apexshot.RecordingControl.p"
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn active_recording_command_is_forwarded_to_registered_session() {
+        let server = RecordingControlServer::start("recording-test".into())
+            .await
+            .expect("control server should start");
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        server.set_command_sender(tx);
+
+        assert!(has_active_recording_control());
+        assert!(send_active_recording_command(
+            RecordingControlCommand::Pause
+        ));
+        assert_eq!(rx.recv().await, Some(RecordingControlCommand::Pause));
+
+        server.clear_command_sender();
+        assert!(!has_active_recording_control());
+        drop(server);
+    }
+}

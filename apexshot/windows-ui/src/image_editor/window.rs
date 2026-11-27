@@ -1,0 +1,2067 @@
+//! The Windows image-editor window.
+//!
+//! The frame follows the Linux editor: no caption bar, the checkerboard canvas
+//! fills the window, and the floating tool bar rides in a transparent top
+//! chrome strip that doubles as the drag handle. The caption controls sit at
+//! the top of the inspector, the same place the Linux editor puts its window
+//! controls.
+
+use crate::capture::editor::window::icon_names;
+use crate::i18n::{t, tfmt};
+use crate::settings::ui_support::{caption_button, CaptionGlyph};
+use crate::settings::windowing;
+use gtk4::gdk;
+use gtk4::glib::Propagation;
+use gtk4::prelude::*;
+use gtk4::{Align, Application, ApplicationWindow, Box as GtkBox};
+use std::cell::{Cell, RefCell};
+use std::path::Path;
+use std::rc::Rc;
+use std::sync::Once;
+
+use super::inspector;
+use super::toolbar::{self, Tool};
+use super::ui_support::{self, px, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, TOP_CHROME_HEIGHT};
+use super::{canvas, mode_confirm, motion};
+
+/// The running Motion encoder's cancel flag, shared with the Export button.
+type MotionCancel = Rc<RefCell<Option<Rc<Cell<bool>>>>>;
+
+pub(super) fn build_window(app: &Application, initial: Option<&Path>) {
+    static INIT_ICONS: Once = Once::new();
+    INIT_ICONS.call_once(|| {
+        relm4_icons::initialize_icons(icon_names::GRESOURCE_BYTES, icon_names::RESOURCE_PREFIX);
+    });
+
+    ui_support::install_css();
+
+    let scale = crate::platform::ui_scale();
+    let (default_width, default_height) = ui_support::default_window_size(scale);
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title(t("ApexShot Editor"))
+        .icon_name(crate::app_identity::icon_name())
+        .default_width(default_width)
+        .default_height(default_height)
+        .build();
+    window.set_decorated(false);
+    window.add_css_class("editor-window");
+    window.add_css_class("image-editor-window");
+    window.set_size_request(px(MIN_WINDOW_WIDTH, scale), px(MIN_WINDOW_HEIGHT, scale));
+
+    let dark = windowing::prefers_dark_glass_theme();
+    let root = GtkBox::new(gtk4::Orientation::Vertical, 0);
+    root.add_css_class("editor-root");
+    root.add_css_class("image-editor-root");
+    root.add_css_class(if dark {
+        "editor-theme-dark"
+    } else {
+        "editor-theme-light"
+    });
+    if windowing::prefers_reduced_transparency() {
+        root.add_css_class("editor-reduced-transparency");
+    }
+    // Keep the canvas inside the shell's rounded corners.
+    root.set_overflow(gtk4::Overflow::Hidden);
+
+    let canvas = canvas::build(scale, dark);
+    let effect_control = Rc::new(super::effect_control::EffectControl::new(
+        scale,
+        &canvas.host,
+    ));
+    canvas.root.add_overlay(&effect_control.root);
+    let inspector = Rc::new(inspector::build(scale, &canvas.host, &window));
+    let motion = Rc::new(motion::build(scale, dark, inspector.clone(), &canvas));
+    let mode_confirm = Rc::new(mode_confirm::build(scale, dark));
+    let sub_bars = Rc::new(super::sub_bar::build(
+        scale,
+        canvas.host.clone(),
+        {
+            let canvas = canvas.clone();
+            Rc::new(move |docked| canvas.set_docked(docked))
+        },
+        Some(Rc::downgrade(&canvas)),
+    ));
+    let toolbar = Rc::new(toolbar::build(scale, Tool::Select, {
+        let inspector = inspector.clone();
+        let host = canvas.host.clone();
+        Rc::new(move |tool| {
+            host.activate_tool(tool.to_model());
+            inspector.show_tool(tool);
+        })
+    }));
+    canvas.root.add_overlay(&sub_bars.root);
+    canvas.root.add_overlay(&toolbar.history);
+
+    // The first image-editor opens with an image offer a styled look. The
+    // empty shell does not count, and a window without one never bumps.
+    let editor_open_count = initial
+        .filter(|path| path.is_file())
+        .map(|_| super::look_chip::bump_editor_open());
+    let look_chip = super::look_chip::build(scale, &canvas.host, editor_open_count);
+
+    // Upload keeps its own busy state so a document change mid-request cannot
+    // re-enable the button.
+    let uploading = Rc::new(Cell::new(false));
+    // Copy, Upload and Export act on the Motion composition while that page
+    // is up; video exports disable the button until the encoder finishes.
+    let in_motion = Rc::new(Cell::new(false));
+    let exporting = Rc::new(Cell::new(false));
+    // The running encoder's cancel flag, so a second Export click stops it.
+    let motion_cancel: MotionCancel = Rc::new(RefCell::new(None));
+    let motion_export_name = initial
+        .and_then(|path| path.file_stem())
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .map(|stem| format!("{stem} Motion.mp4"))
+        .unwrap_or_else(|| "ApexShot Motion.mp4".to_string());
+
+    // The workspace holds the two mode pages: the annotate canvas and the
+    // Motion page with its preview and timeline dock.
+    let workspace_stack = gtk4::Stack::new();
+    workspace_stack.set_hhomogeneous(false);
+    workspace_stack.set_vhomogeneous(false);
+    workspace_stack.set_hexpand(true);
+    workspace_stack.set_vexpand(true);
+    workspace_stack.add_named(&canvas.root, Some("static"));
+    workspace_stack.add_named(&motion.page, Some("motion"));
+    workspace_stack.set_visible_child_name("static");
+
+    // The top toolbar swaps with the mode: the annotation rail for Static,
+    // the Static button for Motion.
+    let toolbar_stack = gtk4::Stack::new();
+    toolbar_stack.set_hhomogeneous(false);
+    toolbar_stack.set_vhomogeneous(false);
+    toolbar_stack.set_halign(Align::Center);
+    toolbar_stack.set_valign(Align::Start);
+    toolbar_stack.add_named(&toolbar.root, Some("static"));
+    toolbar_stack.add_named(&motion.toolbar, Some("motion"));
+    toolbar_stack.set_visible_child_name("static");
+
+    let editing_lock = Rc::new(EditingLock {
+        holds: Cell::new(0),
+        choosing: Cell::new(false),
+        targets: vec![
+            workspace_stack.clone().upcast(),
+            toolbar_stack.clone().upcast(),
+        ],
+        inspector: inspector.clone(),
+    });
+
+    // Model -> chrome: bars, history sensitivity and action buttons refresh
+    // after every document or selection mutation.
+    let sync_all = {
+        let sub_bars = sub_bars.clone();
+        let host = canvas.host.clone();
+        let undo = toolbar.undo.clone();
+        let redo = toolbar.redo.clone();
+        let delete = toolbar.delete.clone();
+        let copy = inspector.copy_button.clone();
+        let upload = inspector.upload_button.clone();
+        let uploading = uploading.clone();
+        let export = inspector.export_button.clone();
+        let exporting = exporting.clone();
+        let toolbar = toolbar.clone();
+        let canvas = canvas.clone();
+        let effect_control = effect_control.clone();
+        let inspector = inspector.clone();
+        let editing_lock = editing_lock.clone();
+        Rc::new(move || {
+            // View math follows the document so crop/undo re-fit and
+            // hit-testing tracks the real pixels.
+            canvas.sync_view_to_document();
+            host.read(|st| {
+                toolbar.set_active_tool(Tool::rail_from_model(st.selected_tool));
+                sub_bars.sync(Some(st));
+                canvas.set_crop_mode(st.selected_tool == crate::capture::editor::types::Tool::Crop);
+                effect_control.sync(st, &canvas);
+                undo.set_sensitive(st.can_undo());
+                redo.set_sensitive(st.can_redo());
+                delete.set_sensitive(st.selected_action_index.is_some());
+            });
+            let has_doc = host.has_document();
+            inspector.sync_background();
+            copy.set_sensitive(has_doc && !host.background_loading());
+            // One encoder at a time: a Motion render blocks the other action.
+            // Export stays clickable during its own render so it can cancel.
+            upload.set_sensitive(
+                has_doc
+                    && !host.background_loading()
+                    && !(exporting.get() || uploading.get() || editing_lock.locked()),
+            );
+            // A running Motion export keeps Export live so a click cancels;
+            // any other export or upload keeps it off until it finishes.
+            export.set_sensitive(
+                has_doc
+                    && !host.background_loading()
+                    && (exporting.get() || !editing_lock.locked()),
+            );
+            canvas.refresh_cursor();
+        })
+    };
+    {
+        let host = canvas.host.clone();
+        let in_motion = in_motion.clone();
+        crate::studio_trial::attach_export_tooltip(&inspector.export_button, move || {
+            if in_motion.get() {
+                crate::studio_entitlement::capabilities_for_motion_export()
+            } else {
+                host.read(|st| st.studio_capabilities()).unwrap_or_default()
+            }
+        });
+    }
+    canvas.add_change_listener(sync_all.clone());
+    // Crash safety: autosave the session once edits have been quiet for two
+    // seconds, so a drag in progress is never written.
+    {
+        let pending: Rc<RefCell<Option<gtk4::glib::SourceId>>> = Rc::new(RefCell::new(None));
+        let canvas_weak = Rc::downgrade(&canvas);
+        canvas.add_change_listener(Rc::new(move || {
+            if let Some(source) = pending.borrow_mut().take() {
+                source.remove();
+            }
+            let canvas_weak = canvas_weak.clone();
+            let pending_clear = pending.clone();
+            let source =
+                gtk4::glib::timeout_add_local_once(std::time::Duration::from_secs(2), move || {
+                    pending_clear.borrow_mut().take();
+                    if let Some(canvas) = canvas_weak.upgrade() {
+                        canvas.autosave_session();
+                    }
+                });
+            *pending.borrow_mut() = Some(source);
+        }));
+    }
+    // Motion edits live outside the annotation session, so they autosave on
+    // their own quiet timer, keyed to the image this window has open.
+    {
+        let pending: Rc<RefCell<Option<gtk4::glib::SourceId>>> = Rc::new(RefCell::new(None));
+        let canvas_weak = Rc::downgrade(&canvas);
+        let motion_weak = Rc::downgrade(&motion);
+        motion.timeline.add_state_listener(Rc::new(move || {
+            if let Some(source) = pending.borrow_mut().take() {
+                source.remove();
+            }
+            let canvas_weak = canvas_weak.clone();
+            let motion_weak = motion_weak.clone();
+            let pending_clear = pending.clone();
+            let source =
+                gtk4::glib::timeout_add_local_once(std::time::Duration::from_secs(2), move || {
+                    pending_clear.borrow_mut().take();
+                    if let (Some(canvas), Some(motion)) =
+                        (canvas_weak.upgrade(), motion_weak.upgrade())
+                    {
+                        if let Some(path) = canvas.source_path() {
+                            motion.persist_session(&path);
+                        }
+                    }
+                });
+            *pending.borrow_mut() = Some(source);
+        }));
+    }
+    sync_all();
+
+    toolbar.undo.connect_clicked({
+        let host = canvas.host.clone();
+        move |_| host.undo()
+    });
+    toolbar.redo.connect_clicked({
+        let host = canvas.host.clone();
+        move |_| host.redo()
+    });
+    toolbar.delete.connect_clicked({
+        let host = canvas.host.clone();
+        move |_| host.mutate_effects(|st| st.remove_selected_action())
+    });
+
+    inspector.copy_button.connect_clicked({
+        let host = canvas.host.clone();
+        let window = window.clone();
+        let motion = motion.clone();
+        let in_motion = in_motion.clone();
+        let button = inspector.copy_button.downgrade();
+        move |_| {
+            if !in_motion.get() {
+                copy_image(&window, &host);
+                return;
+            }
+            // A Motion frame of a Studio-styled or posed composition is a
+            // styled still: the copy carries the same gate the still export
+            // applies, so it cannot bypass it.
+            let Some(capabilities) = host.read(|st| {
+                crate::studio_entitlement::capabilities_for_image_style(
+                    st.static_image_transform,
+                    st.uses_studio_style(),
+                )
+            }) else {
+                return;
+            };
+            let retry_host = Rc::downgrade(&host);
+            let retry_button = button.clone();
+            if !crate::studio_upsell::gate(&window, capabilities, move || {
+                if let Some(host) = retry_host.upgrade() {
+                    host.invalidate_studio_cache();
+                }
+                if let Some(button) = retry_button.upgrade() {
+                    button.emit_clicked();
+                }
+            }) {
+                return;
+            }
+            let trial = crate::studio_entitlement::studio_access(capabilities).is_trial();
+            match motion.current_frame_image() {
+                Some(frame) => copy_frame_image(&window, &host, frame, trial),
+                None => {
+                    // The Motion page covers the canvas toast, so the failure
+                    // also goes to a system notification.
+                    let message = t("Could not render the Motion frame.");
+                    crate::utils::notify::desktop_notification_important(
+                        &t("Copy failed"),
+                        &message,
+                    );
+                    host.report_error(message);
+                }
+            }
+        }
+    });
+    inspector.upload_button.connect_clicked({
+        let host = canvas.host.clone();
+        let window = window.clone();
+        let button = inspector.upload_button.clone();
+        let inspector = inspector.clone();
+        let uploading = uploading.clone();
+        let exporting = exporting.clone();
+        let motion = motion.clone();
+        let in_motion = in_motion.clone();
+        let name = motion_export_name.clone();
+        let sync_for_upload: Rc<dyn Fn()> = sync_all.clone();
+        let editing_lock = editing_lock.clone();
+        move |_| {
+            if !in_motion.get() {
+                upload_image(
+                    &window,
+                    &host,
+                    &button,
+                    &uploading,
+                    &editing_lock,
+                    sync_for_upload.clone(),
+                );
+                return;
+            }
+            upload_motion_video(
+                &window,
+                &host,
+                &motion,
+                &inspector,
+                &button,
+                &uploading,
+                &exporting,
+                &name,
+                sync_for_upload.clone(),
+                &editing_lock,
+            );
+        }
+    });
+    inspector.export_button.connect_clicked({
+        let host = canvas.host.clone();
+        let window = window.clone();
+        let inspector = inspector.clone();
+        let canvas = canvas.clone();
+        let motion = motion.clone();
+        let in_motion = in_motion.clone();
+        let exporting = exporting.clone();
+        let uploading = uploading.clone();
+        let cancel = motion_cancel.clone();
+        let name = motion_export_name.clone();
+        let sync_for_export: Rc<dyn Fn()> = sync_all.clone();
+        let editing_lock = editing_lock.clone();
+        move |_| {
+            if in_motion.get() {
+                // A click while the encoder runs cancels it; the button keeps
+                // its label so the progress reads where the action was.
+                if exporting.get() {
+                    if let Some(cancel) = cancel.borrow().as_ref() {
+                        cancel.set(true);
+                    }
+                    return;
+                }
+                let sync_all: Rc<dyn Fn()> = sync_for_export.clone();
+                save_motion_video_dialog(
+                    &window,
+                    &host,
+                    &motion,
+                    &inspector,
+                    &exporting,
+                    &uploading,
+                    &cancel,
+                    &name,
+                    sync_all,
+                    &editing_lock,
+                );
+            } else {
+                save_as_dialog(
+                    &window,
+                    &host,
+                    canvas.source_path(),
+                    &editing_lock,
+                    sync_for_export.clone(),
+                );
+            }
+        }
+    });
+
+    inspector.set_motion_duration_listener({
+        let timeline = motion.timeline.clone();
+        Rc::new(move |seconds| timeline.set_duration(seconds))
+    });
+
+    // Motion button opens Motion mode; the Motion toolbar's Static button
+    // returns. Commit any inline text before showing the motion source.
+    let switch_mode = {
+        let workspace_stack = workspace_stack.clone();
+        let toolbar_stack = toolbar_stack.clone();
+        let inspector = inspector.clone();
+        let motion = motion.clone();
+        let host = canvas.host.clone();
+        let in_motion = in_motion.clone();
+        Rc::new(move |motion_now: bool| {
+            in_motion.set(motion_now);
+            if motion_now {
+                host.commit_text_if_active();
+                host.set_space_pan(false);
+                host.changed();
+            } else {
+                // Leaving Motion drops its clips, the way the Linux session
+                // clears the snapshot; the warning below is what tells the
+                // user that. Shared appearance settings survive.
+                motion.timeline.clear_clips();
+            }
+            let page = if motion_now { "motion" } else { "static" };
+            for stack in [&workspace_stack, &toolbar_stack] {
+                stack.set_visible_child_name(page);
+            }
+            inspector.set_mode(motion_now);
+            if motion_now {
+                motion.set_active_tab("motion");
+            }
+        })
+    };
+    // Both mode buttons ask first when the switch would drop work the other
+    // mode cannot show.
+    let request_mode = {
+        let switch_mode = switch_mode.clone();
+        let confirm = mode_confirm.clone();
+        let host = canvas.host.clone();
+        let timeline = motion.timeline.clone();
+        Rc::new(move |motion_now: bool| {
+            let switch = if motion_now {
+                mode_confirm::ModeSwitch::ToMotion
+            } else {
+                mode_confirm::ModeSwitch::ToStatic
+            };
+            let config = crate::config::load_config();
+            // Pending text counts as an annotation: entering Motion commits
+            // it before the snapshot is taken.
+            let has_static_annotations = host
+                .read(|st| {
+                    !st.actions.is_empty()
+                        || st
+                            .active_text_input
+                            .as_ref()
+                            .is_some_and(|input| !input.text.trim().is_empty())
+                })
+                .unwrap_or(false);
+            let has_motion_segments = timeline.motion_state().has_segments();
+            if mode_confirm::needs_confirmation(
+                switch,
+                has_static_annotations,
+                has_motion_segments,
+                &config,
+            ) {
+                let switch_mode = switch_mode.clone();
+                confirm.ask(switch, Rc::new(move || switch_mode(motion_now)));
+                return;
+            }
+            switch_mode(motion_now);
+        })
+    };
+    canvas.motion_button.connect_clicked({
+        let request_mode = request_mode.clone();
+        move |_| request_mode(true)
+    });
+    motion.static_button.connect_clicked({
+        let request_mode = request_mode.clone();
+        move |_| request_mode(false)
+    });
+
+    // Transparent strip over the top edge of both mode pages: it centres the
+    // tool bar stacks and is the strip the window drags from, like the Linux
+    // top chrome. The Motion toolbar's Static button lives in the same slot.
+    let top_chrome = GtkBox::new(gtk4::Orientation::Horizontal, 0);
+    top_chrome.add_css_class("image-editor-top-chrome");
+    top_chrome.set_halign(Align::Fill);
+    top_chrome.set_valign(Align::Start);
+    top_chrome.set_hexpand(true);
+    top_chrome.set_size_request(-1, px(TOP_CHROME_HEIGHT, scale));
+    let top_left = GtkBox::new(gtk4::Orientation::Horizontal, 0);
+    top_left.set_hexpand(true);
+    let top_right = GtkBox::new(gtk4::Orientation::Horizontal, 0);
+    top_right.set_hexpand(true);
+    top_chrome.append(&top_left);
+    top_chrome.append(&toolbar_stack);
+    if let Some(chip) = &look_chip {
+        // The chip shares the header row with the tool bar and sits right
+        // after it, with the same top edge, so the two read as one row.
+        top_chrome.append(&chip.root);
+    }
+    top_chrome.append(&top_right);
+    windowing::install_window_drag(&top_chrome, &window);
+
+    // The pages live under an overlay host so the top chrome covers both.
+    let pages_overlay = ui_support::editor_overlay();
+    pages_overlay.set_hexpand(true);
+    pages_overlay.set_vexpand(true);
+    pages_overlay.set_child(Some(&workspace_stack));
+    pages_overlay.add_overlay(&top_chrome);
+
+    // The Studio trial card hangs just below the floating tool bar, and below
+    // the docked tool bar when one is up, centred on the bar. The toolbar and
+    // the sub-bars live in different overlays, so the anchor translates the
+    // toolbar into canvas coordinates.
+    {
+        let overlay = canvas.root.clone();
+        let toolbar_stack = toolbar_stack.clone();
+        let sub_bars_root = sub_bars.root.clone();
+        let toast_anchor: Rc<dyn Fn() -> Option<(f64, f64)>> = Rc::new(move || {
+            // The stack swaps toolbars with the mode; anchor to the visible one.
+            let toolbar = toolbar_stack
+                .visible_child()
+                .unwrap_or_else(|| toolbar_stack.clone().upcast::<gtk4::Widget>());
+            let origin = toolbar.compute_point(&overlay, &gtk4::graphene::Point::new(0.0, 0.0))?;
+            let toolbar_width = f64::from(toolbar.width());
+            if toolbar_width <= 0.0 {
+                return None;
+            }
+            let center_x = f64::from(origin.x()) + toolbar_width / 2.0;
+            let mut top_y = f64::from(origin.y()) + f64::from(toolbar.height());
+            // The sub-bars dock at the chrome strip's bottom; a bar that
+            // drifted onto the canvas must not push the card down.
+            if sub_bars_root.is_visible() && sub_bars_root.is_mapped() {
+                let bar_top = f64::from(sub_bars_root.margin_top());
+                let bar_height = f64::from(sub_bars_root.height());
+                if bar_height > 1.0 && bar_top <= f64::from(px(TOP_CHROME_HEIGHT, scale)) + 4.0 {
+                    top_y = top_y.max(bar_top + bar_height);
+                }
+            }
+            Some((center_x, top_y + f64::from(px(8.0, scale))))
+        });
+        canvas
+            .host
+            .set_trial_toast_anchor(canvas.root.clone(), toast_anchor);
+    }
+
+    let utility = build_utility_strip(&window, scale);
+    inspector.root.prepend(&utility);
+
+    let workspace = GtkBox::new(gtk4::Orientation::Horizontal, 0);
+    workspace.add_css_class("image-editor-workspace");
+    workspace.set_hexpand(true);
+    workspace.set_vexpand(true);
+    workspace.append(&pages_overlay);
+    workspace.append(&inspector.root);
+    root.append(&workspace);
+
+    let overlay = gtk4::Overlay::new();
+    overlay.set_child(Some(&root));
+    overlay.add_overlay(mode_confirm.overlay());
+    window.set_child(Some(&overlay));
+
+    // An image with a saved Motion edit gets it back, and opens in Motion when
+    // that edit has clips, so a Motion Edits card lands where the user left.
+    canvas.add_load_listener({
+        let motion = motion.clone();
+        let switch_mode = switch_mode.clone();
+        let in_motion = in_motion.clone();
+        Rc::new(move |path: &std::path::Path| {
+            if motion.restore_session(path) && !in_motion.get() {
+                switch_mode(true);
+            }
+        })
+    });
+
+    canvas.open_button.connect_clicked({
+        let canvas = canvas.clone();
+        let window = window.clone();
+        move |_| canvas.choose_image(&window)
+    });
+
+    install_keys(
+        &window,
+        &canvas,
+        &sub_bars,
+        &workspace_stack,
+        &mode_confirm,
+        &motion,
+        &inspector.copy_button,
+        &inspector.export_button,
+        &exporting,
+        &editing_lock,
+        sync_all.clone(),
+    );
+
+    // Keep the updater aware of this window and its document, so an update can
+    // close it through this close handler and reopen the same file.
+    crate::update::open_windows::register_image_editor(initial);
+    window.connect_close_request({
+        let canvas = canvas.clone();
+        let motion = motion.clone();
+        move |_| {
+            canvas.persist_session_on_close();
+            if let Some(path) = canvas.source_path() {
+                motion.persist_session(&path);
+            }
+            crate::update::open_windows::unregister();
+            gtk4::glib::Propagation::Proceed
+        }
+    });
+
+    window.present();
+    crate::update_ui::present_if_needed(&overlay);
+
+    if crate::config::load_config().annotate_always_on_top {
+        keep_above(&window);
+    }
+
+    if let Some(path) = initial {
+        canvas.load(path);
+    }
+}
+
+/// The caption controls at the top of the inspector: an empty drag area on the
+/// left, then minimize, maximize and close hugging the window's top-right
+/// corner, where the Linux utility strip keeps its window buttons.
+fn build_utility_strip(window: &ApplicationWindow, scale: f64) -> GtkBox {
+    let strip = GtkBox::new(gtk4::Orientation::Horizontal, 0);
+    strip.add_css_class("image-editor-utility-controls");
+    strip.set_halign(Align::Fill);
+
+    let drag_area = GtkBox::new(gtk4::Orientation::Horizontal, 0);
+    drag_area.set_hexpand(true);
+    strip.append(&drag_area);
+    windowing::install_window_drag(&drag_area, window);
+
+    let (minimize, _) = caption_button(
+        Rc::new(Cell::new(CaptionGlyph::Minimize)),
+        &t("Minimize"),
+        scale,
+    );
+    let minimize_window = window.clone();
+    minimize.connect_clicked(move |_| minimize_window.minimize());
+
+    let maximize_state = Rc::new(Cell::new(CaptionGlyph::Maximize));
+    let (maximize, maximize_glyph) = caption_button(maximize_state.clone(), &t("Maximize"), scale);
+    let maximize_window = window.clone();
+    maximize.connect_clicked(move |_| {
+        if maximize_window.is_maximized() {
+            maximize_window.unmaximize();
+        } else {
+            maximize_window.maximize();
+        }
+    });
+    window.connect_maximized_notify({
+        let state = maximize_state;
+        move |window| {
+            state.set(if window.is_maximized() {
+                CaptionGlyph::Restore
+            } else {
+                CaptionGlyph::Maximize
+            });
+            maximize_glyph.queue_draw();
+        }
+    });
+
+    let (close, _) = caption_button(Rc::new(Cell::new(CaptionGlyph::Close)), &t("Close"), scale);
+    let close_window = window.clone();
+    close.connect_clicked(move |_| close_window.close());
+
+    strip.append(&minimize);
+    strip.append(&maximize);
+    strip.append(&close);
+    strip
+}
+
+/// Export the annotated image. Settings > Annotate decides whether a file the
+/// editor opened is overwritten in place and whether the editor closes after a
+/// successful export; otherwise the platform dialog asks where to save.
+fn save_as_dialog(
+    window: &ApplicationWindow,
+    host: &Rc<super::annotate::EditorHost>,
+    source: Option<std::path::PathBuf>,
+    lock: &Rc<EditingLock>,
+    sync_all: Rc<dyn Fn()>,
+) {
+    if lock.locked() || lock.choosing() || !host.has_document() || host.background_loading() {
+        return;
+    }
+    let retry_window = window.downgrade();
+    let retry_host = Rc::downgrade(host);
+    let retry_source = source.clone();
+    let retry_lock = lock.clone();
+    let retry_sync = sync_all.clone();
+    if !gate_image_output(window, host, move || {
+        if let (Some(window), Some(host)) = (retry_window.upgrade(), retry_host.upgrade()) {
+            save_as_dialog(
+                &window,
+                &host,
+                retry_source.clone(),
+                &retry_lock,
+                retry_sync.clone(),
+            );
+        }
+    }) {
+        return;
+    }
+    let config = crate::config::load_config().sanitized();
+    let close_after_export = config.annotate_close_after_export;
+    let on_done = {
+        let window = window.downgrade();
+        let lock = lock.clone();
+        let sync_all = sync_all.clone();
+        move || -> Box<dyn Fn(bool)> {
+            lock.acquire();
+            sync_all();
+            let window = window.clone();
+            let lock = lock.clone();
+            let sync_all = sync_all.clone();
+            Box::new(move |saved| {
+                lock.release();
+                sync_all();
+                if saved && close_after_export {
+                    if let Some(window) = window.upgrade() {
+                        window.close();
+                    }
+                }
+            })
+        }
+    };
+    let kept_source = source.filter(|path| path.is_file() && !is_temporary_capture(path));
+    if config.annotate_overwrite_original_image {
+        if let Some(path) = kept_source.as_deref() {
+            host.save_as(window, path, on_done());
+            return;
+        }
+    }
+
+    let dialog = gtk4::FileDialog::new();
+    dialog.set_title(&t("Save annotated image"));
+    let folder = kept_source
+        .as_deref()
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| screenshot_folder(&config));
+    dialog.set_initial_folder(Some(&gtk4::gio::File::for_path(&folder)));
+    dialog.set_initial_name(Some(&crate::utils::unique_name::available_file_name(
+        &folder,
+        &export_name(kept_source.as_deref(), &config.screenshot_format),
+    )));
+    let filters = gtk4::gio::ListStore::new::<gtk4::FileFilter>();
+    let images = gtk4::FileFilter::new();
+    images.set_name(Some(&t("Images")));
+    for mime in ["image/png", "image/jpeg", "image/webp"] {
+        images.add_mime_type(mime);
+    }
+    filters.append(&images);
+    dialog.set_filters(Some(&filters));
+    dialog.set_default_filter(Some(&images));
+    let host = host.clone();
+    let parent = window.clone();
+    let chooser_lock = lock.clone();
+    chooser_lock.set_choosing(true);
+    dialog.save(Some(window), gtk4::gio::Cancellable::NONE, move |result| {
+        chooser_lock.set_choosing(false);
+        if let Ok(file) = result {
+            if let Some(path) = file.path() {
+                host.save_as(&parent, &path, on_done());
+            }
+        }
+    });
+}
+
+/// The screenshot folder Settings names, or Pictures when it names none.
+fn screenshot_folder(config: &crate::config::AppConfig) -> std::path::PathBuf {
+    let configured = config.screenshot_export_location.trim();
+    if !configured.is_empty() {
+        return std::path::PathBuf::from(configured);
+    }
+    dirs::picture_dir()
+        .or_else(dirs::home_dir)
+        .unwrap_or_else(std::env::temp_dir)
+}
+
+/// `<name>-annotated.<ext>` for an opened file, else `annotated.<ext>`, with the
+/// extension from Settings > Screenshots > Format.
+fn export_name(source: Option<&Path>, format: &str) -> String {
+    let extension = match format.trim().to_ascii_uppercase().as_str() {
+        "JPEG" | "JPG" => "jpg",
+        "WEBP" => "webp",
+        _ => "png",
+    };
+    let stem = source
+        .and_then(Path::file_stem)
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.trim().is_empty());
+    match stem {
+        Some(stem) => format!("{stem}-annotated.{extension}"),
+        None => format!("annotated.{extension}"),
+    }
+}
+
+/// A capture the shell wrote to `%TEMP%\ApexShot` because Settings does not keep
+/// screenshots; overwriting it would not keep anything either.
+fn is_temporary_capture(path: &Path) -> bool {
+    // The shell names this folder in its long, forward-slash form while
+    // `temp_dir` can return the 8.3 short form, so compare resolved paths.
+    let Some(parent) = path.parent() else {
+        return false;
+    };
+    let temporary = std::env::temp_dir().join("ApexShot");
+    match (
+        std::fs::canonicalize(parent),
+        std::fs::canonicalize(temporary),
+    ) {
+        (Ok(parent), Ok(temporary)) => parent == temporary,
+        _ => false,
+    }
+}
+
+/// The dock's scrolling content holds the Motion and appearance controls.
+/// Disabling it keeps the document that the encoder captured its backdrop
+/// from, while the bottom action row stays live so Export can cancel.
+fn set_motion_controls_sensitive(inspector: &inspector::Inspector, sensitive: bool) {
+    let mut child = inspector.root.first_child();
+    while let Some(widget) = child {
+        if widget.is::<gtk4::ScrolledWindow>() {
+            widget.set_sensitive(sensitive);
+            return;
+        }
+        child = widget.next_sibling();
+    }
+}
+
+/// Blocks editing while an export or upload runs, so the document cannot
+/// change under the running output. Holds nest: the targets come back only
+/// when the last export or upload finishes.
+struct EditingLock {
+    holds: Cell<u32>,
+    /// Set while an export's Save dialog is open, so a second Export click or
+    /// Ctrl+S cannot open another one before the first export starts.
+    choosing: Cell<bool>,
+    targets: Vec<gtk4::Widget>,
+    inspector: Rc<inspector::Inspector>,
+}
+
+impl EditingLock {
+    fn locked(&self) -> bool {
+        self.holds.get() > 0
+    }
+
+    fn choosing(&self) -> bool {
+        self.choosing.get()
+    }
+
+    fn set_choosing(&self, choosing: bool) {
+        self.choosing.set(choosing);
+    }
+
+    fn acquire(&self) {
+        let holds = self.holds.get();
+        self.holds.set(holds + 1);
+        if holds == 0 {
+            self.apply(false);
+        }
+    }
+
+    fn release(&self) {
+        let holds = self.holds.get();
+        if holds == 0 {
+            return;
+        }
+        self.holds.set(holds - 1);
+        if holds == 1 {
+            self.apply(true);
+        }
+    }
+
+    fn apply(&self, sensitive: bool) {
+        for widget in &self.targets {
+            widget.set_sensitive(sensitive);
+        }
+        set_motion_controls_sensitive(&self.inspector, sensitive);
+    }
+}
+
+/// Export the whole Motion composition as an MP4. The gate matches Motion's
+/// video export entitlement; the encoder renders a frame per main-loop tick
+/// so the dialog and window stay usable while it works.
+#[allow(clippy::too_many_arguments)]
+fn save_motion_video_dialog(
+    window: &ApplicationWindow,
+    host: &Rc<super::annotate::EditorHost>,
+    motion: &Rc<motion::MotionMode>,
+    inspector: &Rc<inspector::Inspector>,
+    exporting: &Rc<Cell<bool>>,
+    uploading: &Rc<Cell<bool>>,
+    cancel: &MotionCancel,
+    name: &str,
+    sync_all: Rc<dyn Fn()>,
+    lock: &Rc<EditingLock>,
+) {
+    if lock.locked()
+        || lock.choosing()
+        || exporting.get()
+        || uploading.get()
+        || !host.has_document()
+        || host.background_loading()
+    {
+        return;
+    }
+    let retry_window = window.downgrade();
+    let retry_host = Rc::downgrade(host);
+    let retry_motion = Rc::downgrade(motion);
+    let retry_inspector = inspector.clone();
+    let retry_exporting = exporting.clone();
+    let retry_uploading = uploading.clone();
+    let retry_cancel = cancel.clone();
+    let retry_name = name.to_string();
+    let retry_sync = sync_all.clone();
+    let retry_lock = lock.clone();
+    let retry_host_for_cache = Rc::downgrade(host);
+    if !crate::studio_upsell::gate(
+        window,
+        crate::studio_entitlement::capabilities_for_motion_export(),
+        move || {
+            if let Some(host) = retry_host_for_cache.upgrade() {
+                host.invalidate_studio_cache();
+            }
+            if let (Some(window), Some(host), Some(motion)) = (
+                retry_window.upgrade(),
+                retry_host.upgrade(),
+                retry_motion.upgrade(),
+            ) {
+                save_motion_video_dialog(
+                    &window,
+                    &host,
+                    &motion,
+                    &retry_inspector,
+                    &retry_exporting,
+                    &retry_uploading,
+                    &retry_cancel,
+                    &retry_name,
+                    retry_sync.clone(),
+                    &retry_lock,
+                );
+            }
+        },
+    ) {
+        return;
+    }
+    // Captured before rendering: only a finished MP4 consumes the trial.
+    let trial = crate::studio_entitlement::studio_access(
+        crate::studio_entitlement::capabilities_for_motion_export(),
+    )
+    .is_trial();
+
+    let chooser_window = window.downgrade();
+    let host = host.clone();
+    let motion = motion.clone();
+    let inspector = inspector.clone();
+    let exporting = exporting.clone();
+    let cancel = cancel.clone();
+    let name = name.to_string();
+    let lock = lock.clone();
+    super::motion_export_options::show(window, &motion.clone(), move |options| {
+        let Some(window) = chooser_window.upgrade() else {
+            return;
+        };
+        choose_motion_video_destination(
+            &window,
+            &host,
+            &motion,
+            &inspector,
+            &exporting,
+            &cancel,
+            &name,
+            options,
+            trial,
+            sync_all.clone(),
+            &lock,
+        );
+    });
+}
+
+/// The platform chooser for the Motion MP4's destination, opened after the
+/// export options dialog answers. Keeps the chooser's naming and folder
+/// memory, the progress label and the notifications it always had.
+#[allow(clippy::too_many_arguments)]
+fn choose_motion_video_destination(
+    window: &ApplicationWindow,
+    host: &Rc<super::annotate::EditorHost>,
+    motion: &Rc<motion::MotionMode>,
+    inspector: &Rc<inspector::Inspector>,
+    exporting: &Rc<Cell<bool>>,
+    cancel: &MotionCancel,
+    name: &str,
+    options: motion::MotionExportOptions,
+    trial: bool,
+    sync_all: Rc<dyn Fn()>,
+    lock: &Rc<EditingLock>,
+) {
+    // The options dialog was modal, but an export or a document change could
+    // still have landed while it was open.
+    if lock.locked()
+        || lock.choosing()
+        || exporting.get()
+        || !host.has_document()
+        || host.background_loading()
+    {
+        return;
+    }
+    let dialog = gtk4::FileDialog::new();
+    dialog.set_title(&t("Export Motion video"));
+    let config = crate::config::load_config().sanitized();
+    let folder = config.motion_export_dir(&crate::recording::recording_output_dir(&config));
+    dialog.set_initial_folder(Some(&gtk4::gio::File::for_path(&folder)));
+    dialog.set_initial_name(Some(&crate::utils::unique_name::available_file_name(
+        &folder, name,
+    )));
+    let filter = gtk4::FileFilter::new();
+    filter.set_name(Some(&t("MP4 video")));
+    filter.add_mime_type("video/mp4");
+    filter.add_pattern("*.mp4");
+    filter.add_pattern("*.MP4");
+    let filters = gtk4::gio::ListStore::new::<gtk4::FileFilter>();
+    filters.append(&filter);
+    dialog.set_filters(Some(&filters));
+    dialog.set_default_filter(Some(&filter));
+
+    let motion = motion.clone();
+    let host = host.clone();
+    let inspector = inspector.clone();
+    let exporting = exporting.clone();
+    let cancel = cancel.clone();
+    let sync_all = sync_all.clone();
+    let lock = lock.clone();
+    lock.set_choosing(true);
+    let toast_window = window.downgrade();
+    dialog.save(Some(window), gtk4::gio::Cancellable::NONE, move |result| {
+        lock.set_choosing(false);
+        if let Ok(file) = result {
+            if let Some(path) = file.path() {
+                let path = with_mp4_extension(path);
+                exporting.set(true);
+                lock.acquire();
+                let original_label = inspector
+                    .export_button
+                    .label()
+                    .map(|label| label.to_string())
+                    .unwrap_or_else(|| t("Export"));
+                inspector
+                    .export_button
+                    .set_label(&tfmt("Exporting {percent}%", &[("percent", "0")]));
+                sync_all();
+                let result = motion.export_video(
+                    path,
+                    options,
+                    {
+                        let export_button = inspector.export_button.clone();
+                        move |done, total| {
+                            let percent = done.saturating_mul(100) / total.max(1);
+                            let percent = percent.to_string();
+                            let args = [("percent", percent.as_str())];
+                            export_button.set_label(&tfmt("Exporting {percent}%", &args));
+                        }
+                    },
+                    {
+                        let exporting = exporting.clone();
+                        let sync_all = sync_all.clone();
+                        let host = host.clone();
+                        let inspector = inspector.clone();
+                        let cancel = cancel.clone();
+                        let original_label = original_label.clone();
+                        let lock = lock.clone();
+                        let toast_window = toast_window.clone();
+                        move |result| {
+                            exporting.set(false);
+                            lock.release();
+                            inspector.export_button.set_label(&original_label);
+                            *cancel.borrow_mut() = None;
+                            sync_all();
+                            match result {
+                                Ok(path) => {
+                                    let mut config = crate::config::load_config();
+                                    if config.remember_video_export_dir(&path) {
+                                        let _ = crate::config::save_config(&config);
+                                    }
+                                    // History lists this under Motion Edits,
+                                    // not Recordings.
+                                    crate::history::motion_exports::record_export(&path);
+                                    // The renderer consumed the trial; the
+                                    // floating toast now carries the count.
+                                    let shown = trial
+                                        && toast_window.upgrade().is_some_and(|window| {
+                                            crate::studio_trial_toast::show(
+                                                &window,
+                                                crate::studio_trial::trial_remaining(),
+                                            )
+                                        });
+                                    let feedback = if shown {
+                                        None
+                                    } else {
+                                        crate::studio_trial::finished_feedback(trial)
+                                    };
+                                    let body = match feedback {
+                                        Some(text) => {
+                                            format!("{}\n\n{text}", path.display())
+                                        }
+                                        None => path.display().to_string(),
+                                    };
+                                    crate::utils::notify::desktop_notification(
+                                        &t("Export complete"),
+                                        &body,
+                                    );
+                                }
+                                // Cancelling is the user's choice, not a failure.
+                                Err(error) if error == t("Export cancelled") => {}
+                                Err(error) => {
+                                    // The Motion page hides the canvas toast, so
+                                    // the export failure also goes to the desktop.
+                                    crate::utils::notify::desktop_notification_important(
+                                        &t("Export failed"),
+                                        &error,
+                                    );
+                                    host.report_error(error);
+                                }
+                            }
+                        }
+                    },
+                );
+                match result {
+                    Ok(flag) => *cancel.borrow_mut() = Some(flag),
+                    Err(error) => {
+                        exporting.set(false);
+                        lock.release();
+                        inspector.export_button.set_label(&original_label);
+                        *cancel.borrow_mut() = None;
+                        sync_all();
+                        crate::utils::notify::desktop_notification_important(
+                            &t("Export failed"),
+                            &error,
+                        );
+                        host.report_error(error);
+                    }
+                }
+            }
+        }
+    });
+}
+
+/// Motion is always encoded as MP4, so an extension-less or mis-typed choice
+/// from the Save chooser is corrected rather than written as-is.
+fn with_mp4_extension(mut destination: std::path::PathBuf) -> std::path::PathBuf {
+    let is_mp4 = destination
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("mp4"));
+    if !is_mp4 {
+        destination.set_extension("mp4");
+    }
+    destination
+}
+
+fn gate_image_output(
+    window: &ApplicationWindow,
+    host: &Rc<super::annotate::EditorHost>,
+    retry: impl Fn() + 'static,
+) -> bool {
+    let Some(capabilities) = host.read(|st| st.studio_capabilities()) else {
+        return false;
+    };
+    let retry: Rc<dyn Fn()> = Rc::new(retry);
+    let retry_host = Rc::downgrade(host);
+    let gate_retry = retry.clone();
+    if !crate::studio_upsell::gate(window, capabilities, move || {
+        if let Some(host) = retry_host.upgrade() {
+            host.invalidate_studio_cache();
+        }
+        gate_retry();
+    }) {
+        return false;
+    }
+    upscale_ready(host, retry)
+}
+
+thread_local! {
+    static ENHANCING: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Neural enhancement takes seconds on a large source, and the image outputs
+/// render on the main loop. Run it on a worker first and retry the output,
+/// which then renders from the cached result without blocking the window.
+fn upscale_ready(host: &Rc<super::annotate::EditorHost>, retry: Rc<dyn Fn()>) -> bool {
+    let Some((mode, base)) = host.read(|st| st.pending_upscale()).flatten() else {
+        return true;
+    };
+    if ENHANCING.with(Cell::get) {
+        return false;
+    }
+    ENHANCING.with(|busy| busy.set(true));
+    host.report_error(t("Enhancing the image…"));
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ =
+            sender.send(crate::capture::editor::upscale::enhance_cached(&base, mode).map(|_| ()));
+    });
+    let host = Rc::downgrade(host);
+    gtk4::glib::timeout_add_local(std::time::Duration::from_millis(16), move || {
+        let result = match receiver.try_recv() {
+            Ok(result) => result,
+            Err(std::sync::mpsc::TryRecvError::Empty) => return gtk4::glib::ControlFlow::Continue,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                Err("The upscaling preview worker stopped unexpectedly.".to_string())
+            }
+        };
+        ENHANCING.with(|busy| busy.set(false));
+        match result {
+            Ok(()) => retry(),
+            Err(error) => {
+                if let Some(host) = host.upgrade() {
+                    host.report_error(t(&error));
+                }
+            }
+        }
+        gtk4::glib::ControlFlow::Break
+    });
+    false
+}
+
+fn copy_image(window: &ApplicationWindow, host: &Rc<super::annotate::EditorHost>) {
+    if !host.has_document() || host.background_loading() {
+        return;
+    }
+    let retry_window = window.downgrade();
+    let retry_host = Rc::downgrade(host);
+    if gate_image_output(window, host, move || {
+        if let (Some(window), Some(host)) = (retry_window.upgrade(), retry_host.upgrade()) {
+            copy_image(&window, &host);
+        }
+    }) {
+        host.copy_to_clipboard(window);
+    }
+}
+
+/// Copy the already rendered Motion pose. The caller runs the Studio style
+/// gate first; the static pose gate does not apply to Motion poses.
+fn copy_frame_image(
+    window: &ApplicationWindow,
+    host: &Rc<super::annotate::EditorHost>,
+    frame: image::RgbaImage,
+    trial: bool,
+) {
+    if !host.has_document() || host.background_loading() {
+        return;
+    }
+    host.copy_frame_to_clipboard(window, frame, trial);
+}
+
+/// Upload the flattened document as a temporary PNG. The temp file lives only
+/// for the request: Cloud responds with the share URL, which goes to the
+/// clipboard so the next paste carries the link.
+fn upload_image(
+    window: &ApplicationWindow,
+    host: &Rc<super::annotate::EditorHost>,
+    button: &gtk4::Button,
+    uploading: &Rc<Cell<bool>>,
+    lock: &Rc<EditingLock>,
+    sync_all: Rc<dyn Fn()>,
+) {
+    if lock.locked() || uploading.get() || !host.has_document() || host.background_loading() {
+        return;
+    }
+    let retry_window = window.downgrade();
+    let retry_host = Rc::downgrade(host);
+    let retry_button = button.downgrade();
+    let retry_uploading = uploading.clone();
+    let retry_lock = lock.clone();
+    let retry_sync = sync_all.clone();
+    if !gate_image_output(window, host, move || {
+        if let (Some(window), Some(host), Some(button)) = (
+            retry_window.upgrade(),
+            retry_host.upgrade(),
+            retry_button.upgrade(),
+        ) {
+            upload_image(
+                &window,
+                &host,
+                &button,
+                &retry_uploading,
+                &retry_lock,
+                retry_sync.clone(),
+            );
+        }
+    }) {
+        return;
+    }
+    let trial = host
+        .read(|st| crate::studio_entitlement::studio_access(st.studio_capabilities()))
+        .is_some_and(|access| access.is_trial());
+
+    let Some(config) = configured_cloud(window, button) else {
+        return;
+    };
+    let snapshot = match host.upload_snapshot() {
+        Ok(snapshot) => snapshot,
+        Err(message) => {
+            // A render failure must not look like a no-op: report it the way
+            // Copy reports its own flatten failure.
+            crate::utils::notify::desktop_notification_important(&t("Upload failed"), &message);
+            host.report_error(message);
+            return;
+        }
+    };
+    upload_rendered_image(
+        window,
+        button,
+        uploading,
+        config,
+        snapshot,
+        lock,
+        sync_all,
+        trial,
+        host.trial_toast_anchor(),
+    );
+}
+
+fn configured_cloud(
+    window: &ApplicationWindow,
+    button: &gtk4::Button,
+) -> Option<crate::config::AppConfig> {
+    let config = crate::config::load_config().sanitized();
+    if crate::cloud::sign_in::needs_apexshot_sign_in(&config) {
+        let retry = button.downgrade();
+        crate::cloud::sign_in::prompt_for_upload(
+            Some(window.upcast_ref::<gtk4::Window>()),
+            move || {
+                if let Some(button) = retry.upgrade() {
+                    button.emit_clicked();
+                }
+            },
+        );
+        return None;
+    }
+    if !crate::cloud::upload::is_configured(&config) {
+        let (title, body) = crate::cloud::upload::not_configured_notification(&config);
+        crate::utils::notify::desktop_notification_important(&title, &body);
+        return None;
+    }
+    Some(config)
+}
+
+/// Upload the Motion composition as an MP4. Rendering happens first, one
+/// frame per main-loop tick; the finished file goes through the same Cloud
+/// request and share-URL clipboard as a still.
+#[allow(clippy::too_many_arguments)]
+fn upload_motion_video(
+    window: &ApplicationWindow,
+    host: &Rc<super::annotate::EditorHost>,
+    motion: &Rc<motion::MotionMode>,
+    inspector: &Rc<inspector::Inspector>,
+    button: &gtk4::Button,
+    uploading: &Rc<Cell<bool>>,
+    exporting: &Rc<Cell<bool>>,
+    name: &str,
+    sync_all: Rc<dyn Fn()>,
+    lock: &Rc<EditingLock>,
+) {
+    if lock.locked()
+        || uploading.get()
+        || exporting.get()
+        || !host.has_document()
+        || host.background_loading()
+    {
+        return;
+    }
+    let retry_window = window.downgrade();
+    let retry_host = Rc::downgrade(host);
+    let retry_motion = Rc::downgrade(motion);
+    let retry_inspector = inspector.clone();
+    let retry_button = button.downgrade();
+    let retry_uploading = uploading.clone();
+    let retry_exporting = exporting.clone();
+    let retry_name = name.to_string();
+    let retry_sync = sync_all.clone();
+    let retry_lock = lock.clone();
+    let retry_host_for_cache = Rc::downgrade(host);
+    if !crate::studio_upsell::gate(
+        window,
+        crate::studio_entitlement::capabilities_for_motion_export(),
+        move || {
+            if let Some(host) = retry_host_for_cache.upgrade() {
+                host.invalidate_studio_cache();
+            }
+            if let (Some(window), Some(host), Some(motion), Some(button)) = (
+                retry_window.upgrade(),
+                retry_host.upgrade(),
+                retry_motion.upgrade(),
+                retry_button.upgrade(),
+            ) {
+                upload_motion_video(
+                    &window,
+                    &host,
+                    &motion,
+                    &retry_inspector,
+                    &button,
+                    &retry_uploading,
+                    &retry_exporting,
+                    &retry_name,
+                    retry_sync.clone(),
+                    &retry_lock,
+                );
+            }
+        },
+    ) {
+        return;
+    }
+
+    let Some(config) = configured_cloud(window, button) else {
+        return;
+    };
+    let directory = upload_temp_dir();
+    if let Err(error) = std::fs::create_dir_all(&directory) {
+        let message = format!("Could not prepare the Motion upload: {error}");
+        crate::utils::notify::desktop_notification_important(&t("Upload failed"), &message);
+        host.report_error(message);
+        return;
+    }
+    let path = directory.join(name);
+    let cleanup = directory.clone();
+    uploading.set(true);
+    button.set_sensitive(false);
+    lock.acquire();
+    sync_all();
+    let result = motion.export_video(
+        path,
+        super::motion::MotionExportOptions::default(),
+        |_, _| {},
+        {
+            let window = window.downgrade();
+            let button = button.downgrade();
+            let uploading = uploading.clone();
+            let host = host.clone();
+            let sync_all = sync_all.clone();
+            let lock = lock.clone();
+            move |result| match result {
+                Ok(path) => {
+                    if let (Some(window), Some(button)) = (window.upgrade(), button.upgrade()) {
+                        upload_path(
+                            &window,
+                            &button,
+                            &uploading,
+                            config,
+                            path,
+                            Some(cleanup),
+                            Some(sync_all),
+                            Some(lock.clone()),
+                            // The finished Motion MP4 already consumed it.
+                            false,
+                        );
+                    } else {
+                        uploading.set(false);
+                        let _ = std::fs::remove_dir_all(&cleanup);
+                        lock.release();
+                        sync_all();
+                    }
+                }
+                Err(error) => {
+                    uploading.set(false);
+                    if let Some(button) = button.upgrade() {
+                        button.set_sensitive(true);
+                    }
+                    let _ = std::fs::remove_dir_all(&cleanup);
+                    lock.release();
+                    sync_all();
+                    crate::utils::notify::desktop_notification_important(
+                        &t("Upload failed"),
+                        &error,
+                    );
+                    host.report_error(error);
+                }
+            }
+        },
+    );
+    if let Err(error) = result {
+        lock.release();
+        uploading.set(false);
+        button.set_sensitive(true);
+        let _ = std::fs::remove_dir_all(&directory);
+        sync_all();
+        crate::utils::notify::desktop_notification_important(&t("Upload failed"), &error);
+        host.report_error(error);
+    }
+}
+
+fn upload_temp_dir() -> std::path::PathBuf {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    dirs::cache_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("apexshot")
+        .join("upload-snapshots")
+        .join(format!("{}-{stamp}", std::process::id()))
+}
+
+/// Upload a prepared file and put the share URL on the clipboard. `cleanup`
+/// removes the temporary folder once the request finishes.
+#[allow(clippy::too_many_arguments)]
+fn upload_path(
+    window: &ApplicationWindow,
+    button: &gtk4::Button,
+    uploading: &Rc<Cell<bool>>,
+    config: crate::config::AppConfig,
+    path: std::path::PathBuf,
+    cleanup: Option<std::path::PathBuf>,
+    on_finish: Option<Rc<dyn Fn()>>,
+    lock: Option<Rc<EditingLock>>,
+    // Motion's video render already consumed the trial before this upload.
+    trial: bool,
+) {
+    uploading.set(true);
+    button.set_sensitive(false);
+    let (sender, receiver) = std::sync::mpsc::channel::<(
+        Result<String, crate::cloud::upload::UploadError>,
+        Option<crate::cloud::limit_prompt::UploadHeadsUp>,
+    )>();
+    std::thread::spawn(move || {
+        let outcome =
+            crate::cloud::upload::upload_file_with_notifications_without_clipboard(&config, &path);
+        if let Some(directory) = cleanup {
+            let _ = std::fs::remove_dir_all(directory);
+        }
+        let _ = sender.send((
+            outcome.result.map(|result| result.share_url),
+            outcome.heads_up,
+        ));
+    });
+    poll_upload(
+        window, button, uploading, receiver, on_finish, lock, trial, None,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn poll_upload(
+    window: &ApplicationWindow,
+    button: &gtk4::Button,
+    uploading: &Rc<Cell<bool>>,
+    receiver: std::sync::mpsc::Receiver<(
+        Result<String, crate::cloud::upload::UploadError>,
+        Option<crate::cloud::limit_prompt::UploadHeadsUp>,
+    )>,
+    on_finish: Option<Rc<dyn Fn()>>,
+    lock: Option<Rc<EditingLock>>,
+    trial: bool,
+    toast: Option<crate::studio_trial_toast::Anchor>,
+) {
+    let window = window.downgrade();
+    let button = button.downgrade();
+    let uploading = uploading.clone();
+    gtk4::glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
+        match receiver.try_recv() {
+            Ok((result, heads_up)) => {
+                uploading.set(false);
+                if let Some(lock) = &lock {
+                    lock.release();
+                }
+                if let Some(button) = button.upgrade() {
+                    button.set_sensitive(true);
+                }
+                if let Some(on_finish) = &on_finish {
+                    on_finish();
+                }
+                match result {
+                    Ok(share_url) => {
+                        if let Some(display) = gdk::Display::default() {
+                            display.clipboard().set_text(&share_url);
+                        }
+                        // Only a completed upload consumes a free still export;
+                        // a Motion upload already consumed its MP4 render.
+                        if trial {
+                            crate::studio_trial::record_trial_export();
+                        }
+                        // The floating toast carries the trial count; the
+                        // notification keeps it only when no overlay could
+                        // host the card.
+                        let shown = trial
+                            && window.upgrade().is_some_and(|window| {
+                                crate::studio_trial_toast::show_for(
+                                    &window,
+                                    toast.as_ref(),
+                                    crate::studio_trial::trial_remaining(),
+                                )
+                            });
+                        if !shown {
+                            if let Some(mut text) = crate::studio_trial::finished_feedback(trial) {
+                                if let Some(heads_up) = &heads_up {
+                                    text = heads_up.append_to(&text);
+                                }
+                                crate::utils::notify::desktop_notification(
+                                    &crate::i18n::t("Upload complete"),
+                                    &text,
+                                );
+                            }
+                        }
+                        if let Some(window) = window.upgrade() {
+                            if let Some(heads_up) = &heads_up {
+                                for limit in &heads_up.cards {
+                                    crate::cloud::upgrade::show_prompt_almost(&window, limit);
+                                }
+                            }
+                        }
+                    }
+                    Err(crate::cloud::upload::UploadError::UpgradeRequired(limit)) => {
+                        if let Some(window) = window.upgrade() {
+                            crate::cloud::upgrade::show_prompt(&window, &limit);
+                        }
+                    }
+                    // The upload helper already reported the failure.
+                    Err(_) => {}
+                }
+                gtk4::glib::ControlFlow::Break
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => gtk4::glib::ControlFlow::Continue,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                uploading.set(false);
+                if let Some(lock) = &lock {
+                    lock.release();
+                }
+                if let Some(button) = button.upgrade() {
+                    button.set_sensitive(true);
+                }
+                if let Some(on_finish) = &on_finish {
+                    on_finish();
+                }
+                gtk4::glib::ControlFlow::Break
+            }
+        }
+    });
+}
+
+/// Upload an already rendered frame. Static output ends here so the temporary
+/// file, widget busy state and share-URL clipboard behave the same.
+#[allow(clippy::too_many_arguments)]
+fn upload_rendered_image(
+    window: &ApplicationWindow,
+    button: &gtk4::Button,
+    uploading: &Rc<Cell<bool>>,
+    config: crate::config::AppConfig,
+    snapshot: image::RgbaImage,
+    lock: &Rc<EditingLock>,
+    sync_all: Rc<dyn Fn()>,
+    trial: bool,
+    toast: Option<crate::studio_trial_toast::Anchor>,
+) {
+    uploading.set(true);
+    button.set_sensitive(false);
+    lock.acquire();
+    sync_all();
+    let directory = upload_temp_dir();
+    let (sender, receiver) = std::sync::mpsc::channel::<(
+        Result<String, crate::cloud::upload::UploadError>,
+        Option<crate::cloud::limit_prompt::UploadHeadsUp>,
+    )>();
+    std::thread::spawn(move || {
+        let outcome = std::fs::create_dir_all(&directory)
+            .map_err(|error| {
+                crate::cloud::upload::UploadError::Server(format!("Could not save edits: {error}"))
+            })
+            .and_then(|()| {
+                let path = directory.join("upload.png");
+                crate::capture::editor::io_ops::save_edited_image_snapshot(&path, snapshot)
+                    .map_err(|error| {
+                        crate::cloud::upload::UploadError::Server(format!(
+                            "Could not save edits: {error}"
+                        ))
+                    })?;
+                Ok(
+                    crate::cloud::upload::upload_file_with_notifications_without_clipboard(
+                        &config, &path,
+                    ),
+                )
+            });
+        let (result, heads_up) = match outcome {
+            Ok(outcome) => (
+                outcome.result.map(|result| result.share_url),
+                outcome.heads_up,
+            ),
+            Err(error) => (Err(error), None),
+        };
+        let _ = std::fs::remove_dir_all(&directory);
+        let _ = sender.send((result, heads_up));
+    });
+    poll_upload(
+        window,
+        button,
+        uploading,
+        receiver,
+        Some(sync_all),
+        Some(lock.clone()),
+        trial,
+        toast,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn install_keys(
+    window: &ApplicationWindow,
+    canvas: &Rc<canvas::Canvas>,
+    sub_bars: &Rc<super::sub_bar::SubBars>,
+    workspace: &gtk4::Stack,
+    mode_confirm: &Rc<mode_confirm::ModeConfirm>,
+    motion: &Rc<motion::MotionMode>,
+    copy_button: &gtk4::Button,
+    export_button: &gtk4::Button,
+    exporting: &Rc<Cell<bool>>,
+    lock: &Rc<EditingLock>,
+    sync_all: Rc<dyn Fn()>,
+) {
+    // Space held = pan mode. Capture phase so it wins over the canvas, but a
+    // focused text entry still gets its literal space character.
+    let space = gtk4::EventControllerKey::new();
+    space.set_propagation_phase(gtk4::PropagationPhase::Capture);
+    space.connect_key_pressed({
+        let canvas = canvas.clone();
+        let window = window.clone();
+        let sub_bars = sub_bars.clone();
+        let workspace = workspace.clone();
+        let mode_confirm = mode_confirm.clone();
+        let lock = lock.clone();
+        move |controller, key, _, _| {
+            // Editing waits for the running export or upload.
+            if lock.locked() {
+                return Propagation::Stop;
+            }
+            if mode_confirm.visible() {
+                if key == gdk::Key::Escape {
+                    mode_confirm.cancel();
+                    return Propagation::Stop;
+                }
+                // Tab, Enter and Space belong to the card's buttons, so every
+                // other key must reach them instead of stopping here.
+                return Propagation::Proceed;
+            }
+            if workspace.visible_child_name().as_deref() == Some("motion") {
+                return Propagation::Proceed;
+            }
+            if key == gdk::Key::Escape && sub_bars.close_color_panels() {
+                return Propagation::Stop;
+            }
+            // A focused editable (sub-bar entry, motion fields) owns its keys.
+            let editable_focused = controller
+                .current_event()
+                .and_then(|_| gtk4::prelude::RootExt::focus(&window))
+                .is_some_and(|w| w.is::<gtk4::Editable>() || w.is::<gtk4::TextView>());
+            if editable_focused {
+                return Propagation::Proceed;
+            }
+            if key == gdk::Key::space && canvas.host.set_space_pan(true) {
+                canvas.area.set_cursor_from_name(Some("grab"));
+                return Propagation::Stop;
+            }
+            Propagation::Proceed
+        }
+    });
+    space.connect_key_released({
+        let canvas = canvas.clone();
+        move |_, key, _, _| {
+            if key == gdk::Key::space && canvas.host.space_pan_active() {
+                canvas.host.set_space_pan(false);
+                canvas.area.set_cursor_from_name(None);
+            }
+        }
+    });
+    window.add_controller(space);
+
+    // Releasing focus cancels any held pan state.
+    let focus = gtk4::EventControllerFocus::new();
+    focus.connect_leave({
+        let host = canvas.host.clone();
+        move |_| {
+            host.set_space_pan(false);
+        }
+    });
+    window.add_controller(focus);
+
+    let keys = gtk4::EventControllerKey::new();
+    keys.connect_key_pressed({
+        let canvas = canvas.clone();
+        let window = window.clone();
+        let workspace = workspace.clone();
+        let mode_confirm = mode_confirm.clone();
+        let motion = motion.clone();
+        let copy_button = copy_button.clone();
+        let exporting = exporting.clone();
+        let export_button = export_button.clone();
+        let lock = lock.clone();
+        let sync_all = sync_all.clone();
+        move |controller, key, _, modifiers| {
+            // Editing waits for the running export or upload.
+            if lock.locked() {
+                return Propagation::Stop;
+            }
+            if mode_confirm.visible() {
+                if key == gdk::Key::Escape {
+                    mode_confirm.cancel();
+                }
+                return Propagation::Stop;
+            }
+            if workspace.visible_child_name().as_deref() == Some("motion") {
+                let ctrl = modifiers.contains(gdk::ModifierType::CONTROL_MASK);
+                let shift = modifiers.contains(gdk::ModifierType::SHIFT_MASK);
+                // A focused text field keeps its own undo, redo and copy keys
+                // while Motion is open.
+                let text_focused = gtk4::prelude::RootExt::focus(&window).is_some_and(|w| {
+                    w.is::<gtk4::Text>() || w.is::<gtk4::Entry>() || w.is::<gtk4::TextView>()
+                });
+                if text_focused
+                    && ctrl
+                    && matches!(
+                        key,
+                        gdk::Key::z
+                            | gdk::Key::Z
+                            | gdk::Key::y
+                            | gdk::Key::Y
+                            | gdk::Key::c
+                            | gdk::Key::C
+                    )
+                {
+                    return Propagation::Proceed;
+                }
+                return match key {
+                    gdk::Key::Escape => {
+                        window.close();
+                        Propagation::Stop
+                    }
+                    gdk::Key::s | gdk::Key::S if ctrl => {
+                        // The Export button owns Motion's gate, dialog and
+                        // progress; while it runs, a click there means cancel,
+                        // which a save shortcut must not trigger.
+                        if !exporting.get() {
+                            export_button.emit_clicked();
+                        }
+                        Propagation::Stop
+                    }
+                    gdk::Key::c | gdk::Key::C if ctrl => {
+                        // The Copy button already runs Motion's Studio gate
+                        // and frame render; the shortcut takes that path.
+                        copy_button.emit_clicked();
+                        Propagation::Stop
+                    }
+                    gdk::Key::z | gdk::Key::Z if ctrl && shift => {
+                        motion.timeline.redo();
+                        Propagation::Stop
+                    }
+                    gdk::Key::z | gdk::Key::Z if ctrl => {
+                        motion.timeline.undo();
+                        Propagation::Stop
+                    }
+                    gdk::Key::y | gdk::Key::Y if ctrl => {
+                        motion.timeline.redo();
+                        Propagation::Stop
+                    }
+                    gdk::Key::w | gdk::Key::W if ctrl => {
+                        window.close();
+                        Propagation::Stop
+                    }
+                    _ => Propagation::Proceed,
+                };
+            }
+            let ctrl = modifiers.contains(gdk::ModifierType::CONTROL_MASK);
+            // A focused editable owns its keys: entries keep characters and
+            // their own shortcuts instead of triggering editor commands.
+            if gtk4::prelude::RootExt::focus(&window)
+                .is_some_and(|w| w.is::<gtk4::Editable>() || w.is::<gtk4::TextView>())
+            {
+                return Propagation::Proceed;
+            }
+            // The input method composes and commits text for the live text
+            // box; keys it keeps never reach the editor commands.
+            if controller
+                .current_event()
+                .is_some_and(|event| canvas.host.filter_text_input_key(&event))
+            {
+                return Propagation::Stop;
+            }
+            // The document handles editing keys first (text input, tools,
+            // history, delete, cancel cascades); what it passes on falls
+            // through to the window shortcuts below.
+            if canvas.host.handle_key(key, modifiers) == Propagation::Stop {
+                return Propagation::Stop;
+            }
+            match key {
+                gdk::Key::Escape => {
+                    window.close();
+                    Propagation::Stop
+                }
+                gdk::Key::s | gdk::Key::S if ctrl => {
+                    save_as_dialog(
+                        &window,
+                        &canvas.host,
+                        canvas.source_path(),
+                        &lock,
+                        sync_all.clone(),
+                    );
+                    Propagation::Stop
+                }
+                gdk::Key::c | gdk::Key::C if ctrl => {
+                    copy_image(&window, &canvas.host);
+                    Propagation::Stop
+                }
+                gdk::Key::_0 | gdk::Key::KP_0 if ctrl => {
+                    canvas.fit();
+                    Propagation::Stop
+                }
+                gdk::Key::plus | gdk::Key::equal | gdk::Key::KP_Add if ctrl => {
+                    canvas.zoom_in();
+                    Propagation::Stop
+                }
+                gdk::Key::minus | gdk::Key::underscore | gdk::Key::KP_Subtract if ctrl => {
+                    canvas.zoom_out();
+                    Propagation::Stop
+                }
+                gdk::Key::o | gdk::Key::O if ctrl => {
+                    canvas.choose_image(&window);
+                    Propagation::Stop
+                }
+                gdk::Key::w | gdk::Key::W if ctrl => {
+                    window.close();
+                    Propagation::Stop
+                }
+                _ => Propagation::Proceed,
+            }
+        }
+    });
+    keys.connect_key_released({
+        let canvas = canvas.clone();
+        let window = window.clone();
+        move |controller, _, _, _| {
+            if gtk4::prelude::RootExt::focus(&window)
+                .is_some_and(|w| w.is::<gtk4::Editable>() || w.is::<gtk4::TextView>())
+            {
+                return;
+            }
+            if let Some(event) = controller.current_event() {
+                canvas.host.filter_text_input_key(&event);
+            }
+        }
+    });
+    window.add_controller(keys);
+}
+
+/// Settings > Annotate > Always on top. GTK 4 has no keep-above request, so mark
+/// the editor's own top-level window topmost once Windows has created it.
+fn keep_above(window: &ApplicationWindow) {
+    let window = window.downgrade();
+    gtk4::glib::idle_add_local_once(move || {
+        let Some(window) = window.upgrade() else {
+            return;
+        };
+        let title = window
+            .title()
+            .map(|title| title.to_string())
+            .unwrap_or_default();
+        set_topmost_by_title(&title);
+    });
+}
+
+#[cfg(windows)]
+fn set_topmost_by_title(title: &str) {
+    use windows_sys::Win32::Foundation::{HWND, LPARAM};
+    use windows_sys::Win32::System::Threading::GetCurrentThreadId;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        EnumThreadWindows, GetWindowTextW, IsWindowVisible, SetWindowPos, HWND_TOPMOST,
+        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    };
+
+    struct Search {
+        title: Vec<u16>,
+        found: Vec<HWND>,
+    }
+
+    unsafe extern "system" fn visit(hwnd: HWND, data: LPARAM) -> i32 {
+        let search = unsafe { &mut *(data as *mut Search) };
+        if unsafe { IsWindowVisible(hwnd) } == 0 {
+            return 1;
+        }
+        let mut buffer = [0u16; 512];
+        let length = unsafe { GetWindowTextW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
+        if length > 0 && buffer[..length as usize] == search.title[..] {
+            search.found.push(hwnd);
+        }
+        1
+    }
+
+    let mut search = Search {
+        title: title.encode_utf16().collect(),
+        found: Vec::new(),
+    };
+    unsafe {
+        EnumThreadWindows(
+            GetCurrentThreadId(),
+            Some(visit),
+            &mut search as *mut Search as LPARAM,
+        );
+        for hwnd in search.found {
+            SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn set_topmost_by_title(_title: &str) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn temporary_capture_matches_the_shells_path_form() {
+        let folder = std::env::temp_dir().join("ApexShot");
+        std::fs::create_dir_all(&folder).unwrap();
+        let file = folder.join(format!(
+            "apexshot-temporary-capture-test-{}.png",
+            std::process::id()
+        ));
+        std::fs::write(&file, b"capture").unwrap();
+        // The capture shell passes the expanded long path with forward slashes,
+        // while `temp_dir` can return the short 8.3 form of the same folder.
+        let resolved = std::fs::canonicalize(&file).unwrap();
+        let shell_form = resolved
+            .to_string_lossy()
+            .trim_start_matches(r"\\?\")
+            .replace('\\', "/");
+        let matched = is_temporary_capture(Path::new(&shell_form));
+        let kept = is_temporary_capture(Path::new(r"C:\Users\Public\Pictures\shot.png"));
+        let _ = std::fs::remove_file(&file);
+        let _ = std::fs::remove_dir(&folder);
+        assert!(matched, "{shell_form} is a temporary capture");
+        assert!(!kept);
+    }
+}

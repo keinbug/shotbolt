@@ -1,0 +1,143 @@
+#!/bin/sh
+# Backward-compatible updater entrypoint.
+# This entrypoint is deliberately POSIX so `curl …/update | sh` works.  The
+# selected distro-specific updater is subsequently run with Bash.
+set -eu
+
+SCRIPT_SOURCE="${0:-}"
+SCRIPT_DIR=""
+if [ -n "$SCRIPT_SOURCE" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+fi
+
+is_gnome_session() {
+    desktop="${XDG_CURRENT_DESKTOP:-}:${XDG_SESSION_DESKTOP:-}:${DESKTOP_SESSION:-}"
+    desktop_lower="$(printf '%s' "$desktop" | tr '[:upper:]' '[:lower:]')"
+    [ -n "${GNOME_SETUP_DISPLAY:-}" ] || case "$desktop_lower" in *gnome*) return 0 ;; esac
+    return 1
+}
+
+refuse_steamos() {
+    cat >&2 <<'EOF'
+SteamOS is not supported by the ApexShot updater.
+
+SteamOS is Arch-based, so this script looks like it should work. It will not:
+the root filesystem is read-only, pacman keys are not initialized, and SteamOS
+updates wipe anything pacman installs under /usr.
+
+If you want Steam Deck / SteamOS support, please open an issue:
+https://github.com/apex-shot/apexshot/issues
+EOF
+    exit 1
+}
+
+detect_distro_family() {
+    id=""
+    id_like=""
+
+    release_file=/etc/os-release
+    if [ ! -e "$release_file" ]; then
+        release_file=/usr/lib/os-release
+    fi
+    if [ -r "$release_file" ]; then
+        ID=""
+        ID_LIKE=""
+        # shellcheck disable=SC1091
+        . "$release_file"
+        id="${ID:-}"
+        id_like="${ID_LIKE:-}"
+    fi
+
+    # SteamOS sets ID_LIKE=arch and ships pacman, but it is not Arch.
+    if [ "${id}" = "steamos" ] || [ -e /etc/steamos-release ] || command -v steamos-readonly >/dev/null 2>&1; then
+        printf '%s' "steamos"
+        return
+    fi
+
+    for candidate in $id $id_like; do
+        case "$candidate" in
+        nixos)
+            printf '%s' "nixos"
+            return
+            ;;
+        alpine|gentoo|void)
+            printf '%s' "$candidate"
+            return
+            ;;
+        arch|manjaro)
+            printf '%s' "arch"
+            return
+            ;;
+        fedora|rhel|centos|rocky|almalinux)
+            printf '%s' "fedora"
+            return
+            ;;
+        opensuse-tumbleweed|opensuse-leap|opensuse|suse|sles)
+            printf '%s' "opensuse"
+            return
+            ;;
+        debian|ubuntu|pop|linuxmint|elementary)
+            printf '%s' "ubuntu"
+            return
+            ;;
+        esac
+    done
+
+    if command -v pacman >/dev/null 2>&1; then
+        printf '%s' "arch"
+    elif command -v dnf >/dev/null 2>&1; then
+        printf '%s' "fedora"
+    elif command -v zypper >/dev/null 2>&1; then
+        printf '%s' "opensuse"
+    elif command -v apt >/dev/null 2>&1 || command -v dpkg >/dev/null 2>&1; then
+        printf '%s' "ubuntu"
+    else
+        printf '%s' "unknown"
+    fi
+}
+
+if ! is_gnome_session; then
+    export APEXSHOT_SKIP_GNOME_EXTENSION=1
+fi
+
+case "$(detect_distro_family)" in
+    steamos)
+        refuse_steamos
+        ;;
+    nixos)
+        echo "Update the ApexShot flake input in your NixOS configuration, then rebuild the system." >&2
+        echo "For a Nix profile install, use nix profile upgrade for the ApexShot entry." >&2
+        echo "NixOS configuration: https://github.com/apex-shot/apexshot/blob/main/packaging/nix/README.md" >&2
+        exit 1
+        ;;
+    alpine|gentoo|void)
+        echo "No native update channel exists for this distribution; rebuild your source installation." >&2
+        exit 1
+        ;;
+    arch)
+        if [ -n "$SCRIPT_DIR" ] && [ -f "${SCRIPT_DIR}/arch-update.sh" ]; then
+            exec bash "${SCRIPT_DIR}/arch-update.sh" "$@"
+        fi
+        exec bash -c "$(curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/arch-update.sh)" bash "$@"
+        ;;
+    ubuntu)
+        if [ -n "$SCRIPT_DIR" ] && [ -f "${SCRIPT_DIR}/ubuntu-update.sh" ]; then
+            exec bash "${SCRIPT_DIR}/ubuntu-update.sh" "$@"
+        fi
+        exec bash -c "$(curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/ubuntu-update.sh)" bash "$@"
+        ;;
+    fedora)
+        if [ -n "$SCRIPT_DIR" ] && [ -f "${SCRIPT_DIR}/fedora-update.sh" ]; then
+            exec bash "${SCRIPT_DIR}/fedora-update.sh" "$@"
+        fi
+        exec bash -c "$(curl -fsSL https://raw.githubusercontent.com/apex-shot/apexshot/main/scripts/fedora-update.sh)" bash "$@"
+        ;;
+    opensuse)
+        echo "openSUSE binary packages are not published yet; no update channel." >&2
+        echo "Rebuild from source with scripts/build-opensuse-rpm.sh when you need a newer build." >&2
+        exit 1
+        ;;
+ esac
+
+echo "Unsupported distribution: expected pacman, apt/dpkg, dnf, or zypper." >&2
+exit 1

@@ -1,0 +1,42 @@
+use super::sidecar::{PointerSidecar, PressSample};
+use std::path::{Path, PathBuf};
+
+mod types {
+    use super::*;
+    include!("model_parts/types.rs");
+}
+pub use types::*;
+use types::{seed_project_media, MIN_DIMENSION};
+
+pub(crate) mod state {
+    use super::*;
+    include!("model_parts/state_impl.rs");
+}
+
+mod timeline {
+    use super::*;
+    include!("model_parts/timeline_impl.rs");
+}
+
+mod output {
+    use super::*;
+    include!("model_parts/output_core_impl.rs");
+    include!("model_parts/output_impl.rs");
+}
+
+mod zoom {
+    use super::*;
+    include!("model_parts/zoom_impl.rs");
+}
+
+pub mod background_render {
+    include!("model_parts/background_render.rs");
+}
+
+include!("model_parts/helpers.rs");
+include!("model_parts/zoom_camera.rs");
+
+#[cfg(test)]
+mod tests {
+    include!("model_parts/tests.rs");
+}

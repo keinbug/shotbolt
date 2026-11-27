@@ -1,0 +1,5520 @@
+# ApexShot UI translations.
+# Language: Chinese (Simplified)
+msgid ""
+msgstr ""
+"Project-Id-Version: apexshot\n"
+"Language: zh_CN\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Edit: add a background, frame, or 3D tilt."
+msgstr "编辑：添加背景、边框或 3D 倾斜。"
+
+msgid "Hide suggestion"
+msgstr "隐藏建议"
+
+msgid "Open in the editor"
+msgstr "在编辑器中打开"
+
+msgid "System default"
+msgstr "跟随系统"
+
+msgid "Record shortcut"
+msgstr "录制快捷键"
+
+msgid "Try a styled look"
+msgstr "试试精美外观"
+
+msgid "Undo look"
+msgstr "撤销外观"
+
+msgid "Next look"
+msgstr "下一个外观"
+
+msgid "Next look: {name}"
+msgstr "下一个外观：{name}"
+
+msgid "Frost"
+msgstr "霜冻"
+
+msgid "Bleed"
+msgstr "出血"
+
+msgid "Float"
+msgstr "悬浮"
+
+msgid "Welcome to ApexShot"
+msgstr "欢迎使用 ApexShot"
+
+msgid "Version {version}"
+msgstr "版本 {version}"
+
+msgid "ApexShot Settings"
+msgstr "ApexShot 设置"
+
+msgid "Close"
+msgstr "关闭"
+
+msgid "Minimize"
+msgstr "最小化"
+
+msgid "Save"
+msgstr "保存"
+
+msgid "Settings"
+msgstr "设置"
+
+msgid "Select screenshot save location"
+msgstr "选择截图保存位置"
+
+msgid "Select"
+msgstr "选择"
+
+msgid "Cancel"
+msgstr "取消"
+
+msgid "Select video save location"
+msgstr "选择视频保存位置"
+
+msgid "General"
+msgstr "通用"
+
+msgid "Shortcuts"
+msgstr "快捷键"
+
+msgid "Quick Access"
+msgstr "快捷操作"
+
+msgid "Recording"
+msgstr "录制"
+
+msgid "Screenshots"
+msgstr "截图"
+
+msgid "Annotate"
+msgstr "标注"
+
+msgid "Cloud"
+msgstr "云"
+
+msgid "Advanced"
+msgstr "高级"
+
+msgid "About"
+msgstr "关于"
+
+msgid "Saving…"
+msgstr "正在保存…"
+
+msgid "Settings saved"
+msgstr "设置已保存"
+
+msgid "Save failed: {message}"
+msgstr "保存失败：{message}"
+
+msgid "After capture:"
+msgstr "截图之后："
+
+msgid ""
+"Here you can decide what should happen after taking a screenshot or recording your screen."
+msgstr "选择截图或录屏之后要执行的操作。"
+
+msgid "Screenshot"
+msgstr "截图"
+
+msgid "Action"
+msgstr "操作"
+
+msgid "Export"
+msgstr "导出"
+
+msgid "Browse"
+msgstr "浏览"
+
+msgid "Save location"
+msgstr "保存位置"
+
+msgid "File format"
+msgstr "文件格式"
+
+msgid "File & Image (default)"
+msgstr "文件和图像（默认）"
+
+msgid "Image Only"
+msgstr "仅图像"
+
+msgid "File Path Only"
+msgstr "仅文件路径"
+
+msgid "Clipboard copy behavior"
+msgstr "剪贴板复制方式"
+
+msgid "Choose whether screenshots copy as an image, a file URI, or both."
+msgstr "选择将截图复制为图像、文件路径，或两者。"
+
+msgid "Off"
+msgstr "关"
+
+msgid "1 Second"
+msgstr "1 秒"
+
+msgid "3 Seconds"
+msgstr "3 秒"
+
+msgid "5 Seconds"
+msgstr "5 秒"
+
+msgid "10 Seconds"
+msgstr "10 秒"
+
+msgid "Self-Timer interval"
+msgstr "自拍倒计时"
+
+msgid "Include pointer when available"
+msgstr "在可用时包含指针"
+
+msgid ""
+"ApexShot includes the pointer only when the current capture flow provides cursor data."
+msgstr "仅当当前截图流程提供光标数据时，ApexShot 才会包含指针。"
+
+msgid "Drawing Tools"
+msgstr "绘图工具"
+
+msgid "Inverse arrow direction"
+msgstr "反转箭头方向"
+
+msgid "Smooth drawing"
+msgstr "平滑绘制"
+
+msgid "Draw shadow on objects"
+msgstr "为对象绘制阴影"
+
+msgid "Canvas & Interface"
+msgstr "画布与界面"
+
+msgid "Automatically expand canvas"
+msgstr "自动扩展画布"
+
+msgid "Show color names (Accessibility)"
+msgstr "显示颜色名称（无障碍）"
+
+msgid "Window"
+msgstr "窗口"
+
+msgid "Always on top"
+msgstr "始终置顶"
+
+msgid "Set Shortcut"
+msgstr "设置快捷键"
+
+msgid "Set"
+msgstr "设置"
+
+msgid "Preparing shortcut capture…"
+msgstr "正在准备录制快捷键…"
+
+msgid "Press Esc to cancel or Backspace to disable the keyboard shortcut"
+msgstr "按 Esc 取消，或按退格键停用快捷键"
+
+msgid "Shortcut will be disabled"
+msgstr "将停用该快捷键"
+
+msgid ""
+"Shortcuts set here are the same hotkeys ApexShot uses. If one does not work, your desktop environment may already be using it. Open your system keyboard settings and disable conflicting shortcuts if you want to reuse them in ApexShot."
+msgstr "这里的快捷键就是 ApexShot 实际使用的热键。若无效，可能被桌面环境占用。请在系统键盘设置中关闭冲突项。"
+
+msgid "Save Location"
+msgstr "保存位置"
+
+msgid "Recordings folder"
+msgstr "录制文件夹"
+
+msgid "Filename pattern"
+msgstr "文件名模板"
+
+msgid "Use {Date} and {Time} placeholders"
+msgstr "使用 {Date} 和 {Time} 占位符"
+
+msgid "Remember last export folder"
+msgstr "记住上次导出文件夹"
+
+msgid "Upload destination"
+msgstr "上传目标"
+
+msgid "ApexShot Cloud"
+msgstr "ApexShot Cloud"
+
+msgid "XBackBone (self-hosted)"
+msgstr "XBackBone（自托管）"
+
+msgid "Upload with"
+msgstr "上传方式"
+
+msgid "Upload after capture"
+msgstr "截图后上传"
+
+msgid "Send a link instead?"
+msgstr "改为发送链接？"
+
+msgid "Copied. Send a link instead?"
+msgstr "已复制。改为发送链接？"
+
+msgid "Free account · 20 links a month"
+msgstr "免费账户 · 每月 20 个链接"
+
+msgid "Copied. Want a link instead?"
+msgstr "已复制。想要一个链接吗？"
+
+msgid ""
+"A free ApexShot account turns every capture into a share link, with 20 links "
+"a month."
+msgstr ""
+"免费的 ApexShot 账户可将每次截图变成分享链接，每月 20 个链接。"
+
+msgid "Get link"
+msgstr "获取链接"
+
+msgid "Suggest ApexShot Cloud when copying"
+msgstr "复制时推荐 ApexShot Cloud"
+
+msgid ""
+"Uploads each saved screenshot and copies the share link. Does nothing until you Connect."
+msgstr "上传每张已保存截图并复制分享链接。连接账号前不会执行。"
+
+msgid "ApexShot Cloud account"
+msgstr "ApexShot Cloud 账号"
+
+msgid "Connected"
+msgstr "已连接"
+
+msgid "Not connected"
+msgstr "未连接"
+
+msgid "Signed in"
+msgstr "已登录"
+
+msgid "Run `apexshot login` in a terminal, or click Connect below."
+msgstr "在终端运行 `apexshot login`，或点击下方的连接。"
+
+msgid "Connect account"
+msgstr "连接账号"
+
+msgid "Logout"
+msgstr "退出登录"
+
+msgid "XBackBone instance"
+msgstr "XBackBone 实例"
+
+msgid "Instance URL"
+msgstr "实例 URL"
+
+msgid "Show"
+msgstr "显示"
+
+msgid "API token"
+msgstr "API 令牌"
+
+msgid ""
+"Generate a token in your XBackBone instance → Profile → Tokens, with the resource:upload ability."
+msgstr "在 XBackBone 实例 → 个人资料 → 令牌中生成令牌，并授予 resource:upload 权限。"
+
+msgid "Test connection"
+msgstr "测试连接"
+
+msgid "Verify setup"
+msgstr "验证设置"
+
+msgid "Open XBackBone API docs"
+msgstr "打开 XBackBone API 文档"
+
+msgid "Documentation"
+msgstr "文档"
+
+msgid "File Naming"
+msgstr "文件命名"
+
+msgid "Filename format"
+msgstr "文件名格式"
+
+msgid "Add @2x suffix for HiDPI screenshots"
+msgstr "为 HiDPI 截图添加 @2x 后缀"
+
+msgid "Text Recognition (OCR)"
+msgstr "文字识别 (OCR)"
+
+msgid "English"
+msgstr "英语"
+
+msgid "Spanish"
+msgstr "西班牙语"
+
+msgid "French"
+msgstr "法语"
+
+msgid "German"
+msgstr "德语"
+
+msgid "Italian"
+msgstr "意大利语"
+
+msgid "Portuguese"
+msgstr "葡萄牙语"
+
+msgid "Chinese (Simplified)"
+msgstr "简体中文"
+
+msgid "Japanese"
+msgstr "日语"
+
+msgid "Russian"
+msgstr "俄语"
+
+msgid "Primary language"
+msgstr "主要语言"
+
+msgid "Preserve line breaks"
+msgstr "保留换行"
+
+msgid "Privacy"
+msgstr "隐私"
+
+msgid "Share anonymous usage statistics"
+msgstr "分享匿名使用统计"
+
+msgid ""
+"Daily heartbeat: app version, distro, desktop, and coarse feature counts. The update window also reports each update download (version and size). No screenshots or personal data. Override with APEXSHOT_TELEMETRY=0."
+msgstr ""
+"每日心跳：应用版本、发行版、桌面和粗略功能计数。更新窗口还会报告每次更新下载（版本和大小）。不含截图或个人数据。可用 APEXSHOT_TELEMETRY=0 关闭。"
+
+msgid "Language"
+msgstr "语言"
+
+msgid "Display language"
+msgstr "界面语言"
+
+msgid "System default uses your desktop language. Changes apply after Save."
+msgstr "“跟随系统”使用桌面语言。更改在保存后生效。"
+
+msgid "Startup"
+msgstr "启动"
+
+msgid "Start at login"
+msgstr "登录时启动"
+
+msgid "Sounds"
+msgstr "声音"
+
+msgid "Play sounds"
+msgstr "播放声音"
+
+msgid "Shutter sound"
+msgstr "快门声"
+
+msgid "System tray"
+msgstr "系统托盘"
+
+msgid "Show tray icon"
+msgstr "显示托盘图标"
+
+msgid "Overlay"
+msgstr "浮层"
+
+msgid "Position"
+msgstr "位置"
+
+msgid "Show on all displays"
+msgstr "在所有显示器上显示"
+
+msgid "Overlay size"
+msgstr "浮层大小"
+
+msgid "Auto-close"
+msgstr "自动关闭"
+
+msgid "Automatically close window"
+msgstr "自动关闭窗口"
+
+msgid "30 Seconds"
+msgstr "30 秒"
+
+msgid "1 Minute"
+msgstr "1 分钟"
+
+msgid "Interval"
+msgstr "间隔"
+
+msgid "Behaviors"
+msgstr "行为"
+
+msgid "Close window after dragging"
+msgstr "拖动后关闭窗口"
+
+msgid "Close window after uploading"
+msgstr "上传后关闭窗口"
+
+msgid "Check for Updates"
+msgstr "检查更新"
+
+msgid "What's New"
+msgstr "更新说明"
+
+msgid "Help Center"
+msgstr "帮助中心"
+
+msgid "Send Feedback"
+msgstr "发送反馈"
+
+msgid "Website"
+msgstr "网站"
+
+msgid "Support ApexShot"
+msgstr "支持 ApexShot"
+
+msgid "ApexShot is free and open source. Donations keep development going."
+msgstr "ApexShot 是免费开源软件。捐赠帮助开发继续。"
+
+msgid "Support on Ko-fi"
+msgstr "在 Ko-fi 上支持"
+
+msgid "Cloud is a separate paid product"
+msgstr "云服务是单独的付费产品"
+
+msgid "Opens ApexShot Cloud plans. This is not a donation."
+msgstr "打开 ApexShot Cloud 套餐。这不是捐赠。"
+
+msgid "Copyright © 2026 ApexShot. All rights reserved."
+msgstr "Copyright © 2026 ApexShot。保留所有权利。"
+
+msgid "Terms of Service"
+msgstr "服务条款"
+
+msgid "Privacy Policy"
+msgstr "隐私政策"
+
+msgid "ApexShot Setup"
+msgstr "ApexShot 设置向导"
+
+msgid "← Back"
+msgstr "← 返回"
+
+msgid "Next →"
+msgstr "下一步 →"
+
+msgid "Start Using ApexShot"
+msgstr "开始使用 ApexShot"
+
+msgid "Extension Installed ✓"
+msgstr "扩展已安装 ✓"
+
+msgid "GNOME Shell Extension Required"
+msgstr "需要 GNOME Shell 扩展"
+
+msgid ""
+"ApexShot requires GNOME Shell. Please install on a GNOME desktop to continue."
+msgstr "ApexShot 需要 GNOME Shell。请在 GNOME 桌面上安装后继续。"
+
+msgid "Exit"
+msgstr "退出"
+
+msgid "Update GNOME Extension"
+msgstr "更新 GNOME 扩展"
+
+msgid ""
+"An old version of the ApexShot extension is installed. It needs to be removed before installing the new version."
+msgstr "已安装旧版扩展。安装新版本前需要先移除。"
+
+msgid "Remove Old Extension"
+msgstr "移除旧扩展"
+
+msgid "GNOME Shell Extension"
+msgstr "GNOME Shell 扩展"
+
+msgid ""
+"On GNOME Wayland, the shell extension unlocks the polished capture experience:"
+msgstr "在 GNOME Wayland 上，扩展可解锁完整的截图体验："
+
+msgid "Floating preview windows"
+msgstr "浮动预览窗口"
+
+msgid "Always-on-top previews that stay out of your way"
+msgstr "置顶预览，不挡操作"
+
+msgid "Quick access overlay"
+msgstr "快捷操作浮层"
+
+msgid "Post-capture actions without hunting through menus"
+msgstr "截图后操作，不必翻菜单"
+
+msgid "Recording status indicator"
+msgstr "录制状态指示"
+
+msgid "Shell-managed controls while a recording is live"
+msgstr "录制进行时由 Shell 管理的控件"
+
+msgid "Install GNOME Extension"
+msgstr "安装 GNOME 扩展"
+
+msgid "Installing..."
+msgstr "正在安装..."
+
+msgid ""
+"Note: You may need to log out and back in for the extension to appear in GNOME."
+msgstr "注意：可能需要注销并重新登录，扩展才会出现在 GNOME 中。"
+
+msgid "Or download manually from GitHub"
+msgstr "或从 GitHub 手动下载"
+
+msgid "Browser Extension"
+msgstr "浏览器扩展"
+
+msgid ""
+"Optional Chrome/Chromium add-on for full-page web captures that open straight in ApexShot."
+msgstr "可选的 Chrome/Chromium 扩展，用于整页网页截图并直接在 ApexShot 中打开。"
+
+msgid "Full-page scroll capture"
+msgstr "整页滚动截图"
+
+msgid "Stitch long pages that a normal screenshot can't fit"
+msgstr "拼接普通截图装不下的长页面"
+
+msgid "Sends directly to ApexShot"
+msgstr "直接发送到 ApexShot"
+
+msgid "Opens in the editor so you can annotate and share immediately"
+msgstr "在编辑器中打开，可立即标注和分享"
+
+msgid "Works with your desktop app"
+msgstr "与桌面应用配合使用"
+
+msgid "Native messaging keeps the browser and ApexShot in sync"
+msgstr "原生消息通道让浏览器与 ApexShot 保持同步"
+
+msgid "Get Chrome Extension"
+msgstr "获取 Chrome 扩展"
+
+msgid ""
+"Optional. You can install this later from Settings or the Chrome Web Store."
+msgstr "可选。之后可从设置或 Chrome 网上应用店安装。"
+
+msgid ""
+"Thanks for choosing ApexShot as your screenshot companion.\n"
+"Let's get you set up in just a few quick steps."
+msgstr ""
+"感谢选择 ApexShot。\n"
+"只需几步即可完成设置。"
+
+msgid "Area & fullscreen capture"
+msgstr "区域与全屏截图"
+
+msgid "Grab a region, monitor, or the whole desktop in one hotkey"
+msgstr "一键截取区域、显示器或整个桌面"
+
+msgid "Built-in annotation editor"
+msgstr "内置标注编辑器"
+
+msgid "Arrows, blur, text, and crop without leaving the app"
+msgstr "箭头、模糊、文字和裁剪，无需离开应用"
+
+msgid "Screen recording with audio"
+msgstr "带音频的屏幕录制"
+
+msgid "MP4 or GIF with mic and system audio when your desktop allows it"
+msgstr "在桌面允许时录制带麦克风和系统音频的 MP4 或 GIF"
+
+msgid "OCR text extraction"
+msgstr "OCR 文字提取"
+
+msgid "Pull text and QR codes straight from a capture"
+msgstr "直接从截图提取文字和二维码"
+
+msgid "Cloud Upload"
+msgstr "云上传"
+
+msgid "Available now · optional"
+msgstr "现已可用 · 可选"
+
+msgid ""
+"Share captures and recordings with a link, or keep everything on your own server."
+msgstr "用链接分享截图和录像，或全部放在自己的服务器上。"
+
+msgid "Sync across devices"
+msgstr "跨设备同步"
+
+msgid "Pull recent uploads when you're signed in"
+msgstr "登录后拉取最近上传"
+
+msgid "Instant share links"
+msgstr "即时分享链接"
+
+msgid "Copy a URL after capture without leaving the workflow"
+msgstr "截图后复制链接，无需离开流程"
+
+msgid "Storage you control"
+msgstr "由你掌控的存储"
+
+msgid "Hosted ApexShot Cloud or your own XBackBone instance"
+msgstr "托管的 ApexShot Cloud 或你自己的 XBackBone 实例"
+
+msgid "Choose your cloud"
+msgstr "选择云服务"
+
+msgid "Hosted by us, ready out of the box with device login."
+msgstr "由我们托管，开箱即用，支持设备登录。"
+
+msgid "XBackBone"
+msgstr "XBackBone"
+
+msgid "Self-host for full control of storage and URLs."
+msgstr "自托管以完全控制存储和 URL。"
+
+msgid ""
+"Skip for now if you want. After you Connect, your next screenshot gets a share link. Configure later in Settings → Cloud."
+msgstr "可以先跳过。连接后，下一张截图会得到分享链接。稍后在 设置 → 云 中配置。"
+
+msgid "How to capture"
+msgstr "如何截图"
+
+msgid ""
+"ApexShot runs in the background with a tray icon and hotkeys.\n"
+"After setup, you do not need to open Settings every time."
+msgstr ""
+"ApexShot 在后台运行，带托盘图标和热键。\n"
+"设置完成后不必每次都打开设置。"
+
+msgid "Tray icon"
+msgstr "托盘图标"
+
+msgid "Right-click for Area, Screen, Window, and Record"
+msgstr "右键：区域、屏幕、窗口和录制"
+
+msgid "App menu"
+msgstr "应用菜单"
+
+msgid "Opening ApexShot shows Settings; captures stay on tray and hotkeys"
+msgstr "打开 ApexShot 会显示设置；截图仍通过托盘和热键完成"
+
+msgid "Hotkeys"
+msgstr "热键"
+
+msgid "Defaults below. Change them anytime in Settings → Shortcuts."
+msgstr "下方为默认值。随时可在 设置 → 快捷键 中更改。"
+
+msgid "Shortcut"
+msgstr "快捷键"
+
+msgid "Area capture"
+msgstr "区域截图"
+
+msgid "Full screen"
+msgstr "全屏"
+
+msgid "Record UI"
+msgstr "录制界面"
+
+msgid "Take a test screenshot"
+msgstr "拍一张测试截图"
+
+msgid "Starts the tray daemon if needed, then takes a full screenshot"
+msgstr "如需要则启动托盘守护进程，然后拍摄全屏截图"
+
+msgid "Optional. You can skip this and try a capture after finishing setup."
+msgstr "可选。可以跳过，完成设置后再试截图。"
+
+msgid "{shortcut} (default)"
+msgstr "{shortcut}（默认）"
+
+msgid "You're all set!"
+msgstr "全部完成！"
+
+msgid ""
+"The tray daemon starts when you finish so hotkeys and captures work right away."
+msgstr "完成后会启动托盘守护进程，热键和截图即可使用。"
+
+msgid "Right-click for Area, Screen, and Record"
+msgstr "右键：区域、屏幕和录制"
+
+msgid "Capture without opening Settings every time"
+msgstr "截图不必每次打开设置"
+
+msgid "Open ApexShot anytime for Settings and preferences"
+msgstr "随时打开 ApexShot 进入设置"
+
+msgid "Pro tip"
+msgstr "小提示"
+
+msgid ""
+"If a hotkey conflicts with your desktop, change it under Settings → Shortcuts."
+msgstr "若热键与桌面冲突，请在 设置 → 快捷键 中更改。"
+
+msgid "Capture Area"
+msgstr "截取区域"
+
+msgid "Crosshair Capture"
+msgstr "准星截图"
+
+msgid "Capture Screen"
+msgstr "截取全屏"
+
+msgid "Open Recording UI"
+msgstr "打开录制界面"
+
+msgid "Record Screen"
+msgstr "录制屏幕"
+
+msgid "Record Window"
+msgstr "录制窗口"
+
+msgid "Stop Recording"
+msgstr "停止录制"
+
+msgid "Video Editor"
+msgstr "视频编辑器"
+
+msgid "Image Editor"
+msgstr "图像编辑器"
+
+msgid "Open Last Capture"
+msgstr "打开上次截图"
+
+msgid "History"
+msgstr "历史记录"
+
+msgid "Quit"
+msgstr "退出"
+
+msgid "Camera"
+msgstr "相机"
+
+msgid "Classic"
+msgstr "经典"
+
+msgid "Pop"
+msgstr "Pop"
+
+msgid "None"
+msgstr "无"
+
+msgid "Left"
+msgstr "左侧"
+
+msgid "Right"
+msgstr "右侧"
+
+msgid "Hide"
+msgstr "隐藏"
+
+msgid "Hide (stay in Tray)"
+msgstr "隐藏（留在托盘）"
+
+msgid "Min"
+msgstr "最小"
+
+msgid "Def"
+msgstr "默认"
+
+msgid "Max"
+msgstr "最大"
+
+msgid "Show Quick Access overlay"
+msgstr "显示快捷操作浮层"
+
+msgid "Copy to clipboard"
+msgstr "复制到剪贴板"
+
+msgid "Open Annotate tool"
+msgstr "打开标注工具"
+
+msgid "Open Video Editor"
+msgstr "打开视频编辑器"
+
+msgid "Automatic zoom on import"
+msgstr "导入时自动缩放"
+
+msgid "Open File:"
+msgstr "打开文件："
+
+msgid "Open From Clipboard:"
+msgstr "从剪贴板打开："
+
+msgid "Restore Recently Closed File:"
+msgstr "恢复最近关闭的文件："
+
+msgid "Hide/Show Overlays:"
+msgstr "隐藏/显示浮层："
+
+msgid "Capture Area:"
+msgstr "截取区域："
+
+msgid "Crosshair Capture:"
+msgstr "准星截图："
+
+msgid "Capture Previous Area:"
+msgstr "截取上一区域："
+
+msgid "Capture Full Screen:"
+msgstr "截取全屏："
+
+msgid "Show Last Preview:"
+msgstr "显示上次预览："
+
+msgid "Open Recording UI:"
+msgstr "打开录制界面："
+
+msgid "Record Screen:"
+msgstr "录制屏幕："
+
+msgid "HEVC (smaller files)"
+msgstr "HEVC（文件更小）"
+
+msgid "H.264"
+msgstr "H.264"
+
+msgid "Pause or Resume Recording:"
+msgstr "暂停或继续录制："
+
+msgid "Restart Recording:"
+msgstr "重新开始录制："
+
+msgid "Add Recording Marker:"
+msgstr "添加录制标记："
+
+msgid "Stop and Save Recording:"
+msgstr "停止并保存录制："
+
+msgid "Only during recording"
+msgstr "仅在录制期间"
+
+msgid "+ Add current color"
+msgstr "+ 添加当前颜色"
+
+msgid "1 : 1 (Square)"
+msgstr "1 : 1（正方形）"
+
+msgid "1 {unit} ago"
+msgstr "1 {unit} 之前"
+
+msgid "1, 2, 3, 4..."
+msgstr "1、2、3、4……"
+
+msgid "1080p"
+msgstr "1080p"
+
+msgid "16 : 10"
+msgstr "16 : 10"
+
+msgid "16 : 9"
+msgstr "16 : 9"
+
+msgid "2 : 3"
+msgstr "2 : 3"
+
+msgid "2.35 : 1"
+msgstr "2.35 : 1"
+
+msgid "3 : 2"
+msgstr "3 : 2"
+
+msgid "4 : 3"
+msgstr "4 : 3"
+
+msgid "480 x auto"
+msgstr "480 x 自动"
+
+msgid "5 : 4 (10 : 8)"
+msgstr "5 : 4 (10 : 8)"
+
+msgid "640 x auto"
+msgstr "640 x 自动"
+
+msgid "7 : 5"
+msgstr "7 : 5"
+
+msgid "720p"
+msgstr "720p"
+
+msgid "800 x auto"
+msgstr "800 x 自动"
+
+msgid "9 : 16"
+msgstr "9 : 16"
+
+msgid "A, B, C, D..."
+msgstr "A、B、C、D……"
+
+msgid "Actions"
+msgstr "操作"
+
+msgid "Add"
+msgstr "添加"
+
+msgid "Add a Manual zoom, or analyze visible cursor motion from the timeline"
+msgstr "添加手动缩放功能，或分析时间轴上光标的可见移动轨迹"
+
+msgid "Add to project"
+msgstr "添加到项目"
+
+msgid "Add wallpaper"
+msgstr "添加壁纸"
+
+msgid "Add zoom at playhead"
+msgstr "在播放头处添加缩放功能"
+
+msgid "Added {auto_zooms} Auto Zooms from {samples} cursor-motion samples."
+msgstr "添加了 {auto_zooms} 个自动缩放，来自 {samples} 个光标移动样本。"
+
+msgid "Adwaita"
+msgstr "阿德瓦伊塔"
+
+msgid "Alignment"
+msgstr "对齐"
+
+msgid "An error occurred while taking a screenshot."
+msgstr "截图时发生错误。"
+
+msgid "Analyzing visible cursor motion…"
+msgstr "正在分析光标的可见移动……"
+
+msgid "Animation"
+msgstr "动画"
+
+msgid "ApexShot Editor"
+msgstr "ApexShot 编辑器"
+
+msgid "ApexShot History"
+msgstr "ApexShot 发展历程"
+
+msgid "ApexShot Preview"
+msgstr "《ApexShot》预览"
+
+msgid "ApexShot Recording"
+msgstr "ApexShot 录制"
+
+msgid "ApexShot Recording Countdown"
+msgstr "ApexShot 录制倒计时"
+
+msgid "ApexShot Recording Editor"
+msgstr "ApexShot 录像编辑器"
+
+msgid "ApexShot Recording Mask"
+msgstr "ApexShot 录制遮罩"
+
+msgid "ApexShot could not export this recording."
+msgstr "ApexShot 无法导出此录制内容。"
+
+msgid "ApexShot could not open this video file."
+msgstr "ApexShot 无法打开此视频文件。"
+
+msgid "ApexShot lost contact with the export worker."
+msgstr "ApexShot 与该外派员工失去了联系。"
+
+msgid "ApexShot lost contact with the upload worker."
+msgstr "ApexShot 与上传进程失去了联系。"
+
+msgid "ApexShot-YYYY-MM-DD_HH-MM-SS.png"
+msgstr "ApexShot-YYYY-MM-DD_HH-MM-SS.png"
+
+msgid "Apply selection"
+msgstr "应用选择"
+
+msgid "Area"
+msgstr "区域"
+
+msgid "Arrow"
+msgstr "箭头"
+
+msgid "Arrow style"
+msgstr "箭头样式"
+
+msgid "Aspect Ratio"
+msgstr "宽高比"
+
+msgid "Audio"
+msgstr "音频"
+
+msgid "Auto"
+msgstr "自动"
+
+msgid "Auto Zoom detection complete"
+msgstr "自动变焦检测完成"
+
+msgid "Auto-balance"
+msgstr "自动平衡"
+
+msgid "Background"
+msgstr "背景"
+
+msgid "Before recording"
+msgstr "录制前"
+
+msgid "Behavior"
+msgstr "行为"
+
+msgid "Black"
+msgstr "黑色"
+
+msgid "Blackout"
+msgstr "停电"
+
+msgid "Blackout has no intensity control"
+msgstr "“Blackout” 没有亮度调节功能"
+
+msgid "Blur"
+msgstr "Blur"
+
+msgid "Blurred"
+msgstr "模糊的"
+
+msgid "CLICK EFFECT"
+msgstr "点击效果"
+
+msgid "Camera recenters when the cursor nears the edge of the zoomed view"
+msgstr "当光标接近缩放视图的边缘时，相机将重新居中"
+
+msgid "Captures you take will show up here."
+msgstr "您拍摄的照片将显示在此处。"
+
+msgid "Change aspect ratio"
+msgstr "更改宽高比"
+
+msgid "Change video size"
+msgstr "更改视频尺寸"
+
+msgid "Choose a color for the active tool"
+msgstr "为当前选中的工具选择一种颜色"
+
+msgid "Choose a folder"
+msgstr "选择一个文件夹"
+
+msgid "Choose click color"
+msgstr "选择点击颜色"
+
+msgid "Classic Animation"
+msgstr "经典动画"
+
+msgid "Clean up microphone noise"
+msgstr "消除麦克风噪音"
+
+msgid "Click a display · Esc to cancel · {keys}"
+msgstr "点击显示内容 · 按 Esc 键取消 · {keys}"
+
+msgid "Click color"
+msgstr "点击颜色"
+
+msgid "Click to open a video, or drop one here"
+msgstr "点击打开视频，或将视频拖放到此处"
+
+msgid "Clip"
+msgstr "片段"
+
+msgid "Clipboard does not contain an image to open"
+msgstr "剪贴板中没有要打开的图片"
+
+msgid "Clipboard image unavailable"
+msgstr "剪贴板中的图片不可用"
+
+msgid "Close anyway"
+msgstr "不管怎样，还是关闭吧"
+
+msgid "Closing now stops the encode. Your edit session is kept."
+msgstr "现在关闭将停止编码。您的编辑会话将被保留。"
+
+msgid "Cloud upload not configured"
+msgstr "未配置云端上传"
+
+msgid "Color"
+msgstr "颜色"
+
+msgid "Color picker"
+msgstr "颜色选择器"
+
+msgid "Colors"
+msgstr "颜色"
+
+msgid ""
+"Connect ApexShot Cloud in Settings → Cloud, or switch destination to XBackBone and configure it."
+msgstr "在“设置”→“云”中连接 ApexShot Cloud，或将目标切换为 XBackBone 并进行配置。"
+
+msgid ""
+"Connect your ApexShot Cloud account to browse everything you have uploaded, right here in History."
+msgstr "将您的 ApexShot Cloud 账户连接起来，即可在此处的“历史记录”中浏览您上传的所有内容。"
+
+msgid "Content copied to clipboard"
+msgstr "内容已复制到剪贴板"
+
+msgid "Content extracted"
+msgstr "内容已提取"
+
+msgid "Content extracted, but clipboard copy was unavailable"
+msgstr "已提取内容，但无法复制到剪贴板"
+
+msgid "Controls"
+msgstr "控制"
+
+msgid "Copied"
+msgstr "已复制"
+
+msgid ""
+"Copied to clipboard\n"
+"{url}"
+msgstr ""
+"已复制到剪贴板\n"
+"{url}"
+
+msgid "Copy"
+msgstr "复制"
+
+msgid "Copy failed"
+msgstr "复制失败"
+
+msgid "Copy file URI"
+msgstr "复制文件 URI"
+
+msgid "Copy link"
+msgstr "复制链接"
+
+msgid "Copy the recording path to the clipboard"
+msgstr "将录制路径复制到剪贴板"
+
+msgid "Corners"
+msgstr "角落"
+
+msgid "Could not delete {name}: {message}"
+msgstr "无法删除 {name}：{message}"
+
+msgid "Could not load your cloud uploads"
+msgstr "无法加载您的云端上传内容"
+
+msgid "Could not save edits: {error}"
+msgstr "无法保存修改：{error}"
+
+msgid "Countdown"
+msgstr "倒计时"
+
+msgid "Crop"
+msgstr "裁剪"
+
+msgid "Crop video"
+msgstr "裁剪视频"
+
+msgid "Current tool does not support size changes"
+msgstr "当前工具不支持调整尺寸"
+
+msgid "Cursor"
+msgstr "光标"
+
+msgid "Cursor analysis could not place Auto Zooms"
+msgstr "光标分析无法定位“自动缩放”功能"
+
+msgid "Cursor analysis stopped"
+msgstr "光标分析已停止"
+
+msgid "Cursor is hidden for this range in preview and export"
+msgstr "在预览和导出时，此范围内的光标被隐藏"
+
+msgid ""
+"Cursor motion was found, but Manual zooms already cover the detected moments."
+msgstr "检测到了光标移动，但手动缩放功能已涵盖了检测到的这些时刻。"
+
+msgid ""
+"Cursor motion was found, but no purposeful pauses were clear enough to place zooms."
+msgstr "虽然检测到了光标移动，但没有发现足够明显的有意停顿，无法据此设置缩放点。"
+
+msgid ""
+"Cursor replacement is unavailable. Its inferred path can still guide Auto Zoom."
+msgstr "无法替换光标。但其推断出的路径仍可引导“自动缩放”功能。"
+
+msgid "Cursor styling requires pointer data from an ApexShot recording."
+msgstr "光标样式需要来自 ApexShot 录制的指针数据。"
+
+msgid "Cursor unavailable"
+msgstr "光标不可用"
+
+msgid "Curved"
+msgstr "弯曲的"
+
+msgid "Cut mode — click timeline to place cuts"
+msgstr "剪切模式 — 点击时间轴进行剪切"
+
+msgid "Date unknown"
+msgstr "日期不详"
+
+msgid "Delete"
+msgstr "删除"
+
+msgid "Delete clip"
+msgstr "删除片段"
+
+msgid "Delete hide"
+msgstr "删除 隐藏"
+
+msgid "Delete selected"
+msgstr "删除所选内容"
+
+msgid "Delete zoom"
+msgstr "删除缩放"
+
+msgid "Delete zoom or cut"
+msgstr "删除、缩放或裁剪"
+
+msgid "Delete {name}?"
+msgstr "删除 {name}？"
+
+msgid "Deleted {name}"
+msgstr "已删除 {name}"
+
+msgid "Details"
+msgstr "详情"
+
+msgid "Detect"
+msgstr "检测"
+
+msgid "Detect automatic zooms from clicks and cursor motion"
+msgstr "根据点击和光标移动检测自动缩放"
+
+msgid "Detect text"
+msgstr "检测文本"
+
+msgid "Dim screen"
+msgstr "屏幕变暗"
+
+msgid "Dimensions"
+msgstr "尺寸"
+
+msgid "Dismiss"
+msgstr "关闭"
+
+msgid "Display scale resolution"
+msgstr "显示刻度分辨率"
+
+msgid "Display {number}"
+msgstr "显示 {number}"
+
+msgid "Do Not Disturb"
+msgstr "请勿打扰"
+
+msgid "Done"
+msgstr "完成"
+
+msgid "Dot"
+msgstr "点"
+
+msgid "Double"
+msgstr "双倍"
+
+msgid "Download Extension"
+msgstr "下载扩展程序"
+
+msgid "Drag here"
+msgstr "拖动到此处"
+
+msgid "Drag here or click to upload"
+msgstr "拖拽至此或点击上传"
+
+msgid "Drop a recording to begin"
+msgstr "上传一段录音即可开始"
+
+msgid "Drop an image here"
+msgstr "将图片拖放到此处"
+
+msgid "Duration"
+msgstr "时长"
+
+msgid "Ease"
+msgstr "轻松"
+
+msgid "Easing"
+msgstr "宽松"
+
+msgid "Echo"
+msgstr "回声"
+
+msgid "Edit"
+msgstr "编辑"
+
+msgid "Edit quality, resolution and audio after recording"
+msgstr "录制后编辑画质、分辨率和音频"
+
+msgid "Effects"
+msgstr "效果"
+
+msgid "Empty"
+msgstr "空"
+
+msgid "End {time}"
+msgstr "结束 {time}"
+
+msgid "Estimated export size"
+msgstr "预计出口规模"
+
+msgid "Everything you have uploaded to ApexShot Cloud"
+msgstr "您上传到 ApexShot Cloud 的所有内容"
+
+msgid "Export complete"
+msgstr "导出完成"
+
+msgid "Export failed"
+msgstr "导出失败"
+
+msgid "Export is still running."
+msgstr "导出仍在进行中。"
+
+msgid "Export quality"
+msgstr "导出质量"
+
+msgid "Export the edited MP4"
+msgstr "导出编辑后的 MP4 文件"
+
+msgid "Export video"
+msgstr "导出视频"
+
+msgid "Export with your current settings, then upload"
+msgstr "使用当前设置导出，然后上传"
+
+msgid "Extra Large"
+msgstr "特大号"
+
+msgid "FRAME"
+msgstr "FRAME"
+
+msgid "Failed to open video"
+msgstr "无法打开视频"
+
+msgid "Fancy"
+msgstr "Fancy"
+
+msgid "File copied to clipboard"
+msgstr "文件已复制到剪贴板"
+
+msgid "Focus"
+msgstr "焦点"
+
+msgid "Focus background intensity"
+msgstr "对焦背景亮度"
+
+msgid "Focused"
+msgstr "专注的"
+msgid "Follow"
+msgstr "Follow"
+
+msgid "Font"
+msgstr "字体"
+
+msgid "Font family"
+msgstr "字体家族"
+
+msgid "Frame rate"
+msgstr "帧率"
+
+msgid "Freeform"
+msgstr "自由形式"
+
+msgid "Fullscreen"
+msgstr "全屏"
+
+msgid "GIF"
+msgstr "GIF"
+
+msgid ""
+"GNOME Shell extension is not installed. Please install the ApexShot GNOME extension first."
+msgstr "未安装 GNOME Shell 扩展。请先安装 ApexShot GNOME 扩展。"
+
+msgid "Geometry"
+msgstr "几何学"
+
+msgid "Glide"
+msgstr "滑行"
+
+msgid "Got it"
+msgstr "明白了"
+
+msgid "Gradient"
+msgstr "梯度"
+
+msgid "Gradients"
+msgstr "渐变"
+
+msgid "HEIGHT"
+msgstr "高度"
+
+msgid "HEX"
+msgstr "HEX"
+
+msgid "HiDPI"
+msgstr "HiDPI"
+
+msgid "Hide cursor"
+msgstr "隐藏光标"
+
+msgid "Hide cursor at playhead"
+msgstr "在播放头处隐藏光标"
+
+msgid "Hide track"
+msgstr "隐藏音轨"
+
+msgid "Hide video"
+msgstr "隐藏视频"
+
+msgid "Remove cursor shake"
+msgstr "移除光标抖动"
+
+msgid "Hide when idle"
+msgstr "空闲时隐藏"
+
+msgid "Loop cursor position"
+msgstr "循环光标位置"
+
+msgid "Loop before end"
+msgstr "结束前循环"
+
+msgid "Stop at the end"
+msgstr "结束时停止"
+
+msgid "Hide zoom"
+msgstr "隐藏缩放"
+
+msgid "High"
+msgstr "高"
+
+msgid "Highlighter"
+msgstr "荧光笔"
+
+msgid "Idle delay"
+msgstr "空闲延迟"
+
+msgid "Image"
+msgstr "图片"
+
+msgid "Image copied to clipboard"
+msgstr "图片已复制到剪贴板"
+
+msgid "Images"
+msgstr "图片"
+
+msgid "Insert"
+msgstr "插入"
+
+msgid "Inspector"
+msgstr "督察"
+
+msgid "Intensity"
+msgstr "强度"
+
+msgid "Intensity {percent}%"
+msgstr "强度 {percent}%"
+
+msgid "Just now"
+msgstr "刚才"
+
+msgid "Keep editing"
+msgstr "继续编辑"
+
+msgid "Keyboard shortcuts"
+msgstr "键盘快捷键"
+
+msgid "Large"
+msgstr "大"
+
+msgid "Line"
+msgstr "行"
+
+msgid "Linear"
+msgstr "线性"
+
+msgid "Load more"
+msgstr "加载更多"
+
+msgid "Loading image…"
+msgstr "正在加载图片……"
+
+msgid "Loading your cloud uploads…"
+msgstr "正在加载您的云端上传内容……"
+
+msgid "Loading…"
+msgstr "正在加载……"
+
+msgid "Lock audio"
+msgstr "锁定音频"
+
+msgid "Lock track"
+msgstr "锁定轨道"
+
+msgid "Lock video"
+msgstr "锁定视频"
+
+msgid "Lock zoom"
+msgstr "锁定缩放"
+
+msgid "Low"
+msgstr "低"
+
+msgid "MP4 files"
+msgstr "MP4 文件"
+
+msgid "MP4 video"
+msgstr "MP4视频"
+
+msgid "Manual"
+msgstr "手动"
+
+msgid "Maximum resolution"
+msgstr "最高分辨率"
+
+msgid "Media"
+msgstr "媒体"
+
+msgid "Medium"
+msgstr "中"
+
+msgid "Method"
+msgstr "方法"
+
+msgid "Mic"
+msgstr "麦克风"
+
+msgid "Minimal"
+msgstr "极简"
+
+msgid "Motion"
+msgstr "动议"
+
+msgid "Move mode — drag a segment to reorder it"
+msgstr "移动模式——拖动一个线段以调整其顺序"
+
+msgid "Mute"
+msgstr "静音"
+
+msgid "My colors"
+msgstr "我的颜色"
+
+msgid "No Auto Zooms added"
+msgstr "未添加自动缩放功能"
+
+msgid ""
+"No Auto Zooms were added. Manual zooms are preserved, and overlapping detections are skipped."
+msgstr "未添加任何自动缩放。手动缩放被保留，且跳过了重叠的检测结果。"
+
+msgid "No audio"
+msgstr "无音频"
+
+msgid "No clear clicks or purposeful pointer pauses were found."
+msgstr "未发现明显的点击声或有意为之的光标停顿。"
+
+msgid "No cursor samples were captured. Zoom centers will use the frame center."
+msgstr "未捕获光标样本。缩放中心将使用画面中心。"
+
+msgid "No editable cursor data was found."
+msgstr "未找到可编辑的光标数据。"
+
+msgid "No geometry"
+msgstr "无几何图形"
+
+msgid "No media"
+msgstr "无媒体"
+
+msgid "No object selected"
+msgstr "未选择任何对象"
+
+msgid "No pointer data found"
+msgstr "未找到指针数据"
+
+msgid "No recordings yet"
+msgstr "尚无录音"
+
+msgid "No screenshots yet"
+msgstr "尚无截图"
+
+msgid "No video edits to remove"
+msgstr "无需进行任何视频剪辑"
+
+msgid "No zooms"
+msgstr "不支持变焦"
+
+msgid "Noise suppression"
+msgstr "噪声抑制"
+
+msgid "Notifications"
+msgstr "通知"
+
+msgid "Number"
+msgstr "数字"
+
+msgid "Number Options"
+msgstr "数字选项"
+
+msgid "OCR"
+msgstr "OCR"
+
+msgid "OCR complete"
+msgstr "OCR 已完成"
+
+msgid "OCR failed"
+msgstr "OCR 识别失败"
+
+msgid "Obfuscate method"
+msgstr "混淆方法"
+
+msgid ""
+"On KDE Plasma, the compositor refused the screenshot. Enable KWin's screenshot plugin (System Settings → Desktop Effects, or set screenshotEnabled=true under [Plugins] in ~/.config/kwinrc) and try again."
+msgstr ""
+"在 KDE Plasma 上，合成器拒绝了截图请求。请启用 KWin 的截图插件（系统设置 → 桌面特效，或在 ~/.config/kwinrc 文件的 [Plugins] 部分将 screenshotEnabled 设为 true），然后重试。"
+
+msgid "Opacity"
+msgstr "不透明度"
+
+msgid "Open"
+msgstr "打开"
+
+msgid "Open Folder"
+msgstr "打开文件夹"
+
+msgid ""
+"Open Zoom and choose Detect to analyze visible cursor motion, or use Manual mode to place zooms yourself."
+msgstr "打开“缩放”功能并选择“检测”以分析可见的光标移动，或者使用“手动”模式自行设置缩放位置。"
+
+msgid "Open color picker"
+msgstr "打开颜色选择器"
+
+msgid "Open in browser"
+msgstr "在浏览器中打开"
+
+msgid "Open in editor"
+msgstr "在编辑器中打开"
+
+msgid "Open video"
+msgstr "打开视频"
+
+msgid "Open video editor"
+msgstr "打开视频编辑器"
+
+msgid "Opened in your browser"
+msgstr "已在您的浏览器中打开"
+
+msgid "Opened {name}"
+msgstr "已打开 {name}"
+
+msgid "Opening {name} in the {editor}"
+msgstr "在 {name} 中打开 {editor}"
+
+msgid "Optimize GIF"
+msgstr "优化GIF"
+
+msgid "Or click to upload"
+msgstr "或者点击上传"
+
+msgid "Original"
+msgstr "原始"
+
+msgid "Output size"
+msgstr "输出尺寸"
+
+msgid "PNG, JPEG, or WebP"
+msgstr "PNG、JPEG 或 WebP"
+
+msgid "PRESET"
+msgstr "预设"
+
+msgid "Padding"
+msgstr "填充"
+
+msgid "Composition"
+msgstr "构图"
+
+msgid "Motion Blur"
+msgstr "运动模糊"
+
+msgid "Rotation & Perspective"
+msgstr "旋转与透视"
+
+msgid "Scene Shadows"
+msgstr "场景阴影"
+
+msgid "Timing"
+msgstr "时序"
+
+msgid "Transform"
+msgstr "变换"
+
+msgid "day"
+msgstr "天"
+
+msgid "hour"
+msgstr "小时"
+
+msgid "minute"
+msgstr "分钟"
+
+msgid "Background blur"
+msgstr "背景模糊"
+
+msgid "Background noise"
+msgstr "背景噪点"
+
+msgid "Border Radius"
+msgstr "圆角半径"
+
+msgid "Highlight mode"
+msgstr "高亮模式"
+
+msgid "Marker size"
+msgstr "标记大小"
+
+msgid "Numbering style"
+msgstr "编号样式"
+
+msgid "Shadow blur"
+msgstr "阴影模糊"
+
+msgid "Shadow opacity"
+msgstr "阴影不透明度"
+
+msgid "Shadow position X"
+msgstr "阴影位置 X"
+
+msgid "Shadow position Y"
+msgstr "阴影位置 Y"
+
+msgid "Watermark inset"
+msgstr "水印内边距"
+
+msgid "Watermark position X"
+msgstr "水印位置 X"
+
+msgid "Watermark position Y"
+msgstr "水印位置 Y"
+
+msgid "Watermark size"
+msgstr "水印大小"
+
+msgid "Palette"
+msgstr "调色板"
+
+msgid "Paste your XBackBone API token"
+msgstr "粘贴您的 XBackBone API 令牌"
+
+msgid "Pick from screen"
+msgstr "从屏幕中选择"
+
+msgid "Pin"
+msgstr "Pin"
+
+msgid "Pixelate"
+msgstr "像素化"
+
+msgid "Play"
+msgstr "播放"
+
+msgid "Pointer track missing"
+msgstr "缺少指针轨迹"
+
+msgid "Pointer track unavailable"
+msgstr "无法获取指针轨迹"
+
+msgid "Primary"
+msgstr "小学"
+
+msgid "QR code decoded"
+msgstr "二维码已解码"
+
+msgid "Quality"
+msgstr "质量"
+
+msgid "Ratio"
+msgstr "比率"
+
+msgid "Record audio in mono"
+msgstr "以单声道录制音频"
+
+msgid "Recording failed"
+msgstr "录制失败"
+
+msgid "Window recording unavailable"
+msgstr "无法录制窗口"
+
+msgid "Recording not saved"
+msgstr "录音未保存"
+
+msgid "Recording path copied"
+msgstr "已复制录制路径"
+
+msgid "Recording saved"
+msgstr "录音已保存"
+
+msgid "Recording setup"
+msgstr "录音设置"
+
+msgid ""
+"Recording will continue with the OS cursor hidden. Enable the ApexShot GNOME extension for the editor."
+msgstr "录制将在隐藏操作系统光标的情况下继续进行。请为编辑器启用 ApexShot GNOME 扩展。"
+
+msgid "Recordings"
+msgstr "录音"
+
+msgid "Reduce file size and upload time"
+msgstr "减小文件大小并缩短上传时间"
+
+msgid "Refresh"
+msgstr "刷新"
+
+msgid "Remember last area"
+msgstr "记住上一个区域"
+
+msgid "Remove audio track"
+msgstr "删除音频轨道"
+
+msgid "Remove custom color"
+msgstr "删除自定义颜色"
+
+msgid "Remove track"
+msgstr "删除曲目"
+
+msgid "Remove video track"
+msgstr "删除视频轨道"
+
+msgid "Remove zoom track"
+msgstr "删除缩放轨道"
+
+msgid "Rename video"
+msgstr "重命名视频"
+
+msgid "Reset"
+msgstr "重置"
+
+msgid "Reset video edits"
+msgstr "重置视频编辑"
+
+msgid "Reset transforms"
+msgstr "重置变换"
+
+msgid "Retry"
+msgstr "重试"
+
+msgid "Reverse direction"
+msgstr "反向"
+
+msgid "Revert cuts"
+msgstr "撤销削减"
+
+msgid "Ripple"
+msgstr "瑞波"
+
+msgid "Save is disabled in After capture settings"
+msgstr "“保存”选项在“捕获后设置”中已禁用"
+
+msgid "Saved {file} ({size})"
+msgstr "已保存 {file} ({size})"
+
+msgid "Screen Recording"
+msgstr "屏幕录制"
+
+msgid "Screen recordings you make will show up here."
+msgstr "您录制的屏幕录像将显示在此处。"
+
+msgid "Screenshot failed"
+msgstr "截图失败"
+
+msgid "Screenshot not saved"
+msgstr "截图未保存"
+
+msgid "Scroll"
+msgstr "滚动"
+
+msgid "Scroll Capture"
+msgstr "滚动截图"
+
+msgid "Scroll capture requires the ApexShot"
+msgstr "滚动截图需要使用 ApexShot"
+
+msgid "Search isn't available for Cloud"
+msgstr "云端不支持搜索功能"
+
+msgid "Search recordings"
+msgstr "搜索录音"
+
+msgid "Search screenshots"
+msgstr "搜索截图"
+
+msgid "Select a Window"
+msgstr "选择一个窗口"
+
+msgid "Select a display"
+msgstr "选择显示方式"
+
+msgid "Select a video, begin your creation."
+msgstr "选择一个视频，开始创作吧。"
+
+msgid ""
+"Select a zoom to adjust it; timeline detection uses clicks and pointer pauses"
+msgstr "选择一个缩放级别进行调整；时间轴检测通过点击和光标暂停来实现"
+
+msgid "Select any annotation on the canvas to inspect it."
+msgstr "在画布上选择任意一个注释，即可查看其详细信息。"
+
+msgid "Selection"
+msgstr "选择"
+
+msgid "Set a fixed focus point for this zoom"
+msgstr "为该变焦镜头设置固定对焦点"
+
+msgid ""
+"Set the instance URL and API token in Settings → Cloud, or switch to ApexShot Cloud and sign in."
+msgstr "请在“设置”→“云”中设置实例 URL 和 API 令牌，或者切换到 ApexShot Cloud 并登录。"
+
+msgid "Shadow"
+msgstr "影子"
+
+msgid "Share link copied to clipboard"
+msgstr "分享链接已复制到剪贴板"
+
+msgid "Share link: {url}"
+msgstr "分享链接：{url}"
+
+msgid "Show in files"
+msgstr "在文件中显示"
+
+msgid "Show less"
+msgstr "显示更少"
+
+msgid "Show more"
+msgstr "显示更多"
+
+msgid "Show video"
+msgstr "播放视频"
+
+msgid "Show zoom"
+msgstr "显示缩放"
+
+msgid "Showing {name} in your files"
+msgstr "在您的文件中显示 {name}"
+
+msgid "Shown over the recording in preview and export"
+msgstr "在预览和导出时显示在录制内容上方"
+
+msgid "Sign in"
+msgstr "登录"
+
+msgid "Sign in to ApexShot Cloud"
+msgstr "登录 ApexShot Cloud"
+
+msgid "Size"
+msgstr "尺寸"
+
+msgid "Skip back 1s"
+msgstr "向后跳过 1 秒"
+
+msgid "Skip forward 1s"
+msgstr "快进1秒"
+
+msgid "Small"
+msgstr "小"
+
+msgid "Smooth"
+msgstr "流畅"
+
+msgid "Smoothing"
+msgstr "平滑处理"
+
+msgid "Snappy"
+msgstr "干脆利落"
+
+msgid "Softer follow"
+msgstr "更柔和的跟进"
+
+msgid "Speaker"
+msgstr "演讲者"
+
+msgid "Speed"
+msgstr "速度"
+
+msgid "Split"
+msgstr "Split"
+
+msgid "Split at playhead"
+msgstr "在播放头处分割"
+
+msgid "Spotlight"
+msgstr "焦点"
+
+msgid "Square"
+msgstr "正方形"
+
+msgid "Standard"
+msgstr "标准"
+
+msgid "Start"
+msgstr "开始"
+
+msgid "Start with:"
+msgstr "从以下内容开始："
+
+msgid "Start {time}"
+msgstr "开始 {time}"
+
+msgid "Stroke Thickness"
+msgstr "笔画粗细"
+
+msgid "Stroke size"
+msgstr "笔画大小"
+
+msgid "Style"
+msgstr "风格"
+
+msgid "Sway"
+msgstr "Sway"
+
+msgid "Tahoe"
+msgstr "塔霍"
+
+msgid "Tahoe Inverted"
+msgstr "倒置的塔霍湖"
+
+msgid "Text"
+msgstr "文本"
+
+msgid "Text copied to clipboard"
+msgstr "文本已复制到剪贴板"
+
+msgid "Text extracted"
+msgstr "提取的文本"
+
+msgid "Text extracted, but clipboard copy was unavailable"
+msgstr "已提取文本，但无法复制到剪贴板"
+
+msgid "Text size"
+msgstr "文字大小"
+
+msgid ""
+"The analysis worker stopped unexpectedly. Manual Zoom is still available."
+msgstr "分析任务意外停止。手动缩放功能仍然可用。"
+
+msgid "The cursor is baked into this imported video."
+msgstr "光标已渲染到这段导入的视频中。"
+
+msgid "The saved camera pose is paused while drawing."
+msgstr "绘制时会暂停已保存的相机视角。"
+
+msgid "The video editor only supports MP4 recordings"
+msgstr "视频编辑器仅支持MP4格式的视频文件"
+
+msgid "Thick"
+msgstr "厚"
+
+msgid "Thickness"
+msgstr "厚度"
+
+msgid "Thin"
+msgstr "薄"
+
+msgid "This page covers ApexShot Cloud"
+msgstr "本页面介绍 ApexShot Cloud"
+
+msgid "This permanently removes the file from disk."
+msgstr "这将永久地从磁盘中删除该文件。"
+
+msgid "This upload has no link to open"
+msgstr "此上传内容没有可打开的链接"
+
+msgid "This upload has no share link"
+msgstr "此上传内容没有分享链接"
+
+msgid "Tighter, faster"
+msgstr "更紧凑、更快"
+
+msgid "Tilt"
+msgstr "倾斜"
+
+msgid "Timer"
+msgstr "计时器"
+
+msgid "Tool options coming soon"
+msgstr "工具选项即将推出"
+
+msgid "Trail"
+msgstr "小径"
+
+msgid "URL copied to clipboard"
+msgstr "URL 已复制到剪贴板"
+
+msgid "Unlock audio"
+msgstr "解锁音频"
+
+msgid "Unlock video"
+msgstr "解锁视频"
+
+msgid "Unlock zoom"
+msgstr "解锁缩放功能"
+
+msgid "Unmute"
+msgstr "取消静音"
+
+msgid "Untitled"
+msgstr "无标题"
+
+msgid "Upload complete"
+msgstr "上传完成"
+
+msgid "Upload failed"
+msgstr "上传失败"
+
+msgid "Upload failed: {message}"
+msgstr "上传失败：{message}"
+
+msgid "Upload media"
+msgstr "上传媒体文件"
+
+msgid "Upload to cloud"
+msgstr "上传到云端"
+
+msgid "Uploaded {name}"
+msgstr "已上传 {name}"
+
+msgid "Uploading…"
+msgstr "正在上传……"
+
+msgid "Use the Thickness panel for highlighter"
+msgstr "使用“线宽”面板设置荧光笔"
+
+msgid "Very Thick"
+msgstr "非常厚"
+
+msgid "Video"
+msgstr "视频"
+
+msgid "Videos"
+msgstr "视频"
+
+msgid "WIDTH"
+msgstr "宽度"
+
+msgid "Waiting for sign-in…"
+msgstr "正在等待登录……"
+
+msgid "Wallpaper"
+msgstr "壁纸"
+
+msgid "Waveform unavailable"
+msgstr "无法显示波形"
+
+msgid "While recording"
+msgstr "录制时"
+
+msgid "White"
+msgstr "白色"
+
+msgid "XBackBone upload not configured"
+msgstr "XBackBone 上传未配置"
+
+msgid "Yaru"
+msgstr "Yaru"
+
+msgid "Yesterday"
+msgstr "昨天"
+
+msgid "You have not uploaded anything to ApexShot Cloud yet."
+msgstr "您尚未向 ApexShot Cloud 上传任何内容。"
+
+msgid "You're connected"
+msgstr "您已连接"
+
+msgid "Your next screenshot gets a share link."
+msgstr "您的下一张截图将生成一个分享链接。"
+
+msgid ""
+"Your uploads currently go to a self-hosted XBackBone instance. Switch your upload destination to ApexShot Cloud in Settings to browse those uploads here."
+msgstr ""
+"您当前上传的内容存储在自托管的 XBackBone 实例中。请在“设置”中将上传目标切换为 ApexShot Cloud，即可在此浏览这些上传内容。"
+
+msgid "Zoom"
+msgstr "Zoom"
+
+msgid "Zoom In"
+msgstr "放大"
+
+msgid "Zoom Out"
+msgstr "缩小"
+
+msgid "Zoom controls"
+msgstr "缩放控件"
+
+msgid "Zoom in timeline"
+msgstr "放大时间轴"
+
+msgid "Zoom out timeline"
+msgstr "缩小时间轴"
+
+msgid "Zoom to Selection"
+msgstr "放大至选定区域"
+
+msgid "a, b, c, d..."
+msgstr "a、b、c、d……"
+
+msgid "browser extension."
+msgstr "浏览器扩展程序。"
+
+msgid "i, ii, iii, iv..."
+msgstr "i、ii、iii、iv……"
+
+msgid "macOS"
+msgstr "macOS"
+
+msgid "{count} {unit}s ago"
+msgstr "{count} {unit} 之前"
+
+msgid "{name} is no longer on disk"
+msgstr "{name} 已不在磁盘上"
+
+msgid "{name} was already gone"
+msgstr "{name} 已经走了"
+
+msgid "＋ Add to My Colors"
+msgstr "＋ 添加到“我的颜色”"
+
+msgid "Box"
+msgstr "框"
+
+msgid "Circle"
+msgstr "圆"
+
+msgid "Obfuscate"
+msgstr "混淆"
+
+msgid "Pen"
+msgstr "笔"
+
+msgid "Choose the solid color used when Background is set to plain color"
+msgstr "当“背景”设置为“纯色”时，选择要使用的纯色"
+
+msgid "ApexShot update available"
+msgstr "有可用的 ApexShot 更新"
+
+msgid "Update available · v{version}"
+msgstr "有可用更新 · v{version}"
+
+msgid "Version {version} is ready. Open the ApexShot menu to view it."
+msgstr "版本 {version} 已准备就绪。打开 ApexShot 菜单即可查看。"
+
+msgid "Static"
+msgstr "静态"
+
+msgid "Switch to Static"
+msgstr "切换到静态"
+
+msgid "Switch to Motion"
+msgstr "切换到 Motion"
+
+msgid "Pause"
+msgstr "暂停"
+
+msgid "Continue"
+msgstr "继续"
+
+msgid "Don't show this again"
+msgstr "不再显示"
+
+msgid "Annotations will be applied"
+msgstr "批注将被应用"
+
+msgid "Motion will play a snapshot of your annotations. Returning to Static restores the live tools. Your original image is not flattened until Done."
+msgstr "Motion 会播放批注快照。返回静态可恢复实时工具。原图在点击完成后才会被拼合。"
+
+msgid "Motion effects will be cleared"
+msgstr "Motion 效果将被清除"
+
+msgid "Motion effect segments can't be edited in Static mode and will be cleared if you continue."
+msgstr "Motion 片段无法在静态模式下编辑，继续将清除它们。"
+
+msgid "Add motion at playhead"
+msgstr "在播放头添加 Motion"
+
+msgid "Click a clip, or double-click a track to add a move or text"
+msgstr "点击片段，或双击轨道以添加运镜或文字"
+
+msgid "Move"
+msgstr "运镜"
+
+msgid "Yaw"
+msgstr "偏航"
+
+msgid "Scale"
+msgstr "缩放"
+
+msgid "Pitch"
+msgstr "俯仰"
+
+msgid "Roll"
+msgstr "翻滚"
+
+msgid "Perspective"
+msgstr "透视"
+
+msgid "Motion blur"
+msgstr "运动模糊"
+
+msgid "X"
+msgstr "X"
+
+msgid "Y"
+msgstr "Y"
+
+msgid "Add text at playhead"
+msgstr "在播放头添加文字"
+
+msgid "Fade"
+msgstr "淡入淡出"
+
+msgid "Slide"
+msgstr "滑入"
+
+msgid "Title"
+msgstr "标题"
+
+msgid "Drag on the preview to place the title"
+msgstr "在预览中拖动以放置标题"
+
+msgid "Click or drag on the image to place the zoom anchor; double-click to recenter"
+msgstr "在图像上点击或拖动以放置缩放锚点；双击重新居中"
+
+msgid "Anchor X"
+msgstr "锚点 X"
+msgid "Anchor Y"
+msgstr "锚点 Y"
+msgid "Blur shutter"
+msgstr "模糊快门"
+msgid "Blur trail"
+msgstr "模糊拖影"
+msgid "Ease X1"
+msgstr "缓动 X1"
+msgid "Ease X2"
+msgstr "缓动 X2"
+msgid "Ease Y1"
+msgstr "缓动 Y1"
+msgid "Ease Y2"
+msgstr "缓动 Y2"
+msgid "Scope"
+msgstr "范围"
+msgid "Unpin"
+msgstr "取消固定"
+
+msgid "Appearance"
+msgstr "外观"
+
+msgid "Border Color"
+msgstr "边框颜色"
+
+msgid "Choose"
+msgstr "选择"
+
+msgid "Choose Watermark Image"
+msgstr "选择水印图片"
+
+msgid "Choose…"
+msgstr "选择…"
+
+msgid "Hex color"
+msgstr "十六进制颜色"
+
+msgid "No image selected"
+msgstr "未选择图片"
+
+msgid "Remove"
+msgstr "移除"
+
+msgid "Show all wallpapers"
+msgstr "显示所有壁纸"
+
+msgid "Wallpapers"
+msgstr "壁纸"
+
+msgid "Watermark"
+msgstr "水印"
+
+msgid "Double-click to add motion"
+msgstr "双击添加运动"
+
+msgid "Double-click to add text"
+msgstr "双击添加文本"
+
+msgid "Show all gradients"
+msgstr "显示所有渐变"
+
+msgid "Instagram"
+msgstr "Instagram"
+
+msgid "YouTube"
+msgstr "YouTube"
+
+msgid "Original canvas aspect"
+msgstr "原始画布宽高比"
+
+msgid "Square 1:1 output"
+msgstr "方形 1:1 输出"
+
+msgid "Widescreen 16:9 output"
+msgstr "宽屏 16:9 输出"
+
+msgid "X (Twitter) link-card 1.91:1 output"
+msgstr "X（Twitter）链接卡片 1.91:1 输出"
+
+msgid "24 FPS"
+msgstr "24帧/秒"
+
+msgid "30 FPS"
+msgstr "30 FPS"
+
+msgid "50 FPS"
+msgstr "50 FPS"
+
+msgid "60 FPS"
+msgstr "60 FPS"
+
+msgid "Needs a background fill to appear in exports"
+msgstr "需要填充背景才能在导出文件中显示"
+
+msgid "Quick Capture"
+msgstr "快速拍摄"
+
+msgid "Redo"
+msgstr "重做"
+
+msgid "Selected gradient color"
+msgstr "选定的渐变色"
+
+msgid "Shade above the card"
+msgstr "卡片上方的阴影"
+
+msgid "Shade beneath the card"
+msgstr "卡片下方的阴影"
+
+msgid "Underlay"
+msgstr "底衬"
+
+msgid "Undo"
+msgstr "撤销"
+
+msgid "Bounce"
+msgstr "回弹"
+
+msgid "Custom"
+msgstr "自定义"
+
+msgid "Gentle"
+msgstr "轻柔"
+
+msgid "Bouncy"
+msgstr "弹跳"
+
+msgid "Spring"
+msgstr "弹簧"
+
+msgid "Theme"
+msgstr "主题"
+
+msgid "Light"
+msgstr "浅色"
+
+msgid "Dark"
+msgstr "深色"
+
+msgid "System"
+msgstr "跟随系统"
+
+msgid "1440p"
+msgstr "1440p"
+
+msgid "2160p"
+msgstr "2160p"
+
+msgid "480p"
+msgstr "480p"
+
+msgid "900p"
+msgstr "900p"
+
+msgid "Balanced"
+msgstr "均衡"
+
+msgid "Frame height in pixels"
+msgstr "画框高度（像素）"
+
+msgid "Frame width in pixels"
+msgstr "画框宽度（像素）"
+
+msgid "Freehand"
+msgstr "自由绘制"
+
+msgid "MP4 with mic and system audio when your desktop allows it"
+msgstr "在桌面允许时录制带麦克风和系统音频的 MP4"
+
+msgid "More frame sizes"
+msgstr "更多画框尺寸"
+
+msgid "Number of the selected marker"
+msgstr "所选标记的编号"
+
+msgid "Number the next marker starts at"
+msgstr "下一个标记的起始编号"
+
+msgid "Pinterest"
+msgstr "Pinterest"
+
+msgid "Recording quality"
+msgstr "录制质量"
+
+msgid "Text-aware"
+msgstr "贴合文本"
+
+msgid "Twitter"
+msgstr "Twitter"
+
+msgid "Ultra"
+msgstr "极致"
+
+msgid "Background color"
+msgstr "背景颜色"
+
+msgid "COLOR"
+msgstr "颜色"
+
+msgid "Choose background color"
+msgstr "选择背景颜色"
+
+msgid "WALLPAPER"
+msgstr "壁纸"
+
+msgid ""
+"Wallpaper or color fills the canvas behind the video in preview and export"
+msgstr "壁纸或颜色填充预览和导出时视频背后的画布"
+
+msgid "Select a text clip, or add one at the playhead"
+msgstr "选择文字片段，或在播放头添加一个"
+
+msgid "Add Text"
+msgstr "添加文字"
+
+msgid "Drag to place the title; double-click to reset"
+msgstr "拖动以放置标题；双击以重置"
+
+msgid "Edited"
+msgstr "已编辑"
+
+msgid "Motion Edits"
+msgstr "动态编辑"
+
+msgid "Motion edit"
+msgstr "动态编辑"
+
+msgid "Video Edits"
+msgstr "视频编辑"
+
+msgid "Video edit"
+msgstr "视频编辑"
+
+msgid "Delete edit"
+msgstr "删除编辑"
+
+msgid "Removed the saved edit"
+msgstr "已移除保存的编辑"
+
+msgid "Search motion edits"
+msgstr "搜索动态编辑"
+
+msgid "Search video edits"
+msgstr "搜索视频编辑"
+
+msgid "No motion edits yet"
+msgstr "还没有动态编辑"
+
+msgid "No video edits yet"
+msgstr "还没有视频编辑"
+
+msgid "Motion edits you make will show up here."
+msgstr "你制作的动态编辑将显示在这里。"
+
+msgid "Video edits you make will show up here."
+msgstr "你制作的视频编辑将显示在这里。"
+
+msgid "This removes the saved edit and keeps the original file."
+msgstr "这将移除保存的编辑并保留原始文件。"
+
+msgid "{count} motion edits"
+msgstr "{count} 个动态编辑"
+
+msgid "{count} video edits"
+msgstr "{count} 个视频编辑"
+
+msgid "Freeze"
+msgstr "冻结"
+
+msgid "Hold the last frame on screen"
+msgstr "在屏幕上保持最后一帧"
+
+msgid "Add stop"
+msgstr "添加色标"
+
+msgid "Angular"
+msgstr "角度"
+
+msgid "Custom Wallpaper"
+msgstr "自定义壁纸"
+
+msgid "Cut"
+msgstr "剪切"
+
+msgid "Diamond"
+msgstr "菱形"
+
+msgid "Duplicate"
+msgstr "创建副本"
+
+msgid "Edit custom fill"
+msgstr "编辑自定义填充"
+
+msgid "Flip gradient"
+msgstr "翻转渐变"
+
+msgid "Frames"
+msgstr "帧"
+
+msgid "Occupied"
+msgstr "已占用"
+
+msgid "Paste"
+msgstr "粘贴"
+
+msgid "Radial"
+msgstr "径向"
+
+msgid "Radius"
+msgstr "圆角"
+
+msgid "Rotate gradient"
+msgstr "旋转渐变"
+
+msgid "Select background image"
+msgstr "选择背景图片"
+
+msgid "Select image..."
+msgstr "选择图片..."
+
+msgid "Choose Background Image"
+msgstr "选择背景图片"
+
+msgid "Stops"
+msgstr "色标"
+
+msgid "Takes"
+msgstr "镜头"
+
+msgid "Takes — coming soon"
+msgstr "镜头 — 即将推出"
+
+msgid "rgb"
+msgstr "rgb"
+
+msgid "Drag to adjust duration"
+msgstr "拖动以调整时长"
+
+msgid "Detection"
+msgstr "检测"
+
+msgid "Clicks"
+msgstr "点击"
+
+msgid "Clicks + Hovers"
+msgstr "点击 + 光标暂停"
+
+msgid "Zoom only where the recording captured a click"
+msgstr "仅在录制到点击的位置缩放"
+
+msgid "Also zoom on a purposeful pointer pause that no click covers"
+msgstr "在没有点击覆盖的有意光标暂停处也缩放"
+
+msgid "Applies the next time Detect runs"
+msgstr "在下次运行检测时生效"
+
+msgid "Detect uses recorded clicks only"
+msgstr "检测仅使用录制的点击"
+
+msgid "Detect uses recorded clicks"
+msgstr "检测使用录制的点击"
+
+msgid "Detect uses recorded clicks and purposeful pointer pauses"
+msgstr "检测使用录制的点击和有意的光标暂停"
+
+msgid "Apply"
+msgstr "应用"
+
+msgid "Add the staged zooms to the timeline"
+msgstr "将待处理的缩放添加到时间轴"
+
+msgid "Discard"
+msgstr "丢弃"
+
+msgid "Throw the staged zooms away"
+msgstr "丢弃待处理的缩放"
+
+msgid "{count} zoom suggestions ready to review"
+msgstr "有 {count} 条缩放建议待确认"
+
+msgid "Add a Manual zoom from the timeline"
+msgstr "在时间线上添加手动缩放"
+
+msgid "Detect automatic zooms from recorded clicks"
+msgstr "根据录制的点击检测自动缩放"
+
+msgid "No clear clicks were found."
+msgstr "未找到明确的点击。"
+
+msgid "No new zooms were added. Manual zooms are preserved."
+msgstr "未添加新的缩放。手动缩放将保留。"
+
+msgid "Open Zoom and choose Detect to place zooms from the recorded clicks, or use Manual mode to place them yourself."
+msgstr "打开“缩放”并选择“检测”，根据录制的点击放置缩放；或使用手动模式自行放置。"
+
+msgid "This video has no recorded clicks, so there is nothing to zoom on."
+msgstr "此视频没有录制的点击，因此没有可缩放的内容。"
+
+msgid "Instant animation"
+msgstr "Instant animation"
+
+msgid "If enabled, the zoom will be applied instantly without any animation."
+msgstr "If enabled, the zoom will be applied instantly without any animation."
+
+msgid "Save Last Screenshot:"
+msgstr "保存上一次截图："
+
+msgid "No screenshot is available to save"
+msgstr "没有可保存的截图"
+
+msgid "Camera follows the recorded pointer"
+msgstr "相机跟随录制的光标"
+
+msgid "These settings apply to every zoom."
+msgstr "这些设置适用于每个缩放。"
+
+msgid "Camera speed"
+msgstr "相机速度"
+
+msgid "Smoothness"
+msgstr "平滑度"
+
+msgid "Start animation early"
+msgstr "提前开始动画"
+
+msgid "Begin the camera move 0.35 seconds before each zoom."
+msgstr "在每次缩放前 0.35 秒开始相机移动。"
+
+msgid "Played once, when the capture freezes. Saving or cropping stays silent."
+msgstr "捕获画面冻结时播放一次。保存或裁剪时保持静音。"
+
+msgid "Your desktop controls the capture sound on this route, so ApexShot cannot replace or disable it here and will not play an additional sound."
+msgstr "此路径下捕获音由您的桌面控制，因此 ApexShot 无法在此替换或关闭它，也不会播放额外的声音。"
+
+msgid "Bold"
+msgstr "粗体"
+
+msgid "Canvas"
+msgstr "画布"
+
+msgid "Center"
+msgstr "居中"
+
+msgid "Character"
+msgstr "字符"
+
+msgid "Choose how Typewriter reveals the text"
+msgstr "选择打字机效果显示文本的方式"
+
+msgid "Content"
+msgstr "内容"
+
+msgid "Drag to place the headline on the composition; double-click to reset"
+msgstr "拖动以在合成画面中放置标题；双击重置"
+
+msgid "Drag to place the title on the image; double-click to reset"
+msgstr "拖动以在图像上放置标题；双击重置"
+
+msgid "Edit text color"
+msgstr "编辑文本颜色"
+
+msgid "Entrance duration for slides and fades"
+msgstr "滑入和淡入效果的入场时长"
+
+msgid "From bottom"
+msgstr "从下方"
+
+msgid "From left"
+msgstr "从左侧"
+
+msgid "From right"
+msgstr "从右侧"
+
+msgid "From top"
+msgstr "从上方"
+
+msgid "Italic"
+msgstr "斜体"
+
+msgid "Letter spacing"
+msgstr "字间距"
+
+msgid "Line spacing"
+msgstr "行间距"
+
+msgid "No fonts found"
+msgstr "未找到字体"
+
+msgid "Outline"
+msgstr "描边"
+
+msgid "Paragraph width; Auto keeps the natural line width"
+msgstr "段落宽度；“自动”保留自然行宽"
+
+msgid "Placement"
+msgstr "位置"
+
+msgid "Rotation"
+msgstr "旋转"
+
+msgid "Search fonts…"
+msgstr "搜索字体…"
+
+msgid "Text color"
+msgstr "文本颜色"
+
+msgid "Time to reveal all text"
+msgstr "显示全部文本所需的时间"
+
+msgid "Type your text; press Enter for a new line"
+msgstr "输入文本；按 Enter 键换行"
+
+msgid "Typewriter"
+msgstr "打字机"
+
+msgid "Typography"
+msgstr "排版"
+
+msgid "Width"
+msgstr "宽度"
+
+msgid "Word"
+msgstr "单词"
+
+msgid "Available when your desktop supports the GlobalShortcuts portal"
+msgstr "当桌面支持 GlobalShortcuts 门户时可用"
+
+msgid "Desktop notification settings are managed outside Flatpak."
+msgstr "桌面通知设置在 Flatpak 外部管理。"
+
+msgid "Download GNOME Extension"
+msgstr "下载 GNOME 扩展"
+
+msgid "Download extension archive"
+msgstr "下载扩展压缩包"
+
+msgid "Enable GNOME Extension"
+msgstr "启用 GNOME 扩展"
+
+msgid "Extension Enabled ✓"
+msgstr "扩展已启用 ✓"
+
+msgid "Extension installation failed — try again"
+msgstr "扩展安装失败 — 请重试"
+
+msgid "Extension is installed but inactive — enable it in GNOME Extensions"
+msgstr "扩展已安装但未启用 — 请在 GNOME 扩展应用中启用"
+
+msgid ""
+"Host-installed browsers need scripts/install-flatpak-browser-host.py run on the host. This bridge does not support browsers installed as Flatpaks."
+msgstr ""
+"在宿主系统上安装的浏览器需要在宿主系统上运行 scripts/install-flatpak-browser-host.py。此桥接不支持以 Flatpak 形式安装的浏览器。"
+
+msgid ""
+"The GNOME extension is installed but not active. Use Enable GNOME Extension or enable it in GNOME Extensions."
+msgstr "GNOME 扩展已安装但未启用。请使用“启用 GNOME 扩展”或在 GNOME 扩展应用中启用。"
+
+msgid ""
+"The tray daemon starts when you finish. Capture from its menu; global hotkeys depend on desktop portal support and approval."
+msgstr "完成后，系统托盘守护进程将启动。请从其菜单进行捕获；全局快捷键需要桌面门户支持并获得授权。"
+
+msgid ""
+"These defaults require desktop GlobalShortcuts portal support and approval. Use the tray if shortcuts are unavailable."
+msgstr "这些默认设置需要桌面的 GlobalShortcuts 门户支持并获得授权。如果快捷键不可用，请使用系统托盘。"
+
+msgid ""
+"This Flatpak cannot install extensions into your host desktop. Open the release page and download the GNOME extension archive, then install and enable it on the host in GNOME Extensions or run `gnome-extensions install --force ~/Downloads/apexshot-gnome-integration.zip` followed by `gnome-extensions enable apexshot-gnome-integration@apexshot.github.io` in a host terminal. ApexShot will detect it when the extension is enabled."
+msgstr ""
+"此 Flatpak 无法在宿主桌面上安装扩展。请打开发布页面并下载 GNOME 扩展压缩包，然后在宿主系统的 GNOME 扩展应用中安装并启用，或在宿主终端中运行 `gnome-extensions install --force ~/Downloads/apexshot-gnome-integration.zip`，然后运行 `gnome-extensions enable apexshot-gnome-integration@apexshot.github.io`。扩展启用后，ApexShot 将检测到它。"
+
+msgid ""
+"You may need to log out and back in for the extension to appear in GNOME."
+msgstr "您可能需要注销并重新登录，扩展才会出现在 GNOME 中。"
+
+msgid "Back"
+msgstr "返回"
+
+msgid "Cloud sharing"
+msgstr "云端分享"
+
+msgid "Connect ApexShot Cloud"
+msgstr "连接 ApexShot Cloud"
+
+msgid "Connect your account"
+msgstr "连接你的账户"
+
+msgid "Copy code"
+msgstr "复制代码"
+
+msgid "Free"
+msgstr "免费"
+
+msgid "Manage your account or disconnect in Settings → Cloud."
+msgstr "在“设置 → 云端”中管理账户或断开连接。"
+
+msgid ""
+"Not now? Skip with Next. Connect later from Settings → Cloud, or self-host XBackBone."
+msgstr "暂时不用？点击“下一步”跳过。之后可在“设置 → 云端”中连接，或自行托管 XBackBone。"
+
+msgid "Open browser"
+msgstr "打开浏览器"
+
+msgid "Optional · capture stays free"
+msgstr "可选 · 截图始终免费"
+
+msgid "{plan} plan"
+msgstr "{plan} 方案"
+
+msgid "Starting…"
+msgstr "正在开始…"
+
+msgid "Try again"
+msgstr "重试"
+
+msgid ""
+"Turn a capture into a link you can paste anywhere. Everything else keeps working offline."
+msgstr "将截图变成可粘贴到任何地方的链接。其余功能离线也能正常使用。"
+
+msgid "Uploads are on: your next screenshot gets a share link copied for you."
+msgstr "上传已开启：你的下一张截图会自动复制分享链接。"
+
+msgid "Waiting for you to authorize…"
+msgstr "正在等待你授权…"
+
+msgid "Could not open billing"
+msgstr "无法打开账单页面"
+
+msgid "Go Pro"
+msgstr "升级到 Pro"
+
+msgid "Keep working"
+msgstr "继续工作"
+
+msgid "Support ApexShot / Go Pro"
+msgstr "支持 ApexShot / 升级到 Pro"
+
+msgid "Your capture is saved"
+msgstr "你的截图已保存"
+
+msgid "Your screenshot companion for Linux. Set it up in a few quick steps."
+msgstr "你在 Linux 上的截图伙伴。几步即可完成设置。"
+
+msgid "Authorization was denied in the browser."
+msgstr "浏览器中的授权已被拒绝。"
+
+msgid "Automatic upload is off. Turn it on in Settings → Cloud to get a share link after each capture."
+msgstr "自动上传已关闭。在“设置 → 云端”中开启后，每次截图都会获得分享链接。"
+
+msgid "Captures upload to your XBackBone server. Change the destination in Settings → Cloud."
+msgstr "截图将上传到您的 XBackBone 服务器。可在“设置 → 云端”中更改目标。"
+
+msgid "Code expires in {minutes} min"
+msgstr "代码将在 {minutes} 分钟后过期"
+
+msgid "Couldn't reach ApexShot Cloud. Check your connection and try again."
+msgstr "无法连接 ApexShot Cloud。请检查网络连接后重试。"
+
+msgid "Couldn't save your setup. Check that your config folder is writable, then try again."
+msgstr "无法保存设置。请确认配置文件夹可写入，然后重试。"
+
+msgid "Get started"
+msgstr "开始"
+
+msgid "Hosted by us. Connect with a one-time code from your browser."
+msgstr "由我们托管。使用浏览器中显示的一次性代码连接。"
+
+msgid "Optional. Connect ApexShot Cloud to turn a capture into a link you can paste anywhere. ApexShot works offline without an account, so you can skip this."
+msgstr "可选。连接 ApexShot Cloud 后，可将截图转为可随处粘贴的链接。ApexShot 无需账户即可离线使用，因此您可以跳过此步骤。"
+
+msgid "Self-host for full control of storage. Set it up later in Settings → Cloud."
+msgstr "自托管，完全掌控存储。可稍后在“设置 → 云端”中配置。"
+
+msgid "Share captures as links"
+msgstr "以链接形式分享截图"
+
+msgid "Skip for now"
+msgstr "暂时跳过"
+
+msgid "Step {current} of {total}"
+msgstr "第 {current} 步，共 {total} 步"
+
+msgid "This code expired. Try again to get a new one."
+msgstr "代码已过期。请重试以获取新代码。"
+
+msgid "Enter this code in your browser to link this device."
+msgstr "在浏览器中输入此代码，以关联此设备。"
+
+msgid "Opening your browser…"
+msgstr "正在打开浏览器…"
+
+msgid "Sent to your browser. If no page opened, copy the link below."
+msgstr "已发送到浏览器。如果没有打开页面，请复制下方链接。"
+
+msgid "Couldn't open a browser: {error}. Copy the link below and open it yourself."
+msgstr "无法打开浏览器：{error}。请复制下方链接并自行打开。"
+
+msgid "The selected portal will embed the cursor in the video, so it cannot be edited separately."
+msgstr "所选门户会将光标嵌入视频，因此无法单独编辑。"
+
+msgid "The window cursor remains editable, but Auto Zoom clicks will not be recorded without the ApexShot GNOME extension."
+msgstr "窗口光标仍可编辑，但没有 ApexShot GNOME 扩展时不会记录自动缩放点击。"
+
+msgid "Export Motion video"
+msgstr "导出 Motion 视频"
+
+msgid "Close the editor after a successful export"
+msgstr "导出成功后关闭编辑器"
+
+msgid "Overwrite the opened image instead of saving a copy"
+msgstr "覆盖打开的图像，而不是另存为副本"
+
+msgid "Image files"
+msgstr "图像文件"
+
+msgid "Choose a different destination to keep the original image unchanged."
+msgstr "请选择其他位置，以保持原始图像不变。"
+
+msgid "Export completed, but the editing session could not be saved: {error}"
+msgstr "导出已完成，但无法保存编辑会话：{error}"
+
+msgid "Motion will play a snapshot of your annotations. Returning to Static restores the live tools. The original image stays unchanged unless you enable overwrite in Settings → Annotate."
+msgstr "Motion 会播放注释快照。返回 Static 后会恢复实时编辑工具。除非在“设置 → 注释”中启用覆盖，否则原始图像不会更改。"
+
+msgid "14-day refund on your first purchase."
+msgstr "首次购买享 14 天退款。"
+
+msgid "Activate"
+msgstr "激活"
+
+msgid "Animate your captures with titles and easing, then export as MP4."
+msgstr "用标题和缓动效果为你的截图添加动画，并导出为 MP4。"
+
+msgid "Camera controls"
+msgstr "镜头控制"
+
+msgid "Capture, annotation, recording and clean exports stay free."
+msgstr "截图、标注、录制和纯净导出依然免费。"
+
+msgid "Entitlement saved. This build isn't covered by the included updates; install a covered build to use Studio output."
+msgstr "许可证已保存。此版本不在所含更新的覆盖范围内；请安装受覆盖的版本以使用 Studio 输出。"
+
+msgid "I have a license"
+msgstr "我已有许可证"
+
+msgid "$39 once"
+msgstr "一次性 $39"
+
+msgid "12 months of updates"
+msgstr "12 个月更新"
+
+msgid "14-day refund"
+msgstr "14 天退款"
+
+msgid "Versions you get keep working forever."
+msgstr "你获得的版本将永远可用。"
+
+msgid "Uses {feature}"
+msgstr "使用了{feature}"
+
+msgid "This export uses {features}"
+msgstr "本次导出使用了{features}"
+
+msgid "Instant zooms, speed, smoothness and motion blur for recordings."
+msgstr "为录制提供即时缩放、速度、平滑度和运动模糊。"
+
+msgid "License saved, but this version is newer than the updates it includes."
+msgstr "许可证已保存，但此版本晚于所含更新的覆盖范围。"
+
+msgid "Manage license"
+msgstr "管理许可证"
+
+msgid "Motion text and its animation are Studio previews; final MP4 export needs activation."
+msgstr "Motion 文字及其动画属于 Studio 预览；最终 MP4 导出需要激活。"
+
+msgid "Motion timeline"
+msgstr "Motion 时间线"
+
+msgid "Paste Studio entitlement JSON"
+msgstr "粘贴 Studio 许可证 JSON"
+
+msgid "Paste the signed entitlement you received after purchase. Activation is stored on this device and works offline."
+msgstr "粘贴购买后收到的已签名许可证。激活信息保存在此设备上，可离线使用。"
+
+msgid "Paste your license"
+msgstr "粘贴你的许可证"
+
+msgid "Perspective and placement"
+msgstr "透视与位置"
+
+msgid "Professional tools for presenting your captures."
+msgstr "用于展示截图的专业工具。"
+
+msgid "Purchase or recover Studio"
+msgstr "购买或找回 Studio"
+
+msgid "Recover license"
+msgstr "找回许可证"
+
+msgid "Studio"
+msgstr "Studio"
+
+msgid "Studio activated for this build."
+msgstr "已为此版本激活 Studio。"
+
+msgid "Studio controls. Default zoom and legacy easing stay free; active exports using non-default camera settings or instant animation need activation."
+msgstr "Studio 控制。默认缩放和经典缓动保持免费；使用非默认镜头设置或即时动画的导出需要激活。"
+
+msgid "Studio export unavailable"
+msgstr "Studio 导出不可用"
+
+msgid "Studio is optional. Your free capture, editing, recording, projects, and clean exports remain available without an account or network connection."
+msgstr "Studio 为可选项。免费的截图、编辑、录制、项目和纯净导出无需账户或网络连接即可继续使用。"
+
+msgid "Studio isn't available"
+msgstr "Studio 不可用"
+
+msgid "Studio license couldn't be verified"
+msgstr "无法验证 Studio 许可证"
+
+msgid "Studio preview. A non-default rendered pose needs activation for final images; backgrounds and normal edits stay free."
+msgstr "Studio 预览。最终图像使用非默认渲染姿态需要激活；背景和常规编辑保持免费。"
+
+msgid "Studio preview. MP4 export needs activation; local editing and project saves remain free."
+msgstr "Studio 预览。MP4 导出需要激活；本地编辑和项目保存保持免费。"
+
+msgid "Studio status"
+msgstr "Studio 状态"
+
+msgid "The license saved on this device couldn't be checked. Paste a valid license to unlock Studio."
+msgstr "无法验证此设备上保存的许可证。请粘贴有效的许可证以解锁 Studio。"
+
+msgid "This build can't verify Studio licenses, so this export can't be completed."
+msgstr "此版本无法验证 Studio 许可证，因此无法完成此次导出。"
+
+msgid "This build can't verify Studio licenses. Check the official Studio page for build availability or license recovery; buying a license alone can't enable this build."
+msgstr "此版本无法验证 Studio 许可证。请查看 Studio 官方页面，了解兼容版本是否可用或找回许可证；仅购买许可证无法在此版本中启用 Studio。"
+
+msgid "Check Studio availability"
+msgstr "查看 Studio 是否可用"
+
+msgid "This version is newer than your license"
+msgstr "此版本比你的许可证更新"
+
+msgid "Tilt, rotate and position a still inside its background."
+msgstr "在背景中倾斜、旋转并定位静态图像。"
+
+msgid "Unlock ApexShot Studio"
+msgstr "解锁 ApexShot Studio"
+
+msgid "Upgrade to Studio — $39 once"
+msgstr "升级到 Studio — 一次性支付 39 美元"
+
+msgid "Your license includes updates through an earlier release. Versions it covers keep working offline."
+msgstr "你的许可证包含截至较早版本的更新。其覆盖的版本可继续离线使用。"
+
+msgid "That license couldn't be verified. Make sure you pasted all of it."
+msgstr "无法验证该许可证。请确认已粘贴完整内容。"
+
+msgid "Replace license"
+msgstr "更换许可证"
+
+msgid "Active"
+msgstr "已激活"
+
+msgid "Copy license"
+msgstr "复制许可证"
+
+msgid "100% displays export pixels at native screen scale"
+msgstr "100% 以屏幕原生缩放显示导出的像素。"
+
+msgid "ApexShot lost contact with the copy worker."
+msgstr "ApexShot 与复制工作进程失去了联系。"
+
+msgid "Before / after divider"
+msgstr "前后对比分隔线"
+
+msgid "Compare before / after"
+msgstr "比较前后"
+
+msgid "Compare neural upscaling"
+msgstr "比较神经网络放大"
+
+msgid "Could not prepare the comparison image."
+msgstr "无法准备对比图像。"
+
+msgid "Enhance small screenshots locally before image and Motion exports."
+msgstr "在导出图像和 Motion 前，本地增强小尺寸截图。"
+
+msgid ""
+"Export preview: {width} × {height} pixels. Check text carefully; missing detail may not be recovered."
+msgstr "导出预览：{width} × {height} 像素。请仔细检查文字；缺失的细节可能无法恢复。"
+
+msgid "Exporting…"
+msgstr "正在导出…"
+
+msgid "Load an image before previewing upscaling."
+msgstr "请先加载图像，再预览放大效果。"
+
+msgid "Neural 2×"
+msgstr "神经网络 2×"
+
+msgid "Neural 4×"
+msgstr "神经网络 4×"
+
+msgid "Neural upscaling"
+msgstr "神经网络放大"
+
+msgid "Neural upscaling for Studio exports"
+msgstr "用于 Studio 导出的神经网络放大"
+
+msgid ""
+"Offline neural enhancement for small images. Image exports grow by 2× or 4×; Motion keeps its Frame size. Compare the export for free before enabling Studio enhancement. Supports up to 1 megapixel. Missing detail cannot always be recovered."
+msgstr ""
+"面向小尺寸图像的离线神经网络增强。图像导出将放大 2× 或 4×；Motion 保持其帧尺寸不变。在启用 Studio 增强前，可免费比较导出效果。最高支持 1 百万像素。缺失的细节不一定都能恢复。"
+
+msgid "Preparing before / after preview…"
+msgstr "正在准备前后对比预览…"
+
+msgid "Preview neural enhancement without a Studio license"
+msgstr "无需 Studio 许可证即可预览神经网络增强"
+
+msgid ""
+"Standard enlargement on the left, neural enhancement on the right. Move the divider and scroll to inspect rendered export pixels before file compression. This preview is free; enhanced exports require Studio."
+msgstr "左侧为标准放大，右侧为神经网络增强。移动分隔线并滚动，以便在文件压缩前检查导出的像素。此预览免费；增强导出需要 Studio。"
+
+msgid "The upscaling preview worker stopped unexpectedly."
+msgstr "放大预览工作进程意外停止。"
+
+msgid "Use enhancement"
+msgstr "使用增强"
+
+msgid "Add a background"
+msgstr "添加背景"
+
+msgid "Add a background so the shadow appears in the exported result."
+msgstr "添加背景，阴影才会出现在导出结果中。"
+
+msgid "Add a background to enable padding and noise."
+msgstr "添加背景以启用填充和噪点。"
+
+msgid "Add a background to use Scene Shadows in image mode."
+msgstr "添加背景以在图像模式下使用 Scene Shadows。"
+
+msgid "Add a background to use this control."
+msgstr "添加背景后即可使用此控件。"
+
+msgid ""
+"Add a background, choose an outer frame style, or transform the image to round its corners."
+msgstr "请添加背景、选择外框样式，或变换图像以圆化其边角。"
+
+msgid "Background blur needs a gradient, wallpaper, or image."
+msgstr "背景模糊需要渐变、壁纸或图像。"
+
+msgid "Background blur needs a wallpaper or image in Motion."
+msgstr "在 Motion 中，背景模糊需要壁纸或图像。"
+
+msgid ""
+"Border Radius needs a background, an outer frame style, or a transformed image."
+msgstr "圆角需要背景、外框样式或变换后的图像。"
+
+msgid "Choose a Scene Shadows preset before adjusting opacity."
+msgstr "调整不透明度前，请先选择 Scene Shadows 预设。"
+
+msgid "Choose a preset to enable Scene Shadows opacity and placement."
+msgstr "选择预设以启用 Scene Shadows 的不透明度和位置。"
+
+msgid "Could not open that image. Choose a PNG, JPEG, or WebP file."
+msgstr "无法打开该图像。请选择 PNG、JPEG 或 WebP 文件。"
+
+msgid ""
+"Custom sizes use even pixels. Sizes over a 1920-pixel long edge are scaled down."
+msgstr "自定义尺寸使用偶数像素。长边超过 1920 像素的尺寸会被缩小。"
+
+msgid "Frame"
+msgstr "画框"
+
+msgid ""
+"Frame sizes need a background in image mode. Add one to change the canvas size."
+msgstr "在图像模式下，画框尺寸需要背景。添加背景即可更改画布大小。"
+
+msgid "Image export height; select a preset to change the aspect ratio"
+msgstr "图像导出高度；选择预设可更改宽高比"
+
+msgid "Image export width; select a preset to change the aspect ratio"
+msgstr "图像导出宽度；选择预设可更改宽高比"
+
+msgid ""
+"Increase Scene Shadows opacity to see the effect and change its placement."
+msgstr "提高 Scene Shadows 的不透明度以查看效果并更改其位置。"
+
+msgid "Increase Shadow opacity to enable blur and position."
+msgstr "提高阴影不透明度以启用模糊和位置。"
+
+msgid "Neural 4× is unavailable: {reason}"
+msgstr "神经网络 4× 不可用：{reason}"
+
+msgid ""
+"That size was not applied. Width and height must be between 16 and 7680 pixels."
+msgstr "未应用该尺寸。宽度和高度必须介于 16 到 7680 像素之间。"
+
+msgid ""
+"The enhanced canvas exceeds the 16-megapixel output limit. Reduce upscaling or background padding."
+msgstr "增强后的画布超出了 1600 万像素的输出上限。请降低放大倍数或背景填充。"
+
+msgid "Tilt the image with Yaw or Pitch before adjusting perspective."
+msgstr "调整透视前，请先用偏航或俯仰倾斜图像。"
+
+msgid ""
+"Without a background, Underlay is hidden in video exports. Choose Overlay to shade the image."
+msgstr "没有背景时，底衬会在视频导出中隐藏。请选择浮层为图像添加阴影。"
+
+msgid "{name}: {ratio} image aspect ratio"
+msgstr "{name}：{ratio} 图像宽高比"
+
+msgid ""
+"{reason} This image is {width} × {height} pixels. Crop it or choose a smaller image to enable enhancement."
+msgstr "{reason} 此图像为 {width} × {height} 像素。请裁剪图像或选择更小的图像以启用增强。"
+
+msgid "Device ID"
+msgstr "设备 ID"
+
+msgid "Copy this machine's Device ID from Settings → Studio and claim the license for it at apexshot.org/studio. Your other device keeps working."
+msgstr "请在“设置 → Studio”中复制此设备的 ID，然后在 apexshot.org/studio 为此设备申请许可证。你的另一台设备仍可继续使用。"
+
+msgid "Paste this at apexshot.org/studio to claim a Studio licence for this device."
+msgstr "将此内容粘贴到 apexshot.org/studio，为此设备申请 Studio 许可证。"
+
+msgid "Claim for this device"
+msgstr "为此设备申请"
+
+msgid "Unavailable on this system"
+msgstr "此系统上不可用"
+
+msgid "This license belongs to another device"
+msgstr "此许可证属于另一台设备"
+
+msgid "Upgrade to Studio — $39 with 12 months of updates"
+msgstr "升级到 Studio — 39 美元，含 12 个月更新"
+
+msgid "Shadow softness"
+msgstr "阴影柔和度"
+
+msgid "Shadow rotation"
+msgstr "阴影旋转"
+
+msgid "Shadow size"
+msgstr "阴影尺寸"
+
+msgid "Shadow horizontal offset"
+msgstr "阴影水平偏移"
+
+msgid "Shadow vertical offset"
+msgstr "阴影垂直偏移"
+
+msgid "Reset every Scene Shadows control."
+msgstr "重置所有场景阴影控件。"
+
+msgid "Card shadow"
+msgstr "卡片阴影"
+
+msgid "Cast light"
+msgstr "投影光"
+
+msgid "Light strength"
+msgstr "光线强度"
+
+msgid "Reset every Cast light control."
+msgstr "重置所有投影光设置。"
+
+msgid "Add a background to use Cast light in image mode."
+msgstr "添加背景后即可在图像模式中使用投影光。"
+
+msgid "Choose a Cast light preset before adjusting its strength."
+msgstr "请先选择投影光预设，再调整其强度。"
+
+msgid "Choose a Cast light preset before adjusting its shape."
+msgstr "请先选择投影光预设，再调整其形状。"
+
+msgid "Choose a preset to enable Cast light strength and placement."
+msgstr "选择预设后即可调整光线强度和位置。"
+
+msgid "Increase Cast light strength to see the effect and change its placement."
+msgstr "提高光线强度即可看到效果并更改位置。"
+
+msgid "Spread"
+msgstr "扩散"
+
+msgid "Hug"
+msgstr "贴合"
+
+msgid "Adaptive"
+msgstr "自适应"
+
+msgid "Adjust Light"
+msgstr "调整光源"
+
+msgid "16:9"
+msgstr "16:9"
+
+msgid "9:16"
+msgstr "9:16"
+
+msgid "Add gradient stop"
+msgstr "添加渐变停止点"
+
+msgid "ApexShot Video Editor"
+msgstr "ApexShot 视频编辑器"
+
+msgid "Background image"
+msgstr "背景图片"
+
+msgid "Bottom left"
+msgstr "左下"
+
+msgid "Bottom right"
+msgstr "右下"
+
+msgid "Cloud browsing and sign-in are not available in the Windows build yet."
+msgstr "Windows 版本尚不支持浏览云端和登录。"
+
+msgid "Cloud uploads are not available in the Windows build yet"
+msgstr "Windows 版本尚不支持云端上传"
+
+msgid ""
+"Cloud uploads are not wired in the Windows build yet. Destination and XBackBone settings are saved for a future release."
+msgstr "Windows 版本尚未接入云端上传。目标与 XBackBone 设置会保留供后续版本使用。"
+
+msgid "Corner radius"
+msgstr "圆角半径"
+
+msgid "Could not access the Windows clipboard"
+msgstr "无法访问 Windows 剪贴板"
+
+msgid "Could not copy file: {message}"
+msgstr "无法复制文件：{message}"
+
+msgid "Could not copy image: {message}"
+msgstr "无法复制图像：{message}"
+
+msgid "Could not open Explorer: {message}"
+msgstr "无法打开资源管理器：{message}"
+
+msgid "Could not start the video editor: {message}"
+msgstr "无法启动视频编辑器：{message}"
+
+msgid "Do Not Disturb integration is not available on Windows yet."
+msgstr "Windows 尚不支持勿扰模式集成。"
+
+msgid "Dragging the result card out of the app is not available on Windows yet."
+msgstr "Windows 尚不支持将结果卡片拖出应用。"
+
+msgid "Edits you save in the video editor will show up here."
+msgstr "你在视频编辑器中保存的修改会显示在这里。"
+
+msgid "Export failed."
+msgstr "导出失败。"
+
+msgid "Exported successfully."
+msgstr "导出成功。"
+
+msgid "FINISH"
+msgstr "外观"
+
+msgid "Fill the frame with the camera instead of the bubble."
+msgstr "让摄像头铺满画面，而不是显示为气泡。"
+
+msgid "First available camera"
+msgstr "第一个可用摄像头"
+
+msgid "Flip the camera left to right, the way a mirror shows it."
+msgstr "像照镜子一样左右翻转摄像头画面。"
+
+msgid "Frame changes keep the source footage centred in the preview."
+msgstr "更改画框时，源素材会保持在预览中央。"
+
+msgid ""
+"Global shortcuts are not available in the Windows build yet. Bindings are saved for a future release."
+msgstr "Windows 版本尚不支持全局快捷键。按键组合会保留供后续版本使用。"
+
+msgid "Hide the camera without removing its track."
+msgstr "隐藏摄像头，但保留其轨道。"
+
+msgid "Horizontal"
+msgstr "水平"
+
+msgid "Huge"
+msgstr "超大"
+
+msgid "If enabled, the zoom is applied instantly without any animation."
+msgstr "启用后，缩放会立即生效，没有任何动画。"
+
+msgid "Instant"
+msgstr "立即"
+
+msgid "MP4 recordings"
+msgstr "MP4 录制"
+
+msgid "Maximize"
+msgstr "最大化"
+
+msgid "Mirror camera"
+msgstr "镜像摄像头"
+
+msgid "Mirror the picture"
+msgstr "镜像画面"
+
+msgid "Motion editing is not available in the Windows build yet."
+msgstr "Windows 版本尚不支持动态编辑。"
+
+msgid "Open recording"
+msgstr "打开录制"
+
+msgid "Opened {name} in the video editor"
+msgstr "已在视频编辑器中打开 {name}"
+
+msgid "POSITION"
+msgstr "位置"
+
+msgid "Put the camera back where the recording captured it."
+msgstr "将摄像头恢复到录制时的位置。"
+
+msgid "Record a webcam track"
+msgstr "录制摄像头轨道"
+
+msgid "Rectangle"
+msgstr "矩形"
+
+msgid "Remove stop"
+msgstr "删除停止点"
+
+msgid "Reverse gradient"
+msgstr "反转渐变"
+
+msgid "SHAPE"
+msgstr "形状"
+
+msgid "SIZE"
+msgstr "尺寸"
+
+msgid "STEPS"
+msgstr "步骤"
+
+msgid "Search isn't available on this page"
+msgstr "此页面不支持搜索"
+
+msgid "Select a zoom clip on the timeline"
+msgstr "在时间线上选择一个缩放片段"
+
+msgid "Select image…"
+msgstr "选择图片…"
+
+msgid "Shape"
+msgstr "形状"
+
+msgid "Show camera"
+msgstr "显示摄像头"
+
+msgid "Show in Explorer"
+msgstr "在资源管理器中显示"
+
+msgid "Strength"
+msgstr "强度"
+
+msgid "TRANSITION"
+msgstr "过渡"
+
+msgid "The Windows recorder always captures at native display resolution."
+msgstr "Windows 录制器始终以显示器原生分辨率录制。"
+
+msgid "The Windows recorder always shows its controls."
+msgstr "Windows 录制器始终显示其控件。"
+
+msgid ""
+"The Windows shell needs its tray icon until global shortcuts are available."
+msgstr "在全局快捷键可用之前，Windows 外壳需要保留托盘图标。"
+
+msgid ""
+"The annotate editor is not available in the Windows build yet. These preferences are saved for a future release."
+msgstr "Windows 版本尚不支持标注编辑器。这些偏好会保留供后续版本使用。"
+
+msgid "The annotate editor is not available on Windows yet."
+msgstr "Windows 尚不支持标注编辑器。"
+
+msgid "The export stopped unexpectedly."
+msgstr "导出意外停止。"
+
+msgid "The image editor is not available in the Windows build yet"
+msgstr "Windows 版本尚不支持图像编辑器"
+
+msgid "This recording has no camera track."
+msgstr "此录制没有摄像头轨道。"
+
+msgid "Top left"
+msgstr "左上"
+
+msgid "Top right"
+msgstr "右上"
+
+msgid "Transition"
+msgstr "过渡"
+
+msgid "Untitled recording"
+msgstr "未命名录制"
+
+msgid "Uploading from the result card is not available on Windows yet."
+msgstr "Windows 尚不支持从结果卡片上传。"
+
+msgid "Usage telemetry is not sent from the Windows build."
+msgstr "Windows 版本不会发送使用情况遥测。"
+
+msgid "Vertical"
+msgstr "垂直"
+
+msgid "Video export from the Windows editor is not available yet."
+msgstr "Windows 编辑器尚不支持视频导出。"
+
+msgid "Webcam"
+msgstr "摄像头"
+
+msgid "Windows UI translations are not available yet."
+msgstr "Windows 界面翻译尚不可用。"
+
+msgid "ZOOM"
+msgstr "缩放"
+
+msgid "cancelling…"
+msgstr "正在取消…"
+
+msgid "estimated:"
+msgstr "预计："
+
+msgid "finishing…"
+msgstr "正在完成…"
+
+msgid "Video editing is not available in the Windows build yet."
+msgstr "Windows 版本尚不支持视频编辑。"
+
+# First-run onboarding in the Windows build.
+msgid "Your screenshot companion for Windows. Set it up in a few quick steps."
+msgstr "你在 Windows 上的截图伙伴。几步即可完成设置。"
+
+msgid "ApexShot runs in the background with a tray icon.\nAfter setup, you do not need to open Settings every time."
+msgstr "ApexShot 在后台运行，带托盘图标。\n设置完成后不必每次都打开设置。"
+
+msgid "ApexShot stays in the tray; right-click it for the capture menu."
+msgstr "ApexShot 常驻托盘；右键点击打开截图菜单。"
+
+msgid "Bindings are saved; global hotkeys arrive in a later build."
+msgstr "按键组合已保存；全局热键将在后续版本中提供。"
+
+msgid "ApexShot is ready. It runs from the tray from now on."
+msgstr "ApexShot 已就绪。从现在起它从托盘运行。"
+
+msgid "Signed in, but this device could not save the account."
+msgstr "已登录，但此设备无法保存账户。"
+
+msgid "Add a layout change at the playhead."
+msgstr "在播放头位置添加布局更改。"
+
+msgid "CAMERA"
+msgstr "相机"
+
+msgid "Camera layout changes"
+msgstr "相机布局更改"
+
+msgid "Change"
+msgstr "更改"
+
+msgid "Change {time}"
+msgstr "更改 {time}"
+
+msgid "Default"
+msgstr "默认"
+
+msgid "Default layout"
+msgstr "默认布局"
+
+msgid "Delete this layout change."
+msgstr "删除此布局更改。"
+
+msgid "Drag to set the camera's position in the frame; double-click to centre it"
+msgstr "拖动以设置相机在画面中的位置；双击可居中"
+
+msgid "Edit the default layout for the whole recording."
+msgstr "编辑整个录制的默认布局。"
+
+msgid "Edit the selected layout change."
+msgstr "编辑选中的布局更改。"
+
+msgid "Layout change"
+msgstr "布局更改"
+
+msgid "Move this change to another time. A time that collides with another change is rejected."
+msgstr "将此更改移到其他时间。与其他更改冲突的时间会被拒绝。"
+
+msgid "Percentage of the frame width."
+msgstr "占画面宽度的百分比。"
+
+msgid "Percentage of the free space around the bubble."
+msgstr "占气泡周围可用空间的百分比。"
+
+msgid "SCREEN SHARE"
+msgstr "屏幕共享"
+
+msgid "Select a layout change in the timeline to edit it."
+msgstr "在时间线上选择布局更改即可编辑。"
+
+msgid "Select the layout change at the playhead."
+msgstr "选择播放头处的布局更改。"
+
+msgid "Shared by every camera layout."
+msgstr "由所有相机布局共用。"
+
+msgid "Shared by every cutout layout."
+msgstr "由所有抠像布局共用。"
+
+msgid "Shared by every layout change."
+msgstr "由所有布局更改共用。"
+
+msgid "Shared by every overlay."
+msgstr "由所有浮层共用。"
+
+msgid "Shared by every split layout."
+msgstr "由所有 Split 布局共用。"
+
+msgid "The bubble's width, as a percentage of the frame."
+msgstr "气泡宽度占画面的百分比。"
+
+msgid "The camera layer reported: {error}"
+msgstr "相机图层报告：{error}"
+
+msgid "The screen's share of the split, as a percentage."
+msgstr "屏幕在分屏中所占的百分比。"
+
+msgid "Time"
+msgstr "时间"
+
+msgid "{time} · {layout}"
+msgstr "{time} · {layout}"
+
+msgid "Camera layer"
+msgstr "摄像头图层"
+
+msgid "Delete change"
+msgstr "删除更改"
+
+msgid "Draw the camera over the screen. Off shows the screen alone and keeps your layout changes."
+msgstr "将摄像头绘制在屏幕上方。关闭后只显示屏幕，并保留你的布局更改。"
+
+msgid "Turn camera off"
+msgstr "关闭摄像头"
+
+msgid "Turn camera on"
+msgstr "开启摄像头"
+
+msgid "Add change at playhead"
+msgstr "在播放头处添加更改"
+
+msgid "ApexShot"
+msgstr "ApexShot"
+
+msgid "No settings found"
+msgstr "未找到设置"
+
+msgid "Saved"
+msgstr "已保存"
+
+msgid "Search settings"
+msgstr "搜索设置"
+
+msgid "This device"
+msgstr "此设备"
+
+msgid "Timed capture is not wired into the Windows build yet. The interval is saved for a future release."
+msgstr "定时捕获尚未在 Windows 版本中接入。该间隔会被保存以供将来的版本使用。"
+
+msgid "APEXSHOT CLOUD"
+msgstr "APEXSHOT CLOUD"
+
+msgid "Allowance unavailable"
+msgstr "无法获取配额"
+
+msgid "Authorize this device"
+msgstr "授权此设备"
+
+msgid "Back to Cloud"
+msgstr "返回 Cloud"
+
+msgid "Click Connect to link this device with a one-time code."
+msgstr "点击“连接”，使用一次性代码关联此设备。"
+
+msgid "Cloud browsing is not available in the Windows build yet. Connect your account in Settings → Cloud."
+msgstr "Windows 版本暂不支持浏览云端内容。请在设置 → Cloud 中连接账户。"
+
+msgid "Connect to see your usage"
+msgstr "连接账户以查看用量"
+
+msgid "Could not refresh. Showing previous values."
+msgstr "无法刷新，正在显示先前的数据。"
+
+msgid "Couldn't open your browser. Copy the link and open it yourself."
+msgstr "无法打开浏览器。请复制链接并手动打开。"
+
+msgid "Go to Cloud settings"
+msgstr "前往 Cloud 设置"
+
+msgid "Less than 0.1% used"
+msgstr "已使用不到 0.1%"
+
+msgid "Loading usage..."
+msgstr "正在加载用量..."
+
+msgid "Manage billing"
+msgstr "管理账单"
+
+msgid "Monthly usage resets in UTC."
+msgstr "每月用量按 UTC 时间重置。"
+
+msgid "No monthly limit"
+msgstr "无每月上限"
+
+msgid "Plan unavailable"
+msgstr "无法获取套餐"
+
+msgid "Refreshing..."
+msgstr "正在刷新..."
+
+msgid "Sign in to view your uploads, storage and plan."
+msgstr "登录后可查看上传量、存储空间和套餐。"
+
+msgid "Storage"
+msgstr "存储空间"
+
+msgid "This month"
+msgstr "本月"
+
+msgid "Uploads"
+msgstr "上传"
+
+msgid "Usage"
+msgstr "用量"
+
+msgid "Usage is unavailable"
+msgstr "无法获取用量"
+
+msgid "Used space"
+msgstr "已用空间"
+
+msgid "We couldn't load your usage. Check your connection and try again."
+msgstr "无法加载用量。请检查网络连接并重试。"
+
+msgid "Your session has expired. Connect your account again in Cloud settings."
+msgstr "会话已过期。请在 Cloud 设置中重新连接账户。"
+
+msgid "of {limit}"
+msgstr "共 {limit}"
+
+msgid "of {limit} monthly uploads"
+msgstr "每月限额 {limit} 次上传"
+
+msgid "{percent}% used"
+msgstr "已使用 {percent}%"
+
+msgid "2160p (4K)"
+msgstr "2160p (4K)"
+
+msgid "Could not pause the shortcut listener. Close this dialog and try again."
+msgstr "无法暂停快捷键监听。请关闭此对话框后重试。"
+
+msgid "Disabled"
+msgstr "已禁用"
+
+msgid "Off by default. Turning this on sends anonymous usage statistics."
+msgstr "默认关闭。开启后会发送匿名使用统计。"
+
+msgid ""
+"Optional daily heartbeat: app version, Windows, and feature counts. The update window also reports each update download (version and size). No screenshots, paths, or OCR text. APEXSHOT_TELEMETRY=0 turns both off."
+msgstr ""
+"可选的每日心跳：应用版本、Windows 和功能计数。更新窗口还会报告每次更新下载（版本和大小）。不含截图、路径或 OCR 文本。APEXSHOT_TELEMETRY=0 可同时关闭两者。"
+
+msgid "Requires the corresponding Windows OCR language pack."
+msgstr "需要相应的 Windows OCR 语言包。"
+
+msgid "Shortcuts work while the ApexShot background shell is running."
+msgstr "快捷键在 ApexShot 后台外壳运行时有效。"
+
+msgid ""
+"The Windows shell uses its tray icon to open capture, Settings, and Quit."
+msgstr "Windows 外壳通过托盘图标打开捕获、设置和退出。"
+
+msgid "The capture shell currently uses its own dark appearance."
+msgstr "捕获外壳目前使用自己的深色外观。"
+
+msgid "The capture toolbar can change the timer for an individual screenshot."
+msgstr "捕获工具栏可以为单张截图更改计时器。"
+
+msgid "This action requires the Windows image editor or overlay backend."
+msgstr "此操作需要 Windows 图像编辑器或浮层后端。"
+
+msgid "Use your configured shortcuts while ApexShot runs in the background."
+msgstr "在 ApexShot 于后台运行时使用已配置的快捷键。"
+
+msgid "When hidden, stop the recording from the tray or with its shortcut."
+msgstr "隐藏时，请从托盘或使用快捷键停止录制。"
+
+msgid ""
+"When off, output uses the capture's display scale before applying the maximum resolution."
+msgstr "关闭时，输出先使用捕获的显示缩放，再应用最大分辨率。"
+
+msgid ""
+"When off, recordings remain in the temporary folder for the result card and editor."
+msgstr "关闭时，录制会保留在临时文件夹中，供结果卡片和编辑器使用。"
+
+msgid "Beta"
+msgstr "测试版"
+
+msgid "Hide sidebar"
+msgstr "隐藏侧边栏"
+
+msgid "Show sidebar"
+msgstr "显示侧边栏"
+
+msgid ""
+"10:21 image aspect ratio; long pins may be cropped in feeds. 2:3 is recommended."
+msgstr "10:21 图像宽高比；长图在信息流中可能被裁剪。建议使用 2:3。"
+
+msgid ""
+"16:9 image aspect ratio; banners need at least 2048 x 1152 pixels and may be cropped on some devices."
+msgstr "16:9 图像宽高比；横幅至少需要 2048 x 1152 像素，并且在部分设备上可能被裁剪。"
+
+msgid "Activation"
+msgstr "激活"
+
+msgid "Add a background and padding to see the shadow."
+msgstr "添加背景和填充后即可看到阴影。"
+
+msgid ""
+"Add arrows, text, and blur, then set the background, padding, and shadow before you export."
+msgstr "添加箭头、文字和模糊，然后在导出前设置背景、填充和阴影。"
+
+msgid "Annotate and style every capture."
+msgstr "为每张截图添加标注与样式。"
+
+msgid "Annotation color"
+msgstr "标注颜色"
+
+msgid "Automatic"
+msgstr "自动"
+
+msgid "Available"
+msgstr "可用"
+
+msgid "Back to editor"
+msgstr "返回编辑器"
+
+msgid "Capture your screen, mark it up, and export it."
+msgstr "截取屏幕，添加标注，然后导出。"
+
+msgid "Change any of this later."
+msgstr "之后可以随时更改。"
+
+msgid "Choose video export options"
+msgstr "选择视频导出选项"
+
+msgid "Click a Motion clip, or click the track to add a move."
+msgstr "点击 Motion 片段，或点击轨道添加移动。"
+
+msgid "Click or drag to place the watermark; double-click to center it"
+msgstr "点击或拖动以放置水印；双击将其居中"
+
+msgid "Click or drag to place the zoom anchor; double-click to recenter"
+msgstr "点击或拖动以放置缩放锚点；双击重新居中"
+
+msgid "Click or drag to position the camera; double-click to recenter"
+msgstr "点击或拖动以定位相机；双击重新居中"
+
+msgid "Clipboard is unavailable."
+msgstr "剪贴板不可用。"
+
+msgid "Close custom color"
+msgstr "关闭自定义颜色"
+
+msgid "Close export options"
+msgstr "关闭导出选项"
+
+msgid "Complete"
+msgstr "完成"
+
+msgid "Could not open background image."
+msgstr "无法打开背景图片。"
+
+msgid "Couldn't open a browser: {error}. Use Copy link and open it yourself."
+msgstr "无法打开浏览器：{error}。请使用“复制链接”自行打开。"
+
+msgid "Custom color"
+msgstr "自定义颜色"
+
+msgid "Drag to choose what the camera shows"
+msgstr "拖动以选择相机显示的内容"
+
+msgid "Drop a PNG, JPEG, or WebP here, or choose one from disk."
+msgstr "将 PNG、JPEG 或 WebP 拖放到此处，或从磁盘选择。"
+
+msgid "Estimated output size"
+msgstr "预计输出大小"
+
+msgid "Estimating…"
+msgstr "正在估算…"
+
+msgid "Export a file and copy it to the clipboard for pasting into other apps."
+msgstr "导出文件并复制到剪贴板，以便粘贴到其他应用。"
+
+msgid "Export time depends on your hardware and effects."
+msgstr "导出时间取决于你的硬件和效果。"
+
+msgid "Export to file"
+msgstr "导出到文件"
+
+msgid "Exported successfully"
+msgstr "导出成功"
+
+msgid "Exporting video"
+msgstr "正在导出视频"
+
+msgid "File copied to clipboard. Ready to paste into other apps."
+msgstr "文件已复制到剪贴板，可粘贴到其他应用。"
+
+msgid "Finishing…"
+msgstr "正在完成…"
+
+msgid "Fit to window"
+msgstr "适应窗口"
+
+msgid "Free up space or raise your allowance to keep uploading."
+msgstr "请释放空间或提高配额以继续上传。"
+
+msgid "Here’s where to find everything."
+msgstr "这里可以找到所有功能。"
+
+msgid "Image editor preview with an annotated capture and the Appearance panel"
+msgstr "图像编辑器预览，显示带标注的截图和外观面板"
+
+msgid "Last checked"
+msgstr "上次检查"
+
+msgid "Monthly, UTC"
+msgstr "每月，UTC"
+
+msgid "Move the light to direct the shadow"
+msgstr "移动光源以控制阴影方向"
+
+msgid "Neural upscaling is not available in the Windows image editor yet"
+msgstr "Windows 图像编辑器尚不支持神经网络放大"
+
+msgid "No account needed."
+msgstr "无需账户。"
+
+msgid "Not set"
+msgstr "未设置"
+
+msgid "Obfuscate intensity"
+msgstr "混淆强度"
+
+msgid "One shortcut away."
+msgstr "只差一个快捷键。"
+
+msgid "Open ApexShot"
+msgstr "打开 ApexShot"
+
+msgid "Open Image"
+msgstr "打开图像"
+
+msgid "Open an image to annotate"
+msgstr "打开图像以进行标注"
+
+msgid "Open image"
+msgstr "打开图像"
+
+msgid "Opening {name}…"
+msgstr "正在打开 {name}…"
+
+msgid ""
+"Optional. Link your account now so it’s ready when uploads arrive on Windows."
+msgstr "可选。现在关联账户，等 Windows 版支持上传时即可使用。"
+
+msgid "Preparing export…"
+msgstr "正在准备导出…"
+
+msgid "Remove the watermark"
+msgstr "移除水印"
+
+msgid "Resets"
+msgstr "重置"
+
+msgid "Retention"
+msgstr "保留期"
+
+msgid "Reverse"
+msgstr "反向"
+
+msgid "Right-click for your capture menu."
+msgstr "右键单击可打开截图菜单。"
+
+msgid "Save annotated image"
+msgstr "保存标注后的图像"
+
+msgid "Save the annotated image"
+msgstr "保存标注后的图像"
+
+msgid "Select image"
+msgstr "选择图像"
+
+msgid "Shortcuts work while ApexShot runs in the background."
+msgstr "ApexShot 在后台运行时快捷键依然有效。"
+
+msgid "Start a capture from your keyboard or the tray menu."
+msgstr "通过键盘或托盘菜单开始截图。"
+
+msgid "Status"
+msgstr "状态"
+
+msgid "Stop export"
+msgstr "停止导出"
+
+msgid "Stopping export…"
+msgstr "正在停止导出…"
+
+msgid "Storage is full"
+msgstr "存储空间已满"
+
+msgid "Storage is nearly full"
+msgstr "存储空间即将用尽"
+
+msgid "Storage is within your allowance"
+msgstr "存储空间在配额范围内"
+
+msgid "Storage used"
+msgstr "已用空间"
+
+msgid "Stroke"
+msgstr "笔画"
+
+msgid "Switch to Motion: not available in the Windows image editor yet"
+msgstr "切换到 Motion：Windows 图像编辑器尚不支持"
+
+msgid "That file is not a supported image. Choose a PNG, JPEG, or WebP."
+msgstr "该文件不是支持的图像格式。请选择 PNG、JPEG 或 WebP。"
+
+msgid "The image could not be read."
+msgstr "无法读取该图像。"
+
+msgid "The image is empty."
+msgstr "该图像为空。"
+
+msgid "They reset monthly in UTC."
+msgstr "每月按 UTC 时间重置。"
+
+msgid "This month's uploads are used up"
+msgstr "本月上传次数已用完"
+
+msgid "Video exported, but could not copy to clipboard:"
+msgstr "视频已导出，但无法复制到剪贴板："
+
+msgid "Exported, but the sound could not be added:"
+msgstr "已导出，但无法添加声音："
+
+msgid "Wait for the background image to finish loading."
+msgstr "请等待背景图片加载完成。"
+
+msgid "Your shortcuts work while ApexShot runs."
+msgstr "ApexShot 运行时快捷键依然有效。"
+
+msgid "You’re all set."
+msgstr "一切就绪。"
+
+msgid "left"
+msgstr "剩余"
+
+msgid "of {limit} allowance"
+msgstr "共 {limit} 配额"
+
+msgid "of {limit} this month"
+msgstr "本月共 {limit} 次"
+
+msgid "{current} / {total}"
+msgstr "{current} / {total}"
+
+msgid "{days} days"
+msgstr "{days} 天"
+
+msgid "{remaining} remains before your allowance is reached."
+msgstr "距离达到配额上限还剩 {remaining}。"
+
+msgid "{remaining} remains of your {limit} allowance."
+msgstr "{remaining} 是你 {limit} 配额中的剩余量。"
+
+msgid "ApexShot Update"
+msgstr "ApexShot 更新"
+
+msgid "ApexShot v{version} is ready to install."
+msgstr "ApexShot v{version} 已准备好安装。"
+
+msgid "ApexShot v{version} is on its way. Keep this window open."
+msgstr "ApexShot v{version} 正在下载，请保持此窗口打开。"
+
+msgid "ApexShot v{version} has finished downloading."
+msgstr "ApexShot v{version} 已下载完成。"
+
+msgid "ApexShot v{version} could not be updated."
+msgstr "ApexShot v{version} 无法更新。"
+
+msgid "Update available"
+msgstr "有可用更新"
+
+msgid "Downloading update"
+msgstr "正在下载更新"
+
+msgid "Update ready"
+msgstr "更新已就绪"
+
+msgid "Update failed"
+msgstr "更新失败"
+
+msgid "Update now"
+msgstr "立即更新"
+
+msgid "Later"
+msgstr "稍后"
+
+msgid "Cancel download"
+msgstr "取消下载"
+
+msgid "Install now"
+msgstr "立即安装"
+
+msgid "Installed version"
+msgstr "已安装版本"
+
+msgid "Latest version"
+msgstr "最新版本"
+
+msgid "Download size"
+msgstr "下载大小"
+
+msgid "Download speed"
+msgstr "下载速度"
+
+msgid "Downloaded"
+msgstr "已下载"
+
+msgid "Downloading..."
+msgstr "正在下载..."
+
+msgid "Starting..."
+msgstr "正在启动..."
+
+msgid "Filename"
+msgstr "文件名"
+
+msgid "File size"
+msgstr "文件大小"
+
+msgid "Progress"
+msgstr "进度"
+
+msgid "Release notes"
+msgstr "发行说明"
+
+msgid "Failed"
+msgstr "失败"
+
+msgid "Could not start the installer: {error}"
+msgstr "无法启动安装程序：{error}"
+
+msgid "Captures and recordings can now upload from this PC."
+msgstr "截图和录制内容现在可以从此电脑上传。"
+
+msgid "Close the result card when its Upload action starts an upload."
+msgstr "当结果卡片的“上传”操作开始上传时，关闭该卡片。"
+
+msgid "Could not open the Motion encoder input."
+msgstr "无法打开 Motion 编码器输入。"
+
+msgid "Could not render the Motion frame."
+msgstr "无法渲染 Motion 帧。"
+
+msgid "Could not start the image editor: {message}"
+msgstr "无法启动图像编辑器：{message}"
+
+msgid "Motion has no still to export."
+msgstr "Motion 没有可导出的静态画面。"
+
+msgid "Opened {name} in the image editor"
+msgstr "已在图像编辑器中打开 {name}"
+
+msgid "Optional. Link your account to upload screenshots and recordings to ApexShot Cloud."
+msgstr "可选。关联账户即可将截图和录制内容上传到 ApexShot Cloud。"
+
+msgid "Share link copied to clipboard: {url}"
+msgstr "分享链接已复制到剪贴板：{url}"
+
+msgid "The Motion encoder is not running."
+msgstr "Motion 编码器未在运行。"
+
+msgid "The Windows image editor names each color when you point at its swatch."
+msgstr "将指针悬停在色块上时，Windows 图像编辑器会显示该颜色的名称。"
+
+msgid "Upload"
+msgstr "上传"
+
+msgid "Uploaded"
+msgstr "已上传"
+
+msgid "Uploaded {name} and copied its share link"
+msgstr "已上传 {name} 并复制了分享链接"
+
+msgid "Uploads each saved screenshot and recording and copies the share link. Does nothing until you Connect."
+msgstr "上传每张已保存的截图和录制内容，并复制分享链接。连接前不会执行任何操作。"
+
+msgid "ffmpeg failed to encode the Motion video."
+msgstr "ffmpeg 无法编码 Motion 视频。"
+
+msgid "Upgrade to Studio"
+msgstr "升级到 Studio"
+
+msgid "Add zoom: click the preview to place it"
+msgstr "添加缩放：点击预览以放置"
+
+msgid "Adds a zoom that automatically follows the mouse activity"
+msgstr "添加一个自动跟随鼠标活动的缩放"
+
+msgid "Automatic zoom"
+msgstr "自动缩放"
+
+msgid "Click where to zoom in"
+msgstr "点击要缩放的位置"
+
+msgid "Click where to zoom in, or use Automatic zoom"
+msgstr "点击要缩放的位置，或使用自动缩放"
+
+msgid "Hardware acceleration"
+msgstr "硬件加速"
+
+msgid "Use the GPU encoder when one is available. Falls back to the CPU automatically."
+msgstr "可用时使用 GPU 编码器。会自动回退到 CPU。"
+
+msgid "Always use the default cursor"
+msgstr "始终使用默认光标"
+
+msgid "Base angle"
+msgstr "基准角度"
+
+msgid "Point along movement"
+msgstr "沿移动方向指向"
+
+msgid "Tilt amount"
+msgstr "倾斜程度"
+
+msgid "Tilt with motion"
+msgstr "随移动倾斜"
+
+msgid "Codec"
+msgstr "编码格式"
+
+msgid "Smaller files at the same quality, but not every app or browser plays HEVC."
+msgstr "同等画质下文件更小，但并非所有应用或浏览器都能播放 HEVC。"
+msgid "Hardware encoding uses a bitrate, so file sizes follow the estimate; the software encoder uses a constant quality."
+msgstr "硬件编码使用码率，因此文件大小与估算一致；软件编码器使用恒定质量。"
+
+msgid "Estimated output size: {size}"
+msgstr "预计文件大小：{size}"
+
+msgid "Export time ≈ {time}"
+msgstr "导出时间 ≈ {time}"
+
+msgid "Frame styles and shadows"
+msgstr "边框样式与阴影"
+
+msgid "Frame styles and shadows for stills."
+msgstr "为静态图像添加边框样式和阴影。"
+
+msgid "Included with Studio"
+msgstr "包含在 Studio 中"
+
+msgid "Studio preview. A non-default rendered pose needs activation for final images."
+msgstr "Studio 预览。最终图像使用非默认渲染姿态需要激活。"
+
+msgid "Automatic width"
+msgstr "自动宽度"
+
+msgid "Camera delay"
+msgstr "相机延迟"
+
+msgid "Camera side"
+msgstr "相机位置"
+
+msgid "Edge inset"
+msgstr "边缘内缩"
+
+msgid "Edge softness"
+msgstr "边缘柔化"
+
+msgid "Fill"
+msgstr "填充"
+
+msgid "Hide during silence"
+msgstr "静音时隐藏"
+
+msgid "Hide the camera while nobody is talking, and bring it back when they do."
+msgstr "无人说话时隐藏相机，有人说话时再显示出来。"
+
+msgid "Keep the screen's shape and give the camera the rest of the frame."
+msgstr "保持屏幕的形状，把画面的其余部分留给相机。"
+
+msgid "Layout"
+msgstr "布局"
+
+msgid "Layout settings"
+msgstr "布局设置"
+
+msgid "Leave the Background padding between the screen and the camera, with rounded corners."
+msgstr "在屏幕和相机之间保留背景的填充，并使用圆角。"
+
+msgid "Make the camera smaller while the screen is zoomed, so it covers less of the recording."
+msgstr "屏幕放大时缩小相机，使其遮挡更少的录制内容。"
+
+msgid "Minimum silence"
+msgstr "最短静音时长"
+
+msgid "Padded"
+msgstr "带边距"
+
+msgid "Rounded"
+msgstr "圆角"
+
+msgid "Roundness"
+msgstr "圆角程度"
+
+msgid "Screen width"
+msgstr "屏幕宽度"
+
+msgid "Shift the camera against the screen and sound. Raise it if your lips move after the words, lower it if they move before."
+msgstr "相对屏幕和声音平移相机。如果嘴唇在声音之后才动，请调大；如果在声音之前就动，请调小。"
+
+msgid "Shrink during zoom"
+msgstr "缩放时缩小"
+
+msgid "Shrink size"
+msgstr "缩小后的大小"
+
+msgid "The camera's longest side, as a percentage of the frame's shortest side."
+msgstr "相机的长边占画面短边的百分比。"
+
+msgid "The person's size, as a percentage of the frame's shortest side."
+msgstr "人物大小占画面短边的百分比。"
+
+msgid "The split fills the frame edge to edge."
+msgstr "Split 占满画面，边到边。"
+
+msgid "Transitions"
+msgstr "过渡"
+
+msgid "1:1"
+msgstr "1:1"
+
+msgid "4:3"
+msgstr "4:3"
+
+msgid "All typing suggestions are handled. Undo brings them back."
+msgstr "所有输入建议都已处理。撤销可将其恢复。"
+
+msgid "Apply all suggestions"
+msgstr "应用全部建议"
+
+msgid "Apply suggestion"
+msgstr "应用建议"
+
+msgid "Apply to this project"
+msgstr "应用到此项目"
+
+msgid "Built-in defaults"
+msgstr "内置默认值"
+
+msgid "Could not open the preset's folder."
+msgstr "无法打开预设所在的文件夹。"
+
+msgid "Create"
+msgstr "创建"
+
+msgid "Default for new recordings"
+msgstr "新录制的默认值"
+
+msgid "Default video preset"
+msgstr "默认视频预设"
+
+msgid "Editor"
+msgstr "编辑器"
+
+msgid "Keyboard"
+msgstr "键盘"
+
+msgid "Movement"
+msgstr "移动"
+
+msgid "Name the preset before saving it."
+msgstr "请先为预设命名再保存。"
+
+msgid "New preset from this project"
+msgstr "从此项目新建预设"
+
+msgid "No presets yet"
+msgstr "暂无预设"
+
+msgid "No typing to speed up in this recording."
+msgstr "此录制中没有可加速的输入。"
+
+msgid "Preset name"
+msgstr "预设名称"
+
+msgid "Preset options"
+msgstr "预设选项"
+
+msgid "Presets"
+msgstr "预设"
+
+msgid "Press + to save this project's background, cursor, camera and captions as a preset."
+msgstr "按 + 可将此项目的背景、光标、摄像头和字幕保存为预设。"
+
+msgid "Preview"
+msgstr "预览"
+
+msgid "Put every zoom animation setting back to its default."
+msgstr "将所有缩放动画设置恢复为默认值。"
+
+msgid "Record keystrokes"
+msgstr "记录按键"
+
+msgid "Remove as default"
+msgstr "取消默认"
+
+msgid "Remove suggestion"
+msgstr "移除建议"
+
+msgid "Rename"
+msgstr "重命名"
+
+msgid "Renamed to {name}."
+msgstr "已重命名为 {name}。"
+
+msgid "Set as default"
+msgstr "设为默认"
+
+msgid "Show in folder"
+msgstr "在文件夹中显示"
+
+msgid "Show keyboard shortcuts"
+msgstr "显示键盘快捷键"
+
+msgid "Show single letters"
+msgstr "显示单个字母"
+
+msgid "Soft"
+msgstr "柔和"
+
+msgid "Sound"
+msgstr "声音"
+
+msgid "That preset is no longer on disk."
+msgstr "该预设已不在磁盘上。"
+
+msgid "This recording has no keystrokes. Turn on Record keystrokes in Settings, under Recording, then record again."
+msgstr "此录制没有按键记录。请在设置的“录制”中开启“记录按键”，然后重新录制。"
+
+msgid "This zoom"
+msgstr "此缩放"
+
+msgid "Typing"
+msgstr "输入"
+
+msgid "Unavailable preset"
+msgstr "不可用的预设"
+
+msgid "Update with current look"
+msgstr "用当前外观更新"
+
+msgid "Visibility"
+msgstr "可见性"
+
+msgid "Volume"
+msgstr "音量"
+
+msgid "{name} deleted."
+msgstr "已删除 {name}。"
+
+msgid "{name} now holds the current look."
+msgstr "{name} 已更新为当前外观。"
+
+msgid "{name} saved."
+msgstr "已保存 {name}。"
+
+msgid "Motion videos you export appear in Recordings. Saved Motion projects are not kept on Windows yet."
+msgstr "导出的动态视频会显示在“录音”中。Windows 版暂不保留已保存的动态项目。"
+
+msgid "Expires in {time}"
+msgstr "{time} 后过期"
+
+msgid "Background music"
+msgstr "背景音乐"
+
+msgid "Choose background music"
+msgstr "选择背景音乐"
+
+msgid "Clip {current} of {total}"
+msgstr "第 {current} 个片段，共 {total} 个"
+
+msgid "Clips"
+msgstr "片段"
+
+msgid "Length {original}"
+msgstr "时长 {original}"
+
+msgid "Microphone"
+msgstr "麦克风"
+
+msgid "Microphone volume"
+msgstr "麦克风音量"
+
+msgid "Music volume"
+msgstr "音乐音量"
+
+msgid "Mute clip"
+msgstr "静音片段"
+
+msgid "Mute microphone"
+msgstr "麦克风静音"
+
+msgid "Mute music"
+msgstr "音乐静音"
+
+msgid "Mute system sound"
+msgstr "系统音频静音"
+
+msgid "Muted"
+msgstr "已静音"
+
+msgid "Remove music"
+msgstr "移除音乐"
+
+msgid "Select a clip on the timeline to change its speed and sound."
+msgstr "在时间轴上选择片段即可更改其速度和声音。"
+
+msgid "Select music…"
+msgstr "选择音乐…"
+
+msgid "System sound"
+msgstr "系统音频"
+
+msgid "System sound volume"
+msgstr "系统音频音量"
+
+msgid "This recording has no sound. Turn on the microphone or system audio before recording."
+msgstr "此录制没有声音。请在录制前开启麦克风或系统音频。"
+
+msgid "{original} at 1× · {now} at {speed}"
+msgstr "{original}（1×）· {now}（{speed}）"
+
+msgid "Loud"
+msgstr "响亮"
+
+msgid "Noise reduction"
+msgstr "降噪"
+
+msgid "Podcast"
+msgstr "播客"
+
+msgid "Warm"
+msgstr "温暖"
+
+msgid "Even, natural voice"
+msgstr "自然均匀的人声"
+
+msgid "Punchy and compressed"
+msgstr "强劲且压缩"
+
+msgid "Removes steady noise"
+msgstr "去除稳定噪声"
+
+msgid "Warm, polished voice"
+msgstr "温暖润泽的人声"
+
+msgid "Fuller, deeper tone"
+msgstr "更饱满低沉的音色"
+
+msgid "As recorded"
+msgstr "保持原声"
+
+msgid "Evens out your voice so it stays at one level."
+msgstr "使人声更均匀，保持在同一音量水平。"
+
+msgid "Louder, compressed voice that cuts through music."
+msgstr "更响亮、更压缩的人声，在音乐中也能听清。"
+
+msgid "Removes steady background noise, then evens out the voice."
+msgstr "去除稳定的背景噪声，然后使人声更均匀。"
+
+msgid "Full, warm voice with softened hiss and sibilance."
+msgstr "饱满温暖的人声，弱化嘶声和齿音。"
+
+msgid "Adds body to thin microphones."
+msgstr "为单薄的麦克风增加厚度。"
+
+msgid "Keeps the microphone exactly as it was recorded."
+msgstr "完全保留麦克风的原始录音。"
+
+msgid "Output"
+msgstr "输出"
+
+msgid "Format"
+msgstr "格式"
+
+msgid "Estimated size"
+msgstr "预计大小"
+
+msgid "Export time"
+msgstr "导出时间"
+
+msgid "Resolution"
+msgstr "分辨率"
+
+msgid "Remove recording"
+msgstr "移除录制"
+
+msgid "This recording has no audio."
+msgstr "此录制没有音频。"
+
+msgid "Hide cursor here"
+msgstr "在此隐藏光标"
+
+msgid "Exporting {percent}%"
+msgstr "正在导出 {percent}%"
+
+msgid "Export cancelled"
+msgstr "导出已取消"
+
+msgid "Could not render the image."
+msgstr "无法渲染图像。"
+
+msgid "Compare enhancement"
+msgstr "对比增强效果"
+
+msgid "Drag the divider across the image."
+msgstr "在图像上拖动分隔线。"
+
+msgid "Enhancing the image…"
+msgstr "正在增强图像…"
+
+msgid "Free preview. Exporting with enhancement needs Studio."
+msgstr "免费预览。导出增强效果需要 Studio。"
+
+msgid "Sharpens small screenshots on this device, up to 1 megapixel. Missing detail cannot always be recovered."
+msgstr "在本设备上锐化小截图，最高 1 百万像素。缺失的细节不一定能恢复。"
+
+msgid "Source"
+msgstr "源图像"
+
+msgid "Use Neural 2×"
+msgstr "使用 Neural 2×"
+
+msgid "16:9 image aspect ratio; banners may be cropped on some devices."
+msgstr "16:9 图像宽高比；横幅在部分设备上可能会被裁剪。"
+
+msgid "Exports at {width} × {height} px."
+msgstr "以 {width} × {height} 像素导出。"
+
+msgid "Ratio presets change the aspect ratio; platform presets also export at the size that platform asks for. W/H shows the export size. Click the selected preset again to reset."
+msgstr "比例预设会改变宽高比；平台预设还会按该平台要求的尺寸导出。W/H 显示导出尺寸。再次点击已选预设即可重置。"
+
+msgid "This image is large, so enhancing it takes a while on this device. {percent}% done, about {left} left. You can close the preview to stop."
+msgstr "此图像较大，在此设备上增强需要一些时间。已完成 {percent}%，剩余约 {left}。关闭预览即可停止。"
+
+msgid "Enhancing… {percent}%, about {left} left"
+msgstr "正在增强… {percent}%，剩余约 {left}"
+
+msgid "{minutes} min"
+msgstr "{minutes} 分钟"
+
+msgid "{seconds} s"
+msgstr "{seconds} 秒"
+msgid "A link to the exported file was copied"
+msgstr "已复制导出文件的链接"
+
+msgid "ApexShot could not reserve a file for the export."
+msgstr "ApexShot 无法为导出预留文件。"
+
+msgid "Checking encoder support…"
+msgstr "正在检查编码器支持…"
+
+msgid "Copy exported file"
+msgstr "复制导出的文件"
+
+msgid "Depends on hardware"
+msgstr "取决于硬件"
+
+msgid "Disk space is almost full"
+msgstr "磁盘空间即将用尽"
+
+msgid "Encode with HEVC"
+msgstr "使用 HEVC 编码"
+
+msgid "Export stopped"
+msgstr "导出已停止"
+
+msgid "Hardware encoding failed; the export restarted on the software encoder"
+msgstr "硬件编码失败；已改用软件编码器重新开始导出"
+
+msgid "Open failed"
+msgstr "打开失败"
+
+msgid "Recording stopped"
+msgstr "录制已停止"
+
+msgid "Retrying on the software encoder…"
+msgstr "正在使用软件编码器重试…"
+
+msgid "Show in Files"
+msgstr "在“文件”中显示"
+
+msgid "The partial file was removed"
+msgstr "已删除不完整的文件"
+
+msgid "The selected codec cannot encode on this machine"
+msgstr "所选编解码器无法在此设备上编码"
+
+msgid "This ffmpeg build has no HEVC encoder"
+msgstr "此 ffmpeg 版本没有 HEVC 编码器"
+
+msgid "Uploaded, but the link could not be copied: {error}"
+msgstr "已上传，但无法复制链接：{error}"
+
+msgid "Motion isn't available for long screenshots"
+msgstr "长截图不支持动效"
+
+msgid "This screenshot is too long to animate. Scrolling captures and other long images stay in Static, where every annotation and export tool still works."
+msgstr "此截图过长，无法制作动画。滚动截图和其他长图会保留在静态模式中，所有标注和导出工具仍可使用。"
+
+msgid "Account"
+msgstr "账号"
+
+msgid "Cloud storage"
+msgstr "云存储"
+
+msgid "Email"
+msgstr "电子邮件"
+
+msgid "Last updated"
+msgstr "上次更新"
+
+msgid "Loading usage…"
+msgstr "正在加载用量……"
+
+msgid "Plan"
+msgstr "套餐"
+
+msgid "Refreshing…"
+msgstr "正在刷新……"
+
+msgid ""
+"System default uses your desktop language. Changes are saved automatically."
+msgstr "跟随系统会使用您的桌面语言。更改会自动保存。"
+
+msgid "Unlimited"
+msgstr "无限制"
+
+msgid "Used"
+msgstr "已使用"
+
+msgid "{used} of {limit}"
+msgstr "{used} / {limit}"
+
+msgid "Activate a license"
+msgstr "激活许可证"
+
+msgid "ApexShot Studio"
+msgstr "ApexShot Studio"
+
+msgid "Included updates ended {date}."
+msgstr "包含的更新已于 {date} 结束。"
+
+msgid "License"
+msgstr "许可证"
+
+msgid "License key"
+msgstr "许可证密钥"
+
+msgid "Needs attention"
+msgstr "需要处理"
+
+msgid "Not activated on this device."
+msgstr "此设备上未激活。"
+
+msgid "Open ApexShot anytime for Settings, shortcuts, and preferences"
+msgstr "随时打开 ApexShot 进行设置、快捷键和偏好调整"
+
+msgid "Other device"
+msgstr "其他设备"
+
+msgid "Paste your license key"
+msgstr "粘贴许可证密钥"
+
+msgid "Replace…"
+msgstr "替换…"
+
+msgid "The saved license couldn't be verified."
+msgstr "无法验证已保存的许可证。"
+
+msgid "This build can't verify Studio licenses."
+msgstr "此版本无法验证 Studio 许可证。"
+
+msgid "This license belongs to another device."
+msgstr "此许可证属于另一台设备。"
+
+msgid "Unavailable"
+msgstr "不可用"
+
+msgid "Updates ended"
+msgstr "更新已结束"
+
+msgid "Updates included through {date}."
+msgstr "包含截至 {date} 的更新。"
+
+msgid "0 B/s"
+msgstr "0 B/s"
+
+msgid "An export is still running. Let it finish, then try again."
+msgstr "仍有导出正在进行。请等待其完成后重试。"
+
+msgid "ApexShot could not close every window. Close them, then try again."
+msgstr "ApexShot 无法关闭所有窗口。请关闭它们后重试。"
+
+msgid "ApexShot is up to date"
+msgstr "ApexShot 已是最新版本"
+
+msgid "ApexShot v{version} is being installed. Keep this window open."
+msgstr "正在安装 ApexShot v{version}。请保持此窗口打开。"
+
+msgid "ApexShot v{version} is installed."
+msgstr "ApexShot v{version} 已安装。"
+
+msgid "ApexShot v{version} is ready. Your current work will not be interrupted."
+msgstr "ApexShot v{version} 已就绪。您当前的工作不会被中断。"
+
+msgid "ApexShot window"
+msgstr "ApexShot 窗口"
+
+msgid "Could not check the release: {error}"
+msgstr "无法检查该版本：{error}"
+
+msgid "Could not create the update folder: {error}"
+msgstr "无法创建更新文件夹：{error}"
+
+msgid "Could not find a local cache folder for the update."
+msgstr "找不到用于更新的本地缓存文件夹。"
+
+msgid "Could not finish the update: {error}"
+msgstr "无法完成更新：{error}"
+
+msgid "Could not install the GNOME extension update."
+msgstr "无法安装 GNOME 扩展更新。"
+
+msgid "Could not reach the Flatpak service: {error}"
+msgstr "无法连接 Flatpak 服务：{error}"
+
+msgid "Could not reach the package service: {error}"
+msgstr "无法连接软件包服务：{error}"
+
+msgid "Could not read the checksums: {error}"
+msgstr "无法读取校验和：{error}"
+
+msgid "Could not save the update: {error}"
+msgstr "无法保存更新：{error}"
+
+msgid "Could not start the package manager: {error}"
+msgstr "无法启动软件包管理器：{error}"
+
+msgid "Enhancement works up to 1 MP and 4096 px per edge. Crop this {width} × {height} image to use it."
+msgstr "增强功能支持最大 1 MP、每边 4096 px 的图像。裁剪这张 {width} × {height} 的图像即可使用。"
+
+msgid "Finish your recording first"
+msgstr "请先结束录制"
+
+msgid "Image editor"
+msgstr "图像编辑器"
+
+msgid "Installation was cancelled."
+msgstr "安装已取消。"
+
+msgid "Installing restarts ApexShot, which would stop the recording in progress."
+msgstr "安装会重启 ApexShot，这会停止正在进行的录制。"
+
+msgid "Installing update"
+msgstr "正在安装更新"
+
+msgid "Log out and back in to finish updating the GNOME extension."
+msgstr "请注销后重新登录，以完成 GNOME 扩展的更新。"
+
+msgid "Preparing to install"
+msgstr "正在准备安装"
+
+msgid "Refreshing the GNOME extension..."
+msgstr "正在刷新 GNOME 扩展..."
+
+msgid "Restart ApexShot"
+msgstr "重启 ApexShot"
+
+msgid "Restart ApexShot to use the new version."
+msgstr "重启 ApexShot 以使用新版本。"
+
+msgid "Saving your work…"
+msgstr "正在保存您的工作…"
+
+msgid "Setup"
+msgstr "设置向导"
+
+msgid "The Flatpak update could not start: {error}"
+msgstr "无法开始 Flatpak 更新：{error}"
+
+msgid "The Flatpak update failed."
+msgstr "Flatpak 更新失败。"
+
+msgid "The Flatpak update stopped without finishing."
+msgstr "Flatpak 更新在完成前停止了。"
+
+msgid "The download did not match the published checksum."
+msgstr "下载的文件与发布的校验和不匹配。"
+
+msgid "The download stopped: {error}"
+msgstr "下载已停止：{error}"
+
+msgid "The installer starts as soon as these windows have saved and closed."
+msgstr "这些窗口保存并关闭后，安装程序会立即启动。"
+
+msgid "The package manager could not install the update."
+msgstr "软件包管理器无法安装此更新。"
+
+msgid "The package service could not install the update."
+msgstr "软件包服务无法安装此更新。"
+
+msgid "The package service refused the update: {error}"
+msgstr "软件包服务拒绝了此更新：{error}"
+
+msgid "The package service stopped without finishing."
+msgstr "软件包服务在完成前停止了。"
+
+msgid "The release did not publish a checksum for {name}."
+msgstr "该版本未发布 {name} 的校验和。"
+
+msgid "The release did not publish checksums."
+msgstr "该版本未发布校验和。"
+
+msgid "The server sent an empty download."
+msgstr "服务器发送的下载内容为空。"
+
+msgid "The update package is missing."
+msgstr "缺少更新软件包。"
+
+msgid "These windows close while ApexShot updates and reopen with your edits afterwards:"
+msgstr "以下窗口会在 ApexShot 更新期间关闭，之后会连同您的编辑一起重新打开："
+
+msgid "This installation is managed by Nix. Update the ApexShot flake input and rebuild your configuration, or upgrade its Nix profile entry."
+msgstr "此安装由 Nix 管理。请更新 ApexShot 的 flake 输入并重新构建配置，或升级其 Nix 配置文件条目。"
+
+msgid "This release does not include a package for this system."
+msgstr "此版本不包含适用于此系统的软件包。"
+
+msgid "This system needs the terminal updater."
+msgstr "此系统需要使用终端更新程序。"
+
+msgid "This version is not in your Flatpak repository yet. Try again later."
+msgstr "此版本尚未进入您的 Flatpak 仓库。请稍后重试。"
+
+msgid "Tidying the startup entries..."
+msgstr "正在整理启动项..."
+
+msgid "Update ApexShot"
+msgstr "更新 ApexShot"
+
+msgid "Updating..."
+msgstr "正在更新..."
+
+msgid "Verifying download..."
+msgstr "正在验证下载..."
+
+msgid "Video editor"
+msgstr "视频编辑器"
+
+msgid "Waiting for permission..."
+msgstr "正在等待授权..."
+
+msgid "Your windows will reopen with your edits."
+msgstr "您的窗口会连同您的编辑一起重新打开。"
+
+msgid "Your work will reopen"
+msgstr "您的工作将重新打开"
+
+msgid "{label} ({count})"
+msgstr "{label}（{count}）"
+
+msgid "Uploading video"
+msgstr "正在上传视频"
+
+msgid "{sent} of {total}"
+msgstr "{sent} / {total}"
+
+msgid "Link copied to clipboard"
+msgstr "链接已复制到剪贴板"
+
+msgid "The link will be copied when you return to this window"
+msgstr "返回此窗口后将复制链接"
+
+msgid "Switch back to the editor to copy the link"
+msgstr "返回编辑器以复制链接"
+
+msgid "Open link"
+msgstr "打开链接"
+
+msgid "Exported Motion video"
+msgstr "已导出的 Motion 视频"
+
+msgid "Motion edits you make and Motion videos you export will show up here."
+msgstr "你制作的动态编辑和导出的 Motion 视频将显示在这里。"
+
+msgid "60 FPS makes animation smoother and takes longer to export."
+msgstr "60 FPS 让动画更流畅，但导出需要更长时间。"
+
+msgid "Export cannot recover detail missing from the screenshot."
+msgstr "导出无法恢复截图中缺失的细节。"
+
+msgid "Keystroke captions"
+msgstr "按键字幕"
+
+msgid "Show the shortcuts you press on screen in recordings."
+msgstr "在录屏中显示你按下的快捷键。"
+
+msgid "Camera cutout"
+msgstr "摄像头抠像"
+
+msgid "Cut yourself out of the camera and set yourself on the screen."
+msgstr "将你从摄像头画面中抠出并放到屏幕上。"
+
+msgid "Microphone unavailable"
+msgstr "麦克风不可用"
+
+msgid "Recording continues without the microphone."
+msgstr "将继续录制，但不包含麦克风。"
+
+msgid "System audio unavailable"
+msgstr "系统音频不可用"
+
+msgid "Recording continues without system audio."
+msgstr "将继续录制，但不包含系统音频。"
+
+msgid "Recording all system audio"
+msgstr "正在录制所有系统音频"
+
+msgid "{app} is not playing audio, so the recording captures every app."
+msgstr "{app} 没有在播放音频，因此录制将捕获所有应用的声音。"
+
+msgid "Pause Recording"
+msgstr "暂停录制"
+
+msgid "Resume Recording"
+msgstr "继续录制"
+
+msgid "Restart Recording"
+msgstr "重新开始录制"
+
+msgid "Discard Recording"
+msgstr "放弃录制"
+
+msgid "Choose your screen"
+msgstr "选择屏幕"
+
+msgid "A virtual screen records an empty display. Pick your screen in the sharing dialog."
+msgstr "虚拟屏幕录制的是空白画面。请在共享对话框中选择屏幕。"
+
+msgid "Almost out of free uploads"
+msgstr "免费上传次数即将用完"
+
+msgid "Could not open the dashboard"
+msgstr "无法打开控制台"
+
+msgid "Delete old uploads, or Go Pro for 50 GB."
+msgstr "删除旧的上传内容，或升级到 Pro 获取 50 GB。"
+
+msgid "See Studio"
+msgstr "查看 Studio"
+
+msgid "What's new"
+msgstr "新功能"
+
+msgid "What's new in ApexShot {version}"
+msgstr "ApexShot {version} 新功能"
+
+msgid "Explore Studio"
+msgstr "了解 Studio"
+
+msgid "Exported with Studio. 1 free Studio export left."
+msgstr "已使用 Studio 导出。还剩 1 次免费 Studio 导出。"
+
+msgid "Exported with Studio. {count} free Studio exports left."
+msgstr "已使用 Studio 导出。还剩 {count} 次免费 Studio 导出。"
+
+msgid "Go Pro for 50 GB."
+msgstr "升级到 Pro 获取 50 GB。"
+
+msgid "Go Pro for unlimited uploads."
+msgstr "升级到 Pro，上传不限次数。"
+
+msgid "Manage uploads"
+msgstr "管理上传"
+
+msgid "Not uploaded"
+msgstr "未上传"
+
+msgid "Studio exports left on the free trial"
+msgstr "免费试用中剩余的 Studio 导出次数"
+
+msgid "Studio · 1 free export left"
+msgstr "Studio · 还剩 1 次免费导出"
+
+msgid "Studio · {count} free exports left"
+msgstr "Studio · 还剩 {count} 次免费导出"
+
+msgid "That was your last free Studio export. Get Studio to keep these styles."
+msgstr "这是你最后一次免费 Studio 导出。获取 Studio 以继续使用这些样式。"
+
+msgid "Uploads come back next month."
+msgstr "下个月可以继续上传。"
+
+msgid "Uploads come back on {date}."
+msgstr "{date} 起可以继续上传。"
+
+msgid "You've used this month's free uploads"
+msgstr "你已用完本月的免费上传次数"
+
+msgid "You've used your 3 free Studio exports"
+msgstr "你已用完 3 次免费 Studio 导出"
+
+msgid "Your capture is saved on this computer."
+msgstr "你的截图已保存在这台电脑上。"
+
+msgid "Your free Cloud storage is almost full"
+msgstr "你的免费云存储空间快满了"
+
+msgid "Your free Cloud storage is full"
+msgstr "你的免费云存储空间已满"
+
+msgid "{used} of {max} free Cloud storage used."
+msgstr "已使用 {used}，免费云存储空间共 {max}。"
+
+msgid "{used} of {max} free uploads used this month."
+msgstr "本月已使用 {used} 次免费上传，共 {max} 次。"
+
+msgid "{used} of {max} free uploads used."
+msgstr "已使用 {used} 次免费上传，共 {max} 次。"
+
+msgid "{used} of {max} used this month."
+msgstr "本月已使用 {used}，共 {max}。"
+
+msgid "{used} of {max} used."
+msgstr "已使用 {used}，共 {max}。"
+
+msgid "Try Studio free"
+msgstr "免费试用 Studio"
+
+msgid "Buying Studio takes one step"
+msgstr "购买 Studio 只需一步"
+
+msgid "Capture, annotation, recording, and the editors' core tools stay free."
+msgstr "截图、标注、录屏以及编辑器的核心工具仍然免费。"
+
+msgid "Studio is active on this device"
+msgstr "Studio 已在此设备上启用"
+
+msgid "Studio activation failed"
+msgstr "Studio 启用失败"
+
+msgid "Uses Studio · 1 free export left"
+msgstr "使用 Studio · 剩余 1 次免费导出"
+
+msgid "Uses Studio · {count} free exports left"
+msgstr "使用 Studio · 剩余 {count} 次免费导出"
+
+msgid "Exported with Studio."
+msgstr "已使用 Studio 导出。"
+
+msgid "1 free Studio export left."
+msgstr "剩余 1 次免费 Studio 导出。"
+
+msgid "{count} free Studio exports left."
+msgstr "剩余 {count} 次免费 Studio 导出。"
+
+msgid "That was your last free Studio export."
+msgstr "这是你最后一次免费 Studio 导出。"
+
+msgid "Get Studio to keep these styles."
+msgstr "获取 Studio 以保留这些样式。"
+
+msgid "Get Studio"
+msgstr "获取 Studio"
+
+msgid "Your next 3 Studio exports are on us. After each one, ApexShot shows how many are left."
+msgstr "接下来的 3 次 Studio 导出免费。每次导出后，ApexShot 会显示剩余次数。"
+
+msgid "Choose Studio in ApexShot, sign in, and pay. ApexShot turns Studio on for you, with no licence file to copy or import."
+msgstr "在 ApexShot 中选择 Studio，登录并付款。ApexShot 会为你开启 Studio，无需复制或导入许可证文件。"
+
+msgid "Name"
+msgstr "名称"
+
+msgid "New preset"
+msgstr "新建预设"
+
+msgid "New recordings open with this look"
+msgstr "新录制将以此外观打开"
+
+msgid "Save current look"
+msgstr "保存当前外观"
+
+msgid "Save this project's background, cursor and click sound, then put them on any recording."
+msgstr "保存此项目的背景、光标和点击音效，然后将它们应用到任意录制。"
+
+msgid "Save this project's background, cursor, camera and captions, then put them on any recording."
+msgstr "保存此项目的背景、光标、摄像头和字幕，然后将它们应用到任意录制。"
+
+msgid "ApexShot on X11 desktops"
+msgstr "X11 桌面上的 ApexShot"
+
+msgid "Cinnamon, Xfce, MATE, and other X11 desktops now get shortcuts, window recordings, scrolling capture, and Auto Zoom."
+msgstr "Cinnamon、Xfce、MATE 等 X11 桌面现在支持快捷键、窗口录制、滚动截图和自动缩放。"
+
+msgid "Record on Fedora"
+msgstr "在 Fedora 上录制"
+
+msgid "Screen recording now works on Fedora. On KDE Plasma, recordings keep an editable cursor, clicks, and Auto Zoom."
+msgstr "Fedora 现已支持屏幕录制。在 KDE Plasma 上，录制会保留可编辑的光标、点击和自动缩放。"
+
+msgid "Presets in the video editor"
+msgstr "视频编辑器中的预设"
+
+msgid "Save a recording's background, cursor, and click sound as a preset, apply it in one click, or make it the default for new recordings."
+msgstr "将录制的背景、光标和点击音效保存为预设，一键应用，或设为新录制的默认值。"
+
+msgid "Hide the cursor with one switch"
+msgstr "一个开关隐藏光标"
+
+msgid "Turn on Hide cursor in the Cursor panel to take the cursor out of the whole video."
+msgstr "在“光标”面板中打开“隐藏光标”，即可从整个视频中去掉光标。"
+
+msgid "Recording works again"
+msgstr "录制恢复正常"
+
+msgid "Screen and webcam recordings start again. In 0.3.1 the bundled ffmpeg stopped every recording from starting."
+msgstr "屏幕和摄像头录制可以再次开始。在 0.3.1 中，内置的 ffmpeg 导致所有录制都无法开始。"
+
+msgid "Choose your mic and speaker"
+msgstr "选择麦克风和扬声器"
+
+msgid "In Video mode, right-click Mic or Speaker to pick a device. The toolbar shows the device you chose and a live level meter."
+msgstr "在“Video”模式下，右键点击“Mic”或“Speaker”即可选择设备。工具栏会显示所选设备和实时音量表。"
+
+msgid "Record one app's sound"
+msgstr "录制单个应用的声音"
+
+msgid "The Speaker menu records every app, a single app, or no system sound at all."
+msgstr "“Speaker”菜单可以录制所有应用、单个应用，或不录制任何系统声音。"
+
+msgid "Faster downloads and updates"
+msgstr "更快的下载和更新"
+
+msgid "ApexShot now downloads from its own download servers, so installs and updates finish sooner."
+msgstr "ApexShot 现在从自己的下载服务器获取文件，安装和更新更快完成。"
+
+msgid "Updates skip the setup wizard"
+msgstr "更新跳过安装向导"
+
+msgid "Updating goes straight to installing, without asking you to accept the licence again."
+msgstr "更新会直接开始安装，不再要求你重新接受许可协议。"
+
+msgid "Quick Access in your recordings"
+msgstr "录制中显示快捷操作"
+
+msgid "A Quick Access card that appears while you record now shows in the video, so you can record yourself capturing and editing."
+msgstr "录制时出现的快捷操作卡片现在会显示在视频中，方便你录下截图和编辑的过程。"
+
+msgid "Stop any recording"
+msgstr "停止任何录制"
+
+msgid "A recording started without the controls bar now stops from the tray, with apexshot record stop, or with Ctrl+C."
+msgstr "不带控制栏开始的录制，现在可以从托盘、apexshot record stop 或 Ctrl+C 停止。"
+
+msgid "Not now"
+msgstr "稍后"
+
+msgid "Your capture is saved. Connect a free ApexShot account and every upload becomes a link in your clipboard."
+msgstr "你的截图已保存。连接免费的 ApexShot 账户，之后每次上传都会变成剪贴板中的链接。"
+
+msgid "Connected as {email}"
+msgstr "已连接为 {email}"
+
+msgid "Uploading your capture…"
+msgstr "正在上传你的截图…"
+
+msgid "Your next capture gets a share link."
+msgstr "你的下一次截图将获得分享链接。"
+
+msgid "Sign in to get a share link"
+msgstr "登录以获取分享链接。"
+
+msgid "Connect your ApexShot account in Settings → Cloud to get share links."
+msgstr "在“设置 → 云”中连接你的 ApexShot 账户以获取分享链接。"
+
+msgid ""
+"Every capture becomes a link in your clipboard. Free: 20 uploads a month."
+msgstr "每次截图都会成为剪贴板中的链接。免费：每月 20 次上传。"
+
+msgid "Go Pro for unlimited uploads and links that last 90 days."
+msgstr "升级到 Pro，上传不限次数，链接有效期 90 天。"
+
+msgid ""
+"Link copied. Free links stay up for 7 days.\n"
+"{url}"
+msgstr ""
+"链接已复制。免费链接有效期 7 天。\n"
+"{url}"
+
+msgid ""
+"Free links stay up for 7 days.\n"
+"{url}"
+msgstr ""
+"免费链接有效期 7 天。\n"
+"{url}"

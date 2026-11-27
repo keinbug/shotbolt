@@ -1,0 +1,1277 @@
+//! Wayland backend implementation.
+//!
+//! Still-image capture strategy (first match wins):
+//!
+//! 0. **KDE native** `org.kde.KWin.ScreenShot2` — preferred on Plasma Wayland.
+//!    No portal permission dialog.
+//! 1. **wlroots native** `zwlr_screencopy_manager_v1` — Hyprland, Sway, Niri, …
+//! 2. **`org.freedesktop.portal.Screenshot`** — single still grab (GNOME and
+//!    most desktops). Opt-in force-first via
+//!    `APEXSHOT_WAYLAND_SCREENSHOT_PORTAL`.
+//! 3. **ScreenCast portal + PipeWire** — last-resort still fallback (heavy;
+//!    preferred for *recording*, not screenshots).
+//!
+//! Recording uses a parallel split: KDE → `zkde_screencast_unstable_v1`,
+//! wlroots → `wf-recorder`, else ScreenCast portal.
+
+use super::{
+    kde_screenshot, screencopy, CaptureData, DisplayBackend, DisplayError, DisplayResult,
+    PixelFormat,
+};
+use ashpd::desktop::{
+    screencast::{
+        CursorMode, OpenPipeWireRemoteOptions, Screencast, SelectSourcesOptions, SourceType,
+        StartCastOptions,
+    },
+    screenshot::Screenshot,
+    CreateSessionOptions, PersistMode, ResponseError,
+};
+use std::os::fd::OwnedFd;
+use std::path::PathBuf;
+use std::time::Duration;
+
+pub struct WaylandBackend;
+
+const PORTAL_DIALOG_DISMISSAL_DELAY_MS: u64 = 650;
+
+/// Convert a Screenshot-portal `file://` URI into a local path.
+///
+/// ashpd 0.13's `Uri` is a validated string without path conversion, so
+/// decode the percent-escaped local-file form here.
+fn screenshot_uri_to_path(uri: &ashpd::Uri) -> DisplayResult<PathBuf> {
+    let raw = uri.as_str();
+    let after_scheme = raw.strip_prefix("file://").ok_or_else(|| {
+        DisplayError::PortalError(format!("Screenshot portal returned non-file URI: {raw}"))
+    })?;
+    let path_part = if let Some(rest) = after_scheme.strip_prefix('/') {
+        // Local file: no authority component.
+        format!("/{rest}")
+    } else {
+        // file://host/path — skip the authority.
+        match after_scheme.find('/') {
+            Some(position) => after_scheme[position..].to_string(),
+            None => {
+                return Err(DisplayError::PortalError(format!(
+                    "Screenshot portal returned non-file URI: {raw}"
+                )))
+            }
+        }
+    };
+    Ok(PathBuf::from(percent_decode(&path_part)))
+}
+
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            if let Ok(byte) = u8::from_str_radix(&input[index + 1..index + 3], 16) {
+                decoded.push(byte);
+                index += 3;
+                continue;
+            }
+        }
+        decoded.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ScreenCast restore-token helpers
+// ──────────────────────────────────────────────────────────────────────────────
+
+#[derive(Clone, Copy, PartialEq)]
+enum CaptureTarget {
+    Monitor,
+    Window,
+}
+
+impl CaptureTarget {
+    fn source_type(self) -> SourceType {
+        match self {
+            Self::Monitor => SourceType::Monitor,
+            Self::Window => SourceType::Window,
+        }
+    }
+
+    fn token_file_name(self) -> &'static str {
+        match self {
+            Self::Monitor => "wayland-screencast-monitor.token",
+            Self::Window => "wayland-screencast-window.token",
+        }
+    }
+}
+
+fn validate_screencast_source_types(
+    target: CaptureTarget,
+    available: ashpd::enumflags2::BitFlags<SourceType>,
+) -> DisplayResult<()> {
+    if !available.contains(target.source_type()) {
+        let requested = match target {
+            CaptureTarget::Monitor => "monitor",
+            CaptureTarget::Window => "window",
+        };
+        return Err(DisplayError::UnsupportedBackend(format!(
+            "The ScreenCast portal does not support {requested} capture"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_screencast_stream(
+    target: CaptureTarget,
+    stream_count: usize,
+    source_type: Option<SourceType>,
+) -> DisplayResult<()> {
+    let requested = target.source_type();
+    if stream_count != 1 {
+        return Err(DisplayError::PortalError(format!(
+            "The ScreenCast portal returned {stream_count} streams; expected exactly one {requested:?} stream"
+        )));
+    }
+    if source_type.is_some_and(|source| source != requested) {
+        return Err(DisplayError::PortalError(format!(
+            "The ScreenCast portal returned {source_type:?} instead of {requested:?}"
+        )));
+    }
+    Ok(())
+}
+
+fn restore_token_path(target: CaptureTarget) -> Option<PathBuf> {
+    let mut path = dirs::cache_dir()?;
+    path.push("apexshot");
+    path.push(target.token_file_name());
+    Some(path)
+}
+
+fn load_restore_token(target: CaptureTarget) -> Option<String> {
+    let path = restore_token_path(target)?;
+    let raw = std::fs::read_to_string(path).ok()?;
+    let token = raw.trim();
+    if token.is_empty() {
+        None
+    } else {
+        Some(token.to_string())
+    }
+}
+
+fn save_restore_token(target: CaptureTarget, token: &str) {
+    let Some(path) = restore_token_path(target) else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(path, token);
+}
+
+fn clear_restore_token(target: CaptureTarget) {
+    if let Some(path) = restore_token_path(target) {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+enum ScreencastError {
+    Cancelled,
+    InvalidSource(DisplayError),
+    Failed(DisplayError),
+}
+
+impl From<DisplayError> for ScreencastError {
+    fn from(error: DisplayError) -> Self {
+        Self::Failed(error)
+    }
+}
+
+impl ScreencastError {
+    fn into_display(self) -> DisplayError {
+        match self {
+            Self::Cancelled => DisplayError::Cancelled,
+            Self::InvalidSource(error) => error,
+            Self::Failed(error) => error,
+        }
+    }
+
+    fn allows_fallback(&self) -> bool {
+        matches!(self, Self::Failed(error) if !matches!(error, DisplayError::Cancelled))
+    }
+}
+
+fn screencast_response_error(stage: &str, error: ashpd::Error) -> ScreencastError {
+    match error {
+        ashpd::Error::Response(ResponseError::Cancelled) => ScreencastError::Cancelled,
+        error => ScreencastError::Failed(DisplayError::PortalError(format!(
+            "{stage} failed: {error}"
+        ))),
+    }
+}
+
+fn screenshot_response_error(error: ashpd::Error) -> DisplayError {
+    match error {
+        ashpd::Error::Response(ResponseError::Cancelled) => DisplayError::Cancelled,
+        error => DisplayError::PortalError(format!("Screenshot portal response failed: {error}")),
+    }
+}
+
+fn wlr_screencopy_global_advertised() -> bool {
+    use wayland_client::{
+        globals::{registry_queue_init, GlobalListContents},
+        protocol::wl_registry,
+        Connection, Dispatch, QueueHandle,
+    };
+
+    struct GlobalsProbe;
+
+    impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for GlobalsProbe {
+        fn event(
+            _: &mut Self,
+            _: &wl_registry::WlRegistry,
+            _: wl_registry::Event,
+            _: &GlobalListContents,
+            _: &Connection,
+            _: &QueueHandle<Self>,
+        ) {
+        }
+    }
+
+    let Ok(connection) = Connection::connect_to_env() else {
+        return false;
+    };
+    let Ok((globals, _queue)) = registry_queue_init::<GlobalsProbe>(&connection) else {
+        return false;
+    };
+    globals.contents().with_list(|list| {
+        list.iter()
+            .any(|global| global.interface == "zwlr_screencopy_manager_v1")
+    })
+}
+
+/// Wait for a permission dialog only when the session did not restore a grant.
+pub(super) fn should_wait_for_portal_dialog_to_close(restore_token: Option<&str>) -> bool {
+    restore_token.is_none()
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Native PipeWire single-frame capture (replaces GStreamer pipewiresrc)
+// ──────────────────────────────────────────────────────────────────────────────
+
+fn capture_single_frame_from_pipewire(
+    node_id: u32,
+    pipewire_fd: &OwnedFd,
+) -> DisplayResult<CaptureData> {
+    let frame = crate::pipewire_engine::capture_single_frame_with_min_frames(
+        pipewire_fd
+            .try_clone()
+            .map_err(|e| DisplayError::CaptureError(format!("Failed to clone fd: {e}")))?,
+        node_id,
+        Duration::from_secs(3),
+        3,
+    )
+    .map_err(|e| DisplayError::CaptureError(format!("PipeWire capture failed: {e}")))?;
+
+    Ok(CaptureData::new(
+        frame.pixels,
+        frame.width,
+        frame.height,
+        PixelFormat::RGBA32,
+    ))
+}
+
+fn crop_capture(
+    capture: CaptureData,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+) -> DisplayResult<CaptureData> {
+    if width <= 0 || height <= 0 {
+        return Err(DisplayError::InvalidArea(format!(
+            "Invalid dimensions: {}x{}",
+            width, height
+        )));
+    }
+
+    // Map desktop-logical coordinates to output-relative physical pixels.
+    // The overlay reports selection coordinates in the logical desktop space.
+    // The capture comes from a single output at (output_origin_x, output_origin_y)
+    // with physical pixels = logical_pixels × output_scale.
+    let scale = capture.output_scale.max(1);
+    let rel_x = (x - capture.output_origin_x).max(0) * scale;
+    let rel_y = (y - capture.output_origin_y).max(0) * scale;
+    let rel_w = width.max(1) * scale;
+    let rel_h = height.max(1) * scale;
+
+    // Clamp to the captured image bounds.
+    let crop_x = rel_x.min(capture.width as i32).max(0) as u32;
+    let crop_y = rel_y.min(capture.height as i32).max(0) as u32;
+    let crop_w = ((rel_x + rel_w).min(capture.width as i32) - rel_x).max(0) as u32;
+    let crop_h = ((rel_y + rel_h).min(capture.height as i32) - rel_y).max(0) as u32;
+    if crop_w == 0 || crop_h == 0 {
+        return Err(DisplayError::InvalidArea(format!(
+            "Requested area ({x}, {y}, {width}, {height}) maps outside captured output ({},{} scale {})",
+            capture.output_origin_x, capture.output_origin_y, scale
+        )));
+    }
+
+    let bytes_per_pixel = capture.format.bytes_per_pixel as usize;
+    let source_stride = capture.stride as usize;
+    let row_len = crop_w as usize * bytes_per_pixel;
+
+    let mut cropped = Vec::with_capacity(row_len * crop_h as usize);
+    for row in 0..crop_h as usize {
+        let src_y = crop_y as usize + row;
+        let src_offset = src_y * source_stride + crop_x as usize * bytes_per_pixel;
+        let src_end = src_offset + row_len;
+        cropped.extend_from_slice(&capture.pixels[src_offset..src_end]);
+    }
+
+    Ok(CaptureData::new(cropped, crop_w, crop_h, capture.format))
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Capture implementations
+// ──────────────────────────────────────────────────────────────────────────────
+
+impl WaylandBackend {
+    /// When set, try the Screenshot portal before compositor-native paths.
+    /// Useful for debugging the portal path on a given desktop.
+    /// Always true under portal-only / Flatpak builds.
+    pub(crate) fn should_force_screenshot_portal_first() -> bool {
+        crate::app_identity::portal_only()
+            || std::env::var_os("APEXSHOT_WAYLAND_SCREENSHOT_PORTAL").is_some()
+    }
+
+    /// Preferred still-image path after native compositors fail.
+    ///
+    /// Screenshot portal is a single D-Bus call. ScreenCast +
+    /// PipeWire remains a last resort because it is much slower for freezes.
+    fn capture_still_via_screenshot_portal() -> DisplayResult<CaptureData> {
+        let start = std::time::Instant::now();
+        let result = block_on_async(Self::capture_via_screenshot_portal(false));
+        match &result {
+            Ok(d) => eprintln!(
+                "[capture] Screenshot portal succeeded in {:.0}ms ({}x{}).",
+                start.elapsed().as_millis(),
+                d.width,
+                d.height
+            ),
+            Err(e) => eprintln!(
+                "[capture] Screenshot portal failed ({:.0}ms): {e}",
+                start.elapsed().as_millis()
+            ),
+        }
+        result
+    }
+
+    pub(crate) fn native_screencopy_available() -> bool {
+        !Self::should_force_screenshot_portal_first()
+            && Self::should_try_native_screencopy()
+            && wlr_screencopy_global_advertised()
+    }
+
+    pub(crate) fn should_try_native_screencopy() -> bool {
+        // Flatpak cannot talk to compositor-private protocols.
+        if crate::app_identity::portal_only() {
+            return false;
+        }
+        if std::env::var_os("APEXSHOT_DISABLE_WLR_SCREENCOPY").is_some() {
+            return false;
+        }
+
+        if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some()
+            || std::env::var_os("SWAYSOCK").is_some()
+        {
+            return true;
+        }
+
+        std::env::var("XDG_CURRENT_DESKTOP")
+            .unwrap_or_default()
+            .split([':', ';', ','])
+            .map(|part| part.trim().to_ascii_lowercase())
+            .any(|part| {
+                [
+                    "hyprland", "sway", "river", "dwl", "wayfire", "labwc", "niri",
+                ]
+                .iter()
+                .any(|needle| part.contains(needle))
+            })
+    }
+
+    fn capture_monitor_via_native_screencopy() -> Option<DisplayResult<CaptureData>> {
+        Self::capture_monitor_via_native_screencopy_at(None)
+    }
+
+    /// Capture a specific output when `origin` is `Some((x, y))` (multi-monitor).
+    pub(crate) fn capture_monitor_via_native_screencopy_at(
+        origin: Option<(i32, i32)>,
+    ) -> Option<DisplayResult<CaptureData>> {
+        if !Self::should_try_native_screencopy() {
+            return None;
+        }
+
+        let start = std::time::Instant::now();
+        let result = match origin {
+            Some((x, y)) => screencopy::capture_at(x, y),
+            None => screencopy::capture(),
+        };
+        match result {
+            Ok(Some(capture)) => {
+                eprintln!(
+                    "[capture] Native wlr-screencopy succeeded in {:.0}ms ({}x{} origin={},{}).",
+                    start.elapsed().as_millis(),
+                    capture.width,
+                    capture.height,
+                    capture.output_origin_x,
+                    capture.output_origin_y
+                );
+                Some(Ok(capture))
+            }
+            Ok(None) => {
+                eprintln!(
+                    "[capture] Native wlr-screencopy unavailable ({:.0}ms).",
+                    start.elapsed().as_millis()
+                );
+                None
+            }
+            Err(err) => {
+                eprintln!(
+                    "[capture] Native wlr-screencopy failed ({:.0}ms): {err}.",
+                    start.elapsed().as_millis()
+                );
+                None
+            }
+        }
+    }
+
+    /// Screenshot portal capture.
+    ///
+    /// `interactive=true` opens the desktop's selector UI first.
+    async fn capture_via_screenshot_portal(interactive: bool) -> DisplayResult<CaptureData> {
+        let _portal_identity = crate::utils::desktop_env::scoped_portal_capture_identity();
+
+        let request = Screenshot::request()
+            .interactive(interactive)
+            .modal(false)
+            .send()
+            .await
+            .map_err(|e| {
+                DisplayError::PortalError(format!("Screenshot portal request failed: {e}"))
+            })?;
+
+        let response = request.response().map_err(screenshot_response_error)?;
+
+        let path = screenshot_uri_to_path(response.uri())?;
+
+        let img = image::open(&path).map_err(|e| {
+            DisplayError::CaptureError(format!(
+                "Failed to load Screenshot portal image {}: {e}",
+                path.display()
+            ))
+        })?;
+
+        let _ = std::fs::remove_file(&path);
+
+        let img = img.into_rgba8();
+        let width = img.width();
+        let height = img.height();
+        let pixels = img.into_raw();
+
+        Ok(CaptureData::new(pixels, width, height, PixelFormat::RGBA32))
+    }
+
+    /// **Tier 4 — ScreenCast portal + PipeWire** (~1-2 s first run).
+    ///
+    /// Reuses a saved restore-token on subsequent calls to avoid showing the
+    /// source-selection dialog again.
+    async fn capture_via_screencast(
+        target: CaptureTarget,
+        interactive: bool,
+    ) -> Result<CaptureData, ScreencastError> {
+        if !interactive {
+            if let Some(token) = load_restore_token(target) {
+                clear_restore_token(target);
+                match Self::capture_screencast_once(target, interactive, Some(token.as_str())).await
+                {
+                    Ok(capture) => return Ok(capture),
+                    Err(error) if !error.allows_fallback() => return Err(error),
+                    Err(_) => {}
+                }
+            }
+        }
+        Self::capture_screencast_once(target, interactive, None).await
+    }
+
+    async fn capture_screencast_once(
+        target: CaptureTarget,
+        interactive: bool,
+        restore_token: Option<&str>,
+    ) -> Result<CaptureData, ScreencastError> {
+        let _portal_identity = crate::utils::desktop_env::scoped_portal_capture_identity();
+
+        // Capture-private portal connection: Session.Close wedges the zbus
+        // machinery of the connection it traveled on, so captures must not
+        // reuse a process-global portal connection either.
+        let conn = zbus::Connection::session().await.map_err(|e| {
+            DisplayError::PortalError(format!("Failed to connect to session bus: {e}"))
+        })?;
+
+        let screencast = Screencast::with_connection(conn.clone())
+            .await
+            .map_err(|e| {
+                DisplayError::PortalError(format!("Failed to create ScreenCast proxy: {e}"))
+            })?;
+
+        let available_source_types = screencast.available_source_types().await.map_err(|e| {
+            DisplayError::PortalError(format!("Failed to query ScreenCast source types: {e}"))
+        })?;
+        validate_screencast_source_types(target, available_source_types)
+            .map_err(ScreencastError::InvalidSource)?;
+
+        let session = screencast
+            .create_session(CreateSessionOptions::default())
+            .await
+            .map_err(|e| {
+                DisplayError::PortalError(format!("Failed to create ScreenCast session: {e}"))
+            })?;
+
+        let persist_mode = if interactive {
+            PersistMode::DoNot
+        } else {
+            PersistMode::ExplicitlyRevoked
+        };
+
+        let select_request = screencast
+            .select_sources(
+                &session,
+                SelectSourcesOptions::default()
+                    .set_cursor_mode(CursorMode::Metadata)
+                    .set_sources(ashpd::enumflags2::BitFlags::from(target.source_type()))
+                    .set_multiple(false)
+                    .set_restore_token(restore_token)
+                    .set_persist_mode(persist_mode),
+            )
+            .await
+            .map_err(|e| DisplayError::PortalError(format!("Failed to select sources: {e}")))?;
+
+        select_request
+            .response()
+            .map_err(|e| screencast_response_error("Source selection", e))?;
+
+        let start_request = screencast
+            .start(&session, None, StartCastOptions::default())
+            .await
+            .map_err(|e| {
+                DisplayError::PortalError(format!("Failed to start ScreenCast session: {e}"))
+            })?;
+
+        let response = start_request
+            .response()
+            .map_err(|e| screencast_response_error("ScreenCast start", e))?;
+
+        let validation = validate_screencast_stream(
+            target,
+            response.streams().len(),
+            response
+                .streams()
+                .first()
+                .and_then(|stream| stream.source_type()),
+        )
+        .map_err(ScreencastError::InvalidSource);
+        if let Err(error) = validation {
+            let _ = session.close().await;
+            return Err(error);
+        }
+
+        let Some(stream) = response.streams().first() else {
+            let _ = session.close().await;
+            return Err(ScreencastError::InvalidSource(DisplayError::PortalError(
+                "The ScreenCast portal returned no stream after validation".into(),
+            )));
+        };
+        let node_id = stream.pipe_wire_node_id();
+
+        // Get the actual window size and position within the stream
+        // For window captures, the stream may be at monitor resolution with the window
+        // content at a specific position and size
+        let stream_size = stream.size();
+        let stream_position = stream.position();
+
+        if !interactive {
+            if let Some(token) = response.restore_token() {
+                if !token.trim().is_empty() {
+                    save_restore_token(target, token);
+                }
+            }
+        }
+
+        if should_wait_for_portal_dialog_to_close(restore_token) {
+            // GNOME can keep the portal "Share screen" dialog composited for a
+            // frame or two after Start succeeds. Wait before opening PipeWire so
+            // the first grabbed frame is the desktop, not the dismissed dialog.
+            tokio::time::sleep(Duration::from_millis(PORTAL_DIALOG_DISMISSAL_DELAY_MS)).await;
+        }
+
+        let pipewire_fd = screencast
+            .open_pipe_wire_remote(&session, OpenPipeWireRemoteOptions::default())
+            .await
+            .map_err(|e| {
+                DisplayError::PortalError(format!("Failed to open PipeWire remote: {e}"))
+            })?;
+        let capture = capture_single_frame_from_pipewire(node_id, &pipewire_fd);
+        let _ = session.close().await;
+        drop(conn);
+
+        // For window captures, crop to the actual window dimensions if provided
+        if target == CaptureTarget::Window {
+            eprintln!(
+                "[capture] Window capture: stream_size={:?}, stream_position={:?}",
+                stream_size, stream_position
+            );
+            if let (Some((win_width, win_height)), Some((win_x, win_y))) =
+                (stream_size, stream_position)
+            {
+                if win_width > 0 && win_height > 0 && win_x >= 0 && win_y >= 0 {
+                    let data = capture?;
+                    eprintln!(
+                        "[capture] Window capture: cropping from {}x{} to {}x{} at ({}, {})",
+                        data.width, data.height, win_width, win_height, win_x, win_y
+                    );
+                    return Ok(crop_capture(data, win_x, win_y, win_width, win_height)?);
+                }
+            }
+
+            // If stream_position is None (common on GNOME), try to detect content bounds
+            // by finding non-transparent/non-black pixels
+            let data = capture?;
+            if let Some((x, y, w, h)) = Self::detect_content_bounds(&data) {
+                eprintln!(
+                    "[capture] Window capture: auto-detected content bounds {}x{} at ({}, {}) from {}x{}",
+                    w, h, x, y, data.width, data.height
+                );
+                return Ok(crop_capture(data, x, y, w, h)?);
+            }
+            eprintln!(
+                "[capture] Window capture: no content bounds detected, returning full frame {}x{}",
+                data.width, data.height
+            );
+            return Ok(data);
+        }
+
+        capture.map_err(ScreencastError::from)
+    }
+
+    /// Detect the bounding box of actual content in a captured frame.
+    /// Looks for non-transparent and non-black pixels to find the window content.
+    fn detect_content_bounds(data: &CaptureData) -> Option<(i32, i32, i32, i32)> {
+        if data.format != PixelFormat::RGBA32 {
+            return None;
+        }
+
+        let width = data.width as usize;
+        let height = data.height as usize;
+        let pixels = &data.pixels;
+
+        let mut min_x = width;
+        let mut min_y = height;
+        let mut max_x = 0;
+        let mut max_y = 0;
+        let mut found_content = false;
+
+        for y in 0..height {
+            for x in 0..width {
+                let idx = (y * width + x) * 4;
+                if idx + 3 >= pixels.len() {
+                    break;
+                }
+                let r = pixels[idx];
+                let g = pixels[idx + 1];
+                let b = pixels[idx + 2];
+                let a = pixels[idx + 3];
+
+                // Check if pixel is non-transparent and not pure black
+                // (window content should have some visible pixels)
+                if a > 0 && (r > 0 || g > 0 || b > 0) {
+                    min_x = min_x.min(x);
+                    min_y = min_y.min(y);
+                    max_x = max_x.max(x);
+                    max_y = max_y.max(y);
+                    found_content = true;
+                }
+            }
+        }
+
+        if !found_content || min_x >= max_x || min_y >= max_y {
+            return None;
+        }
+
+        // Add small padding to avoid cutting off edge pixels
+        let pad = 2;
+        let x = (min_x.saturating_sub(pad)) as i32;
+        let y = (min_y.saturating_sub(pad)) as i32;
+        let w = ((max_x - min_x + 1).min(width - min_x) + pad * 2) as i32;
+        let h = ((max_y - min_y + 1).min(height - min_y) + pad * 2) as i32;
+
+        // Only crop if the detected bounds are significantly smaller than the frame
+        // (at least 10% smaller in at least one dimension)
+        if w < (width as i32 * 90 / 100) || h < (height as i32 * 90 / 100) {
+            Some((x, y, w, h))
+        } else {
+            None
+        }
+    }
+
+    fn capture_monitor_via_screencast() -> DisplayResult<CaptureData> {
+        let t3_start = std::time::Instant::now();
+        let result = block_on_async(async {
+            Self::capture_via_screencast(CaptureTarget::Monitor, false)
+                .await
+                .map_err(ScreencastError::into_display)
+        });
+        match &result {
+            Ok(d) => eprintln!(
+                "[capture] Tier 3 (ScreenCast) succeeded in {:.0}ms ({}x{}).",
+                t3_start.elapsed().as_millis(),
+                d.width,
+                d.height
+            ),
+            Err(e) => eprintln!(
+                "[capture] Tier 3 (ScreenCast) failed ({:.0}ms): {e}",
+                t3_start.elapsed().as_millis()
+            ),
+        }
+        result
+    }
+
+    fn should_try_kde_native_screenshot() -> bool {
+        if crate::app_identity::portal_only() {
+            return false;
+        }
+        kde_screenshot::is_kde_wayland_session() && kde_screenshot::is_kwin_screenshot_available()
+    }
+
+    fn capture_monitor_via_kde_native() -> Option<DisplayResult<CaptureData>> {
+        if !Self::should_try_kde_native_screenshot() {
+            return None;
+        }
+
+        let start = std::time::Instant::now();
+        let result = kde_screenshot::capture_workspace();
+        match &result {
+            Ok(d) => eprintln!(
+                "[capture] KDE ScreenShot2 workspace capture succeeded in {:.0}ms ({}x{}).",
+                start.elapsed().as_millis(),
+                d.width,
+                d.height
+            ),
+            Err(e) => {
+                eprintln!(
+                    "[capture] KDE ScreenShot2 workspace capture failed ({:.0}ms): {e}",
+                    start.elapsed().as_millis()
+                );
+                if kde_screenshot::is_authorization_error(e) {
+                    eprintln!(
+                        "[capture] KDE ScreenShot2 authorization missing; falling back to existing Wayland backends. On KDE Plasma, native capture may only be granted to the real ApexShot desktop application identity, not ad-hoc helper/test binaries."
+                    );
+                }
+                return None;
+            }
+        }
+        Some(result)
+    }
+
+    fn capture_area_via_kde_native(
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) -> Option<DisplayResult<CaptureData>> {
+        if !Self::should_try_kde_native_screenshot() {
+            return None;
+        }
+        if width <= 0 || height <= 0 {
+            return Some(Err(DisplayError::InvalidArea(format!(
+                "Invalid dimensions: {}x{}",
+                width, height
+            ))));
+        }
+
+        let start = std::time::Instant::now();
+        let result = kde_screenshot::capture_area(x, y, width as u32, height as u32);
+        match &result {
+            Ok(d) => eprintln!(
+                "[capture] KDE ScreenShot2 area capture succeeded in {:.0}ms ({}x{}).",
+                start.elapsed().as_millis(),
+                d.width,
+                d.height
+            ),
+            Err(e) => {
+                eprintln!(
+                    "[capture] KDE ScreenShot2 area capture failed ({:.0}ms): {e}",
+                    start.elapsed().as_millis()
+                );
+                if kde_screenshot::is_authorization_error(e) {
+                    eprintln!(
+                        "[capture] KDE ScreenShot2 authorization missing; falling back to existing Wayland backends. On KDE Plasma, native capture may only be granted to the real ApexShot desktop application identity, not ad-hoc helper/test binaries."
+                    );
+                }
+                return None;
+            }
+        }
+        Some(result)
+    }
+
+    fn capture_window_via_kde_native() -> Option<DisplayResult<CaptureData>> {
+        if !Self::should_try_kde_native_screenshot() {
+            return None;
+        }
+
+        let start = std::time::Instant::now();
+        let result = kde_screenshot::capture_interactive(kde_screenshot::InteractiveKind::Window);
+        match &result {
+            Ok(d) => eprintln!(
+                "[capture] KDE ScreenShot2 interactive window capture succeeded in {:.0}ms ({}x{}).",
+                start.elapsed().as_millis(),
+                d.width,
+                d.height
+            ),
+            Err(e) => {
+                eprintln!(
+                    "[capture] KDE ScreenShot2 interactive window capture failed ({:.0}ms): {e}",
+                    start.elapsed().as_millis()
+                );
+                if kde_screenshot::is_authorization_error(e) {
+                    eprintln!(
+                        "[capture] KDE ScreenShot2 authorization missing; falling back to existing Wayland backends. On KDE Plasma, native capture may only be granted to the real ApexShot desktop application identity, not ad-hoc helper/test binaries."
+                    );
+                }
+                return None;
+            }
+        }
+        Some(result)
+    }
+
+    /// Full-screen still capture. Prefers fast native/Screenshot paths; only
+    /// falls back to ScreenCast + PipeWire when those fail.
+    pub fn capture_screen_impl(&self) -> DisplayResult<CaptureData> {
+        if crate::app_identity::portal_only() {
+            return Self::capture_still_via_screenshot_portal();
+        }
+        if Self::should_force_screenshot_portal_first() {
+            match Self::capture_still_via_screenshot_portal() {
+                Ok(data) => return Ok(data),
+                Err(DisplayError::Cancelled) => return Err(DisplayError::Cancelled),
+                Err(err) => eprintln!(
+                    "[capture] Forced Screenshot portal failed ({err}); trying native backends."
+                ),
+            }
+        }
+
+        if let Some(result) = Self::capture_monitor_via_kde_native() {
+            return result;
+        }
+
+        if let Some(result) = Self::capture_monitor_via_native_screencopy() {
+            return result;
+        }
+
+        match Self::capture_still_via_screenshot_portal() {
+            Ok(data) => return Ok(data),
+            Err(DisplayError::Cancelled) => return Err(DisplayError::Cancelled),
+            Err(err) => eprintln!(
+                "[capture] Screenshot portal unavailable ({err}); falling back to ScreenCast."
+            ),
+        }
+
+        Self::capture_monitor_via_screencast()
+    }
+
+    /// Area capture via interactive Screenshot portal selector.
+    pub fn capture_area_via_portal_interactive_impl(&self) -> DisplayResult<CaptureData> {
+        block_on_async(Self::capture_via_screenshot_portal(true))
+    }
+
+    /// Direct area capture optimized for Wayland when coordinates are known.
+    ///
+    /// Attempts compositor-native paths before falling back to full-screen crop.
+    pub fn capture_area_direct_impl(
+        &self,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) -> DisplayResult<CaptureData> {
+        if width <= 0 || height <= 0 {
+            return Err(DisplayError::InvalidArea(format!(
+                "Invalid dimensions: {}x{}",
+                width, height
+            )));
+        }
+
+        if let Some(result) = Self::capture_area_via_kde_native(x, y, width, height) {
+            return result;
+        }
+
+        let full = self.capture_screen_for_selection_impl()?;
+        crop_capture(full, x, y, width, height)
+    }
+
+    /// Capture used for direct area crops / selection freezes on Wayland.
+    ///
+    /// Order: KDE native → wlr-screencopy (~50 ms) → Screenshot portal
+    /// → ScreenCast last resort.
+    pub fn capture_screen_for_selection_impl(&self) -> DisplayResult<CaptureData> {
+        self.capture_screen_for_selection_at(None)
+    }
+
+    /// Like [`capture_screen_for_selection_impl`], but prefer the output at
+    /// logical origin `(x, y)` when native screencopy is used (multi-monitor).
+    pub fn capture_screen_for_selection_at(
+        &self,
+        origin: Option<(i32, i32)>,
+    ) -> DisplayResult<CaptureData> {
+        self.capture_selection_still(origin, false)
+    }
+
+    /// Freeze capture for the native selector flows, where the configured
+    /// shutter sound belongs at the initial freeze rather than at save time.
+    pub fn capture_screen_for_selection_at_with_sound(
+        &self,
+        origin: Option<(i32, i32)>,
+    ) -> DisplayResult<CaptureData> {
+        self.capture_selection_still(origin, !Self::should_force_screenshot_portal_first())
+    }
+
+    fn capture_selection_still(
+        &self,
+        origin: Option<(i32, i32)>,
+        play_sound: bool,
+    ) -> DisplayResult<CaptureData> {
+        if crate::app_identity::portal_only() {
+            return Self::capture_still_via_screenshot_portal();
+        }
+        if Self::should_force_screenshot_portal_first() {
+            match Self::capture_still_via_screenshot_portal() {
+                Ok(data) => return Ok(data),
+                Err(DisplayError::Cancelled) => return Err(DisplayError::Cancelled),
+                Err(err) => eprintln!(
+                    "[capture] Forced Screenshot portal failed ({err}); trying native backends."
+                ),
+            }
+        }
+
+        if let Some(result) = Self::capture_monitor_via_kde_native() {
+            let capture = result?;
+            if play_sound {
+                crate::utils::capture_sound::play_shutter_sound_if_enabled();
+            }
+            return Ok(capture);
+        }
+
+        if let Some(result) = Self::capture_monitor_via_native_screencopy_at(origin) {
+            let capture = result?;
+            if play_sound {
+                crate::utils::capture_sound::play_shutter_sound_if_enabled();
+            }
+            return Ok(capture);
+        }
+
+        match Self::capture_still_via_screenshot_portal() {
+            Ok(data) => return Ok(data),
+            Err(DisplayError::Cancelled) => return Err(DisplayError::Cancelled),
+            Err(err) => eprintln!(
+                "[capture] Native still capture unavailable; Screenshot portal failed ({err}); \
+                 falling back to ScreenCast portal."
+            ),
+        }
+
+        Self::capture_monitor_via_screencast()
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Async executor helper
+// ──────────────────────────────────────────────────────────────────────────────
+
+fn block_on_async<F, R>(future: F) -> DisplayResult<R>
+where
+    F: std::future::Future<Output = DisplayResult<R>>,
+{
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => tokio::task::block_in_place(move || handle.block_on(future)),
+        Err(_) => {
+            let rt = tokio::runtime::Runtime::new().map_err(|e| {
+                DisplayError::InitializationError(format!("Failed to create tokio runtime: {e}"))
+            })?;
+            rt.block_on(future)
+        }
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Public Screenshot portal helper for explicit portal capture paths.
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Capture fullscreen via the XDG Screenshot portal (no ScreenCast dialog).
+pub async fn capture_fullscreen_via_screenshot_portal() -> DisplayResult<CaptureData> {
+    let _portal_identity = crate::utils::desktop_env::scoped_portal_capture_identity();
+
+    let request = Screenshot::request()
+        .interactive(false)
+        .modal(false)
+        .send()
+        .await
+        .map_err(|e| DisplayError::PortalError(format!("Screenshot portal request failed: {e}")))?;
+
+    let response = request.response().map_err(screenshot_response_error)?;
+
+    let path = screenshot_uri_to_path(response.uri())?;
+
+    let img = image::open(&path).map_err(|e| {
+        DisplayError::CaptureError(format!(
+            "Failed to load Screenshot portal image {}: {e}",
+            path.display()
+        ))
+    })?;
+
+    let _ = std::fs::remove_file(&path);
+
+    let img = img.into_rgba8();
+    let width = img.width();
+    let height = img.height();
+    let pixels = img.into_raw();
+
+    Ok(CaptureData::new(pixels, width, height, PixelFormat::RGBA32))
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// DisplayBackend implementation
+// ──────────────────────────────────────────────────────────────────────────────
+
+impl DisplayBackend for WaylandBackend {
+    fn new() -> DisplayResult<Self> {
+        Ok(WaylandBackend)
+    }
+
+    fn capture_screen(&self) -> DisplayResult<CaptureData> {
+        self.capture_screen_impl()
+    }
+
+    fn capture_area(&self, x: i32, y: i32, width: i32, height: i32) -> DisplayResult<CaptureData> {
+        self.capture_area_direct_impl(x, y, width, height)
+    }
+
+    fn capture_window(&self, _window_id: u64) -> DisplayResult<CaptureData> {
+        if let Some(result) = Self::capture_window_via_kde_native() {
+            if result.is_ok() {
+                return result;
+            }
+        }
+
+        // Try the ScreenCast portal first (works on GNOME/KDE with proper portal).
+        // This shows the portal's own source-selection dialog to the user.
+        let (portal_result, allow_fallback) = match block_on_async(async {
+            let result = Self::capture_via_screencast(CaptureTarget::Window, true).await;
+            let allow_fallback = result
+                .as_ref()
+                .err()
+                .is_some_and(ScreencastError::allows_fallback);
+            Ok((
+                result.map_err(ScreencastError::into_display),
+                allow_fallback,
+            ))
+        }) {
+            Ok(result) => result,
+            Err(error) => (Err(error), true),
+        };
+
+        if portal_result.is_ok() || !allow_fallback {
+            return portal_result;
+        }
+
+        // Fallback for wlroots compositors (Hyprland, Sway, etc.) where the
+        // ScreenCast portal may not be available: capture the full screen via
+        // wlr-screencopy, then crop to the active window bounds from the
+        // compositor's window list.
+        if crate::app_identity::portal_only() {
+            return portal_result;
+        }
+        if let Some(compositor) = crate::compositor::detect_compositor() {
+            if let Ok(Some(window)) = compositor.get_active_window() {
+                eprintln!(
+                    "[wayland] Portal unavailable, falling back to wlr-screencopy window crop: {} \"{}\" at {}x{}+{}x{}",
+                    window.class, window.title, window.x, window.y, window.width, window.height
+                );
+                let full = self.capture_screen_for_selection_impl()?;
+                // Clamp crop to valid screen bounds
+                let x = window.x.max(0);
+                let y = window.y.max(0);
+                let width = window.width.min(full.width as i32 - x).max(1);
+                let height = window.height.min(full.height as i32 - y).max(1);
+                return self.capture_area_direct_impl(x, y, width, height);
+            }
+        }
+
+        portal_result
+    }
+
+    fn is_supported() -> bool {
+        // Pure env-var check — no plugin scans, no I/O, no D-Bus.
+        // GStreamer and grim availability are probed lazily at capture time.
+        std::env::var("XDG_SESSION_TYPE")
+            .map(|s| s.to_lowercase() == "wayland")
+            .unwrap_or(false)
+            && std::env::var("WAYLAND_DISPLAY").is_ok()
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_supported() {
+        let supported = WaylandBackend::is_supported();
+        println!("Wayland backend supported: {}", supported);
+    }
+
+    #[test]
+    fn test_backend_creation() {
+        let backend = WaylandBackend::new();
+        assert!(backend.is_ok());
+    }
+
+    #[test]
+    fn portal_cancellation_remains_terminal_for_legacy_capture_paths() {
+        assert!(matches!(
+            screenshot_response_error(ashpd::Error::Response(ResponseError::Cancelled)),
+            DisplayError::Cancelled
+        ));
+        assert!(matches!(
+            ScreencastError::Cancelled.into_display(),
+            DisplayError::Cancelled
+        ));
+    }
+
+    #[test]
+    fn screencast_response_cancellation_is_not_a_failure() {
+        assert!(matches!(
+            screencast_response_error(
+                "ScreenCast start",
+                ashpd::Error::Response(ResponseError::Cancelled)
+            ),
+            ScreencastError::Cancelled
+        ));
+        assert!(matches!(
+            screencast_response_error(
+                "ScreenCast start",
+                ashpd::Error::Response(ResponseError::Other)
+            ),
+            ScreencastError::Failed(_)
+        ));
+    }
+
+    #[test]
+    fn screencast_requires_the_requested_source_type_and_one_matching_stream() {
+        assert!(validate_screencast_source_types(
+            CaptureTarget::Monitor,
+            SourceType::Monitor.into()
+        )
+        .is_ok());
+        assert!(
+            validate_screencast_source_types(CaptureTarget::Window, SourceType::Window.into())
+                .is_ok()
+        );
+        assert!(matches!(
+            validate_screencast_source_types(CaptureTarget::Monitor, SourceType::Window.into()),
+            Err(DisplayError::UnsupportedBackend(_))
+        ));
+        assert!(matches!(
+            validate_screencast_source_types(CaptureTarget::Window, SourceType::Monitor.into()),
+            Err(DisplayError::UnsupportedBackend(_))
+        ));
+
+        for target in [CaptureTarget::Monitor, CaptureTarget::Window] {
+            assert!(validate_screencast_stream(target, 1, None).is_ok());
+            assert!(validate_screencast_stream(target, 1, Some(target.source_type())).is_ok());
+            assert!(matches!(
+                validate_screencast_stream(target, 0, None),
+                Err(DisplayError::PortalError(_))
+            ));
+            assert!(matches!(
+                validate_screencast_stream(target, 2, Some(target.source_type())),
+                Err(DisplayError::PortalError(_))
+            ));
+            let wrong = match target {
+                CaptureTarget::Monitor => SourceType::Window,
+                CaptureTarget::Window => SourceType::Monitor,
+            };
+            assert!(matches!(
+                validate_screencast_stream(target, 1, Some(wrong)),
+                Err(DisplayError::PortalError(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn invalid_screencast_sources_do_not_allow_capture_fallbacks() {
+        assert!(!ScreencastError::Cancelled.allows_fallback());
+        assert!(
+            !ScreencastError::InvalidSource(DisplayError::PortalError("wrong source".into()))
+                .allows_fallback()
+        );
+        assert!(
+            ScreencastError::Failed(DisplayError::PortalError("unavailable".into()))
+                .allows_fallback()
+        );
+        assert!(!ScreencastError::Failed(DisplayError::Cancelled).allows_fallback());
+    }
+
+    #[test]
+    fn test_crop_capture_bounds_and_dimensions() {
+        let data = CaptureData::new(vec![255; 4 * 4 * 4], 4, 4, PixelFormat::RGBA32);
+
+        let cropped = crop_capture(data, 1, 1, 2, 2).expect("crop should succeed");
+        assert_eq!(cropped.width, 2);
+        assert_eq!(cropped.height, 2);
+        assert_eq!(cropped.pixels.len(), 2 * 2 * 4);
+    }
+
+    #[test]
+    fn kde_native_routing_detection_is_isolated() {
+        assert!(kde_screenshot::is_kde_wayland_session_from_env(
+            Some("wayland"),
+            Some("KDE")
+        ));
+        assert!(!kde_screenshot::is_kde_wayland_session_from_env(
+            Some("wayland"),
+            Some("GNOME")
+        ));
+        assert!(!kde_screenshot::is_kde_wayland_session_from_env(
+            Some("x11"),
+            Some("KDE")
+        ));
+    }
+
+    #[test]
+    fn test_crop_capture_rejects_invalid_area() {
+        let data = CaptureData::new(vec![255; 4 * 4 * 4], 4, 4, PixelFormat::RGBA32);
+        // Area completely outside the captured output — should fail.
+        let result = crop_capture(data, 10, 10, 2, 2);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn screencast_waits_for_portal_dialog_only_without_restore_token() {
+        assert!(should_wait_for_portal_dialog_to_close(None));
+        assert!(!should_wait_for_portal_dialog_to_close(Some(
+            "restore-token"
+        )));
+        const { assert!(PORTAL_DIALOG_DISMISSAL_DELAY_MS >= 500) };
+    }
+}

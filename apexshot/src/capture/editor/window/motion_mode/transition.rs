@@ -1,0 +1,300 @@
+use gtk4::{
+    prelude::*, Align, ApplicationWindow, Box as GtkBox, Button, CheckButton, Label, Orientation,
+    Overlay, Revealer, Stack,
+};
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
+
+use crate::capture::editor::state::EditorState;
+use crate::config::{load_config, save_config};
+use crate::i18n::t;
+
+use super::{MotionSession, APPEARANCE_PAGE, MOTION_PAGE, STATIC_PAGE, TEXT_PAGE, WATERMARK_PAGE};
+
+pub(in crate::capture::editor::window) struct MotionModeChrome {
+    pub mode_stack: Stack,
+    pub canvas_stack: Stack,
+    pub bottom_left_stack: Stack,
+    pub motion_control: GtkBox,
+    pub history_control: GtkBox,
+    pub inspector_tabs: GtkBox,
+    pub motion_tabs: GtkBox,
+    pub motion_tabs_revealer: Revealer,
+    pub inspector_stack: Stack,
+    pub motion_tab_btn: Button,
+    pub text_tab_btn: Button,
+    pub appearance_tab_btn: Button,
+    pub watermark_tab_btn: Button,
+}
+
+pub(in crate::capture::editor::window) fn apply_editor_mode(
+    chrome: &MotionModeChrome,
+    motion: bool,
+    last_inspector: &str,
+) {
+    let page = if motion { MOTION_PAGE } else { STATIC_PAGE };
+    chrome.mode_stack.set_visible_child_name(page);
+    chrome.canvas_stack.set_visible_child_name(page);
+    chrome.bottom_left_stack.set_visible(!motion);
+    chrome.motion_control.set_visible(!motion);
+    chrome.history_control.set_visible(!motion);
+    chrome.inspector_tabs.set_visible(!motion);
+    chrome.motion_tabs.set_can_target(motion);
+    chrome.motion_tabs_revealer.set_reveal_child(motion);
+    if motion {
+        chrome.inspector_stack.set_visible_child_name(MOTION_PAGE);
+        chrome.motion_tab_btn.add_css_class("active-tool");
+        chrome.text_tab_btn.remove_css_class("active-tool");
+        chrome.appearance_tab_btn.remove_css_class("active-tool");
+        chrome.watermark_tab_btn.remove_css_class("active-tool");
+    } else {
+        chrome
+            .inspector_stack
+            .set_visible_child_name(last_inspector);
+    }
+}
+
+/// Show one Motion tool page and move the notch highlight to its button.
+///
+/// Every path that reveals a page goes through here — the notch buttons and
+/// the timeline selection that reveals Text — so the highlighted button and
+/// the visible panel can never disagree.
+pub(in crate::capture::editor::window) fn show_motion_tool_page(
+    chrome: &MotionModeChrome,
+    page: &str,
+) {
+    chrome.inspector_stack.set_visible_child_name(page);
+    for (button, button_page) in [
+        (&chrome.motion_tab_btn, MOTION_PAGE),
+        (&chrome.text_tab_btn, TEXT_PAGE),
+        (&chrome.appearance_tab_btn, APPEARANCE_PAGE),
+        (&chrome.watermark_tab_btn, WATERMARK_PAGE),
+    ] {
+        if button_page == page {
+            button.add_css_class("active-tool");
+        } else {
+            button.remove_css_class("active-tool");
+        }
+    }
+}
+
+pub(in crate::capture::editor::window) fn annotations_need_snapshot(state: &EditorState) -> bool {
+    !state.actions.is_empty()
+}
+
+/// Height-to-width ratio past which a still counts as a long screenshot.
+/// The tallest phone screens run about 2.33:1 (21:9) and a portrait monitor
+/// 1.8:1; a scrolling capture of two and a half screens is already past this.
+const LONG_IMAGE_RATIO: f64 = 2.4;
+
+/// Whether the still is a long screenshot, such as a scrolling capture.
+/// Motion frames the whole still on one card, so a page this tall would shrink
+/// to an unreadable strip, and each frame would composite far more pixels than
+/// any screen holds. Those captures stay in Static.
+pub(in crate::capture::editor::window) fn is_long_image(width: u32, height: u32) -> bool {
+    width > 0 && f64::from(height) / f64::from(width) > LONG_IMAGE_RATIO
+}
+
+pub(in crate::capture::editor::window) fn long_image_motion_tooltip() -> String {
+    t("Motion isn't available for long screenshots")
+}
+
+#[derive(Clone, Copy)]
+enum ConfirmKind {
+    ToMotion,
+    ToStatic,
+    /// A notice, not a question: the still is too long for Motion.
+    LongImage,
+}
+
+pub(in crate::capture::editor::window) fn request_enter_motion(
+    window: &ApplicationWindow,
+    confirm_overlay: &GtkBox,
+    _session: &MotionSession,
+    state: &Arc<Mutex<EditorState>>,
+    empty_drop_zone: bool,
+    enter: Rc<dyn Fn()>,
+) {
+    if empty_drop_zone {
+        return;
+    }
+    let (long_image, needs_confirm) = {
+        let guard = state.lock().unwrap();
+        let (width, height) = guard.working_image.dimensions();
+        (
+            is_long_image(width, height),
+            annotations_need_snapshot(&guard) && !load_config().skip_static_to_motion_confirm,
+        )
+    };
+    if long_image {
+        show_confirm(
+            window,
+            confirm_overlay,
+            ConfirmKind::LongImage,
+            Rc::new(|| {}),
+        );
+        return;
+    }
+    if needs_confirm {
+        show_confirm(
+            window,
+            confirm_overlay,
+            ConfirmKind::ToMotion,
+            Rc::new({
+                let enter = enter.clone();
+                move || enter()
+            }),
+        );
+        return;
+    }
+    enter();
+}
+
+pub(in crate::capture::editor::window) fn request_leave_motion(
+    window: &ApplicationWindow,
+    confirm_overlay: &GtkBox,
+    session: &MotionSession,
+    leave: Rc<dyn Fn()>,
+) {
+    if session.has_segments() && !load_config().skip_motion_to_static_confirm {
+        show_confirm(window, confirm_overlay, ConfirmKind::ToStatic, leave);
+        return;
+    }
+    leave();
+}
+
+fn show_confirm(
+    _window: &ApplicationWindow,
+    overlay: &GtkBox,
+    kind: ConfirmKind,
+    on_continue: Rc<dyn Fn()>,
+) {
+    while let Some(child) = overlay.first_child() {
+        overlay.remove(&child);
+    }
+
+    let (title, body, skip_field) = match kind {
+        ConfirmKind::ToMotion => (
+            t("Annotations will be applied"),
+            t("Motion will play a snapshot of your annotations. Returning to Static restores the live tools. The original image stays unchanged unless you enable overwrite in Settings → Annotate."),
+            "static_to_motion",
+        ),
+        ConfirmKind::ToStatic => (
+            t("Motion effects will be cleared"),
+            t("Motion effect segments can't be edited in Static mode and will be cleared if you continue."),
+            "motion_to_static",
+        ),
+        ConfirmKind::LongImage => (
+            long_image_motion_tooltip(),
+            t("This screenshot is too long to animate. Scrolling captures and other long images stay in Static, where every annotation and export tool still works."),
+            "",
+        ),
+    };
+    let notice = matches!(kind, ConfirmKind::LongImage);
+
+    let card = GtkBox::new(Orientation::Vertical, 12);
+    card.add_css_class("editor-motion-confirm-card");
+    card.set_halign(Align::Center);
+    card.set_valign(Align::Center);
+    // Expand into the scrim so the Center alignment can place the card: a
+    // child that does not expand is handed the wrapped labels' one-line width
+    // and left at the top, which is what parked this dialog in the corner.
+    card.set_hexpand(true);
+    card.set_vexpand(true);
+
+    let title_label = Label::new(Some(&title));
+    title_label.add_css_class("editor-inspector-title");
+    title_label.set_xalign(0.0);
+    title_label.set_wrap(true);
+    title_label.set_max_width_chars(44);
+
+    let body_label = Label::new(Some(&body));
+    body_label.add_css_class("editor-select-inspector-hint");
+    body_label.set_xalign(0.0);
+    body_label.set_wrap(true);
+    body_label.set_max_width_chars(44);
+
+    let skip = CheckButton::with_label(&t("Don't show this again"));
+    skip.add_css_class("editor-motion-confirm-skip");
+
+    let buttons = GtkBox::new(Orientation::Horizontal, 8);
+    buttons.set_halign(Align::Fill);
+    let cancel = Button::with_label(&t("Cancel"));
+    cancel.set_has_frame(false);
+    cancel.add_css_class("editor-sidebar-action-button");
+    // Keep the primary action at the far edge and Cancel alone on the left,
+    // instead of the two buttons huddling together on the right.
+    let buttons_spacer = GtkBox::new(Orientation::Horizontal, 0);
+    buttons_spacer.set_hexpand(true);
+    let cont = Button::with_label(&if notice { t("Got it") } else { t("Continue") });
+    cont.set_has_frame(false);
+    cont.add_css_class("editor-done-button");
+    buttons.append(&cancel);
+    buttons.append(&buttons_spacer);
+    buttons.append(&cont);
+
+    // A notice has nothing to cancel or skip: it only acknowledges.
+    skip.set_visible(!notice);
+    cancel.set_visible(!notice);
+
+    card.append(&title_label);
+    card.append(&body_label);
+    card.append(&skip);
+    card.append(&buttons);
+    overlay.append(&card);
+    overlay.set_visible(true);
+
+    cancel.connect_clicked({
+        let overlay = overlay.clone();
+        move |_| overlay.set_visible(false)
+    });
+    cont.connect_clicked({
+        let overlay = overlay.clone();
+        let skip = skip.clone();
+        let skip_field = skip_field.to_string();
+        move |_| {
+            if skip.is_active() && !skip_field.is_empty() {
+                let mut config = load_config();
+                match skip_field.as_str() {
+                    "static_to_motion" => config.skip_static_to_motion_confirm = true,
+                    _ => config.skip_motion_to_static_confirm = true,
+                }
+                let _ = save_config(&config);
+            }
+            overlay.set_visible(false);
+            on_continue();
+        }
+    });
+}
+
+pub(in crate::capture::editor::window) fn install_confirm_overlay(
+    root_overlay: &Overlay,
+    confirm: &GtkBox,
+) {
+    root_overlay.add_overlay(confirm);
+    root_overlay.set_clip_overlay(confirm, true);
+}
+
+#[cfg(test)]
+mod long_image_tests {
+    use super::is_long_image;
+
+    #[test]
+    fn scrolling_captures_are_long_but_screens_and_phones_are_not() {
+        // Screens: landscape, ultrawide, portrait monitor, tall phone.
+        for (width, height) in [
+            (1920, 1080),
+            (5120, 1440),
+            (1080, 1920),
+            (1170, 2532),
+            (1644, 3840),
+        ] {
+            assert!(!is_long_image(width, height), "{width}x{height}");
+        }
+        // A stitched page and a narrow scrolling region.
+        for (width, height) in [(1920, 9000), (1920, 4800), (800, 2600)] {
+            assert!(is_long_image(width, height), "{width}x{height}");
+        }
+        assert!(!is_long_image(0, 100));
+    }
+}

@@ -1,0 +1,1211 @@
+//! Direct Wayland screencopy capture via `zwlr_screencopy_manager_v1`.
+//!
+//! This speaks the `wlr-screencopy` Wayland protocol directly over the
+//! compositor socket.  No D-Bus, no portal daemon, no screen-sharing popup.
+//! Latency is ~50 ms.
+//!
+//! Supported compositors: Sway, Hyprland, Niri, river, and any other
+//! wlroots-based compositor.  Also works on KDE Plasma ≥ 6.3 which ships
+//! its own `zwlr_screencopy_manager_v1` implementation.
+//!
+//! Falls back gracefully: if the compositor does not advertise
+//! `zwlr_screencopy_manager_v1` in the global registry, `capture()` returns
+//! `None` and the caller can try the next tier.
+
+use std::collections::BTreeMap;
+use wayland_client::{
+    protocol::{wl_buffer, wl_output, wl_registry, wl_shm, wl_shm_pool},
+    Connection, Dispatch, EventQueue, Proxy, QueueHandle,
+};
+use wayland_protocols::xdg::xdg_output::zv1::client::{zxdg_output_manager_v1, zxdg_output_v1};
+use wayland_protocols_wlr::screencopy::v1::client::{
+    zwlr_screencopy_frame_v1, zwlr_screencopy_manager_v1,
+};
+
+use super::{CaptureData, DisplayError, DisplayResult, PixelFormat};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Public entry point
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Attempt a direct wlr-screencopy capture of the preferred output.
+///
+/// Without a preference, captures the output with the smallest logical origin
+/// (legacy behaviour for single-monitor and left-most multi-monitor layouts).
+///
+/// Returns `Ok(Some(data))` on success, `Ok(None)` if the compositor does
+/// not support `zwlr_screencopy_manager_v1`, or `Err(_)` on a hard failure.
+pub fn capture() -> DisplayResult<Option<CaptureData>> {
+    capture_preferred(None)
+}
+
+/// Capture the Wayland output whose logical origin is closest to `(x, y)`.
+///
+/// Used by the multi-monitor picker so freeze matches the selected display.
+pub fn capture_at(x: i32, y: i32) -> DisplayResult<Option<CaptureData>> {
+    capture_preferred(Some((x, y)))
+}
+
+fn capture_preferred(prefer_origin: Option<(i32, i32)>) -> DisplayResult<Option<CaptureData>> {
+    // Connect to the running Wayland compositor.
+    let conn = Connection::connect_to_env().map_err(|e| {
+        DisplayError::InitializationError(format!("Could not connect to Wayland display: {e}"))
+    })?;
+
+    let mut state = AppState::default();
+    let mut event_queue: EventQueue<AppState> = conn.new_event_queue();
+    let qh = event_queue.handle();
+
+    // Bind globals (registry listener populates state.globals).
+    let display = conn.display();
+    display.get_registry(&qh, ());
+
+    // One roundtrip: the compositor sends us all global advertisements.
+    event_queue
+        .roundtrip(&mut state)
+        .map_err(|e| DisplayError::InitializationError(format!("Wayland roundtrip failed: {e}")))?;
+
+    // Need geometry events before we can rank outputs by origin.
+    event_queue
+        .roundtrip(&mut state)
+        .map_err(|e| DisplayError::InitializationError(format!("Wayland roundtrip failed: {e}")))?;
+
+    // If screencopy is not available, signal the caller to try the next tier.
+    let manager = match state.screencopy_manager.take() {
+        Some(m) => m,
+        None => return Ok(None),
+    };
+
+    if state.outputs.is_empty() {
+        return Err(DisplayError::CaptureError(
+            "No Wayland outputs found".into(),
+        ));
+    }
+
+    let output_order = state
+        .outputs
+        .iter()
+        .map(|output| output.id().protocol_id())
+        .collect::<Vec<_>>();
+    let output_id = select_output_id(
+        &state.output_infos,
+        &output_order,
+        state.xdg_output_manager.is_some(),
+        prefer_origin,
+    )
+    .map_err(|error| match error {
+        OutputSelectionError::NoOutputs => {
+            DisplayError::CaptureError("No Wayland outputs found".into())
+        }
+        OutputSelectionError::AmbiguousOrigin => DisplayError::UnsupportedBackend(
+            "Multiple Wayland outputs share the requested logical origin".into(),
+        ),
+        OutputSelectionError::MissingLogicalPosition => DisplayError::UnsupportedBackend(
+            "The compositor did not report logical positions for every output".into(),
+        ),
+    })?;
+    let output = state
+        .outputs
+        .iter()
+        .find(|output| output.id().protocol_id() == output_id)
+        .cloned()
+        .ok_or_else(|| DisplayError::CaptureError("Selected Wayland output disappeared".into()))?;
+
+    // Snapshot the selected output's logical origin and scale before we move
+    // `state` fields further down. These are used to correctly crop
+    // the physical-pixel image when the caller supplies logical-area
+    // coordinates (see CaptureData::output_origin_* / output_scale).
+    let output_info = state.output_infos.get(&output_id).ok_or_else(|| {
+        DisplayError::CaptureError("Selected Wayland output metadata disappeared".into())
+    })?;
+    let (output_origin_x, output_origin_y) = output_info.effective_origin();
+    let output_scale = output_info.scale;
+
+    if let Some((px, py)) = prefer_origin {
+        eprintln!(
+            "[screencopy] preferred origin=({}, {}) → output origin=({}, {}) scale={}",
+            px, py, output_origin_x, output_origin_y, output_scale
+        );
+    }
+
+    let shm = state
+        .shm
+        .take()
+        .ok_or_else(|| DisplayError::CaptureError("Compositor did not advertise wl_shm".into()))?;
+
+    // Request a frame for the full output (overlay_cursor = 0 → no cursor).
+    let frame = manager.capture_output(0, &output, &qh, ());
+
+    // Flush so the compositor receives the request.
+    event_queue
+        .flush()
+        .map_err(|e| DisplayError::CaptureError(format!("Wayland flush failed: {e}")))?;
+
+    // The compositor sends one `buffer` event per offered shm format, followed
+    // by `buffer_done` on manager version 3. We loop until a supported format
+    // is committed, the format list completes, or the deadline expires.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        event_queue
+            .blocking_dispatch(&mut state)
+            .map_err(|e| DisplayError::CaptureError(format!("Wayland dispatch failed: {e}")))?;
+
+        if state.frame_info.is_some() || state.frame_failed || state.frame_list_complete {
+            break;
+        }
+        if std::time::Instant::now() > deadline {
+            if state.frame_candidates.is_empty() {
+                return Err(DisplayError::CaptureError(
+                    "Timed out waiting for screencopy buffer event".into(),
+                ));
+            }
+            state.frame_info = choose_frame_format(&state.frame_candidates);
+            break;
+        }
+    }
+
+    if state.frame_failed {
+        return Err(DisplayError::CaptureError(
+            "Compositor rejected screencopy frame".into(),
+        ));
+    }
+
+    let info = state.frame_info.take().ok_or_else(|| {
+        let offered =
+            describe_offered_formats(&state.frame_candidates, &state.frame_unknown_formats);
+        DisplayError::UnsupportedBackend(format!(
+            "Compositor offered no supported shm pixel format (offered: {offered})"
+        ))
+    })?;
+
+    // Reject unsupported formats and inconsistent geometry before we mmap.
+    let (_, _, size) = frame_geometry(info.width, info.height, info.stride, info.format)?;
+    let stride = info.stride;
+
+    let shm_file = create_shm_file(size)
+        .map_err(|e| DisplayError::CaptureError(format!("Failed to create shm file: {e}")))?;
+
+    // Memory-map the file so we can read pixels after the compositor writes them.
+    let raw_fd = shm_file.as_raw_fd();
+    let mmap = unsafe {
+        libc::mmap(
+            std::ptr::null_mut(),
+            size,
+            libc::PROT_READ | libc::PROT_WRITE,
+            libc::MAP_SHARED,
+            raw_fd,
+            0,
+        )
+    };
+    if mmap == libc::MAP_FAILED {
+        return Err(DisplayError::CaptureError("mmap failed".into()));
+    }
+
+    // Build the wl_shm_pool → wl_buffer chain.
+    // SAFETY: raw_fd is valid for the lifetime of shm_file which outlives pool.
+    let borrowed_fd = unsafe { BorrowedFd::borrow_raw(raw_fd) };
+    let pool = shm.create_pool(borrowed_fd, size as i32, &qh, ());
+    let buffer = pool.create_buffer(
+        0,
+        info.width as i32,
+        info.height as i32,
+        stride as i32,
+        info.format,
+        &qh,
+        (),
+    );
+
+    // Tell the frame to copy into our buffer.
+    frame.copy(&buffer);
+    event_queue
+        .flush()
+        .map_err(|e| DisplayError::CaptureError(format!("Wayland flush after copy: {e}")))?;
+
+    // Wait for the compositor to signal `ready` (or `failed`).
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        event_queue
+            .blocking_dispatch(&mut state)
+            .map_err(|e| DisplayError::CaptureError(format!("Wayland dispatch error: {e}")))?;
+
+        if state.frame_ready || state.frame_failed {
+            break;
+        }
+        if std::time::Instant::now() > deadline {
+            unsafe { libc::munmap(mmap, size) };
+            return Err(DisplayError::CaptureError(
+                "Timed out waiting for screencopy ready event".into(),
+            ));
+        }
+    }
+
+    if state.frame_failed {
+        unsafe { libc::munmap(mmap, size) };
+        return Err(DisplayError::CaptureError(
+            "Compositor signalled screencopy failure".into(),
+        ));
+    }
+
+    // Copy pixels out of shared memory before unmapping.
+    let pixels_slice = unsafe { std::slice::from_raw_parts(mmap as *const u8, size) };
+
+    // wl_shm format names follow the DRM fourcc names, so bytes land in the
+    // source buffer in reverse order of the name. We convert to RGBA32 (R G B A)
+    // so the rest of the pipeline is uniform.
+    let pixel_format = info.format;
+    let pixels = convert_to_rgba(pixels_slice, info.width, info.height, stride, pixel_format)?;
+
+    unsafe { libc::munmap(mmap, size) };
+
+    // Clean up Wayland objects (best-effort; compositor reclaims them anyway
+    // when the connection drops, but explicit destroy is polite).
+    buffer.destroy();
+    pool.destroy();
+    frame.destroy();
+
+    Ok(Some(CaptureData {
+        pixels,
+        width: info.width,
+        height: info.height,
+        stride: info.width * 4,
+        format: PixelFormat::RGBA32,
+        cursor: None,
+        output_origin_x,
+        output_origin_y,
+        output_scale,
+    }))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pixel format conversion
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Bytes per pixel and preference rank for the shm formats this backend can
+/// convert. Lower ranks are preferred when the compositor offers several.
+fn shm_format_info(format: wl_shm::Format) -> Option<(usize, usize)> {
+    match format {
+        wl_shm::Format::Xrgb8888 => Some((4, 0)),
+        wl_shm::Format::Argb8888 => Some((4, 1)),
+        wl_shm::Format::Abgr8888 => Some((4, 2)),
+        wl_shm::Format::Xbgr8888 => Some((4, 2)),
+        wl_shm::Format::Bgra8888 => Some((4, 2)),
+        wl_shm::Format::Bgrx8888 => Some((4, 2)),
+        wl_shm::Format::Rgba8888 => Some((4, 2)),
+        wl_shm::Format::Rgbx8888 => Some((4, 2)),
+        wl_shm::Format::Rgb888 => Some((3, 3)),
+        wl_shm::Format::Bgr888 => Some((3, 3)),
+        _ => None,
+    }
+}
+
+/// Validate a frame's geometry, returning its source bytes per pixel, row
+/// length, and total buffer size in bytes.
+fn frame_geometry(
+    width: u32,
+    height: u32,
+    stride: u32,
+    format: wl_shm::Format,
+) -> Result<(usize, usize, usize), DisplayError> {
+    let (bpp, _) = shm_format_info(format).ok_or_else(|| {
+        DisplayError::UnsupportedBackend(format!(
+            "wl_shm pixel format {format:?} is not supported for screencopy"
+        ))
+    })?;
+    let row_len = (width as usize).checked_mul(bpp).ok_or_else(|| {
+        DisplayError::CaptureError("Screencopy frame row length overflows".into())
+    })?;
+    if (stride as usize) < row_len {
+        return Err(DisplayError::CaptureError(format!(
+            "Screencopy frame stride {stride} is smaller than the {row_len} bytes its {width} {format:?} pixels need"
+        )));
+    }
+    let size = (stride as usize)
+        .checked_mul(height as usize)
+        .ok_or_else(|| DisplayError::CaptureError("Screencopy frame size overflows".into()))?;
+    Ok((bpp, row_len, size))
+}
+
+/// The RGBA channels for one pixel's worth of memory bytes.
+///
+/// wl_shm format names follow the DRM fourcc names, so on little-endian memory
+/// the bytes are stored in reverse order of the name (for example `Xrgb8888`
+/// is laid out B G R X).
+fn pixel_channels(format: wl_shm::Format, px: &[u8]) -> (u8, u8, u8, u8) {
+    match format {
+        wl_shm::Format::Argb8888 => (px[2], px[1], px[0], px[3]),
+        wl_shm::Format::Xrgb8888 => (px[2], px[1], px[0], 255),
+        wl_shm::Format::Abgr8888 => (px[0], px[1], px[2], px[3]),
+        wl_shm::Format::Xbgr8888 => (px[0], px[1], px[2], 255),
+        wl_shm::Format::Bgra8888 => (px[1], px[2], px[3], px[0]),
+        wl_shm::Format::Bgrx8888 => (px[1], px[2], px[3], 255),
+        wl_shm::Format::Rgba8888 => (px[3], px[2], px[1], px[0]),
+        wl_shm::Format::Rgbx8888 => (px[3], px[2], px[1], 255),
+        wl_shm::Format::Bgr888 => (px[0], px[1], px[2], 255),
+        wl_shm::Format::Rgb888 => (px[2], px[1], px[0], 255),
+        _ => unreachable!("unsupported shm formats are rejected before pixel conversion"),
+    }
+}
+
+/// Convert a raw wl_shm buffer to packed RGBA32 bytes.
+///
+/// The output contract is RGBA32 (R G B A per pixel) with stride `width * 4`,
+/// whatever the source format. Unsupported formats and inconsistent geometry
+/// are refused instead of producing a blank frame.
+fn convert_to_rgba(
+    src: &[u8],
+    width: u32,
+    height: u32,
+    stride: u32,
+    format: wl_shm::Format,
+) -> Result<Vec<u8>, DisplayError> {
+    let (bpp, row_len, size) = frame_geometry(width, height, stride, format)?;
+    if src.len() != size {
+        return Err(DisplayError::CaptureError(format!(
+            "Screencopy frame expects {size} bytes, but the shared buffer holds {}",
+            src.len()
+        )));
+    }
+
+    let width = width as usize;
+    let height = height as usize;
+    let stride = stride as usize;
+    let out_row_len = width * 4;
+    let mut out = vec![0u8; out_row_len * height];
+
+    for row in 0..height {
+        let src_row = &src[row * stride..row * stride + row_len];
+        let dst_row = &mut out[row * out_row_len..row * out_row_len + out_row_len];
+        for i in 0..width {
+            let (r, g, b, a) = pixel_channels(format, &src_row[i * bpp..i * bpp + bpp]);
+            dst_row[i * 4] = r;
+            dst_row[i * 4 + 1] = g;
+            dst_row[i * 4 + 2] = b;
+            dst_row[i * 4 + 3] = a;
+        }
+    }
+
+    Ok(out)
+}
+
+/// Pick the best supported candidate the compositor offered, preferring
+/// Xrgb8888, Argb8888, the other 32bpp variants, then the 24bpp variants.
+/// Ties keep the order the compositor offered them.
+fn choose_frame_format(candidates: &[FrameInfo]) -> Option<FrameInfo> {
+    candidates
+        .iter()
+        .filter_map(|candidate| {
+            shm_format_info(candidate.format).map(|(_, rank)| (*candidate, rank))
+        })
+        .min_by_key(|(_, rank)| *rank)
+        .map(|(candidate, _)| candidate)
+}
+
+/// A human-readable list of every format the compositor offered, for errors.
+fn describe_offered_formats(candidates: &[FrameInfo], unknown: &[u32]) -> String {
+    let mut names: Vec<String> = candidates
+        .iter()
+        .map(|candidate| format!("{:?}", candidate.format))
+        .collect();
+    names.extend(unknown.iter().map(|raw| format!("0x{raw:08x}")));
+    if names.is_empty() {
+        "none".to_string()
+    } else {
+        names.join(", ")
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared memory helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+use std::os::unix::io::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
+
+/// Create an anonymous file in shared memory large enough for `size` bytes.
+/// Uses `memfd_create` on Linux (no temp file, no filesystem entry).
+fn create_shm_file(size: usize) -> Result<OwnedFd, std::io::Error> {
+    // memfd_create(2): anonymous memory file, kernel cleans it up automatically.
+    let name = c"apexshot-screencopy";
+    let fd = unsafe { libc::memfd_create(name.as_ptr(), libc::MFD_CLOEXEC) };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+
+    // Extend to the required size.
+    let ret = unsafe { libc::ftruncate(fd, size as libc::off_t) };
+    if ret < 0 {
+        unsafe { libc::close(fd) };
+        return Err(std::io::Error::last_os_error());
+    }
+
+    Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// State machine for the Wayland event loop
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Information received from the compositor via the `buffer` event.
+#[derive(Clone, Copy, Debug)]
+struct FrameInfo {
+    width: u32,
+    height: u32,
+    stride: u32,
+    format: wl_shm::Format,
+}
+
+#[derive(Clone, Debug)]
+struct OutputInfo {
+    geometry_origin: (i32, i32),
+    logical_position: Option<(i32, i32)>,
+    scale: i32,
+}
+
+impl OutputInfo {
+    fn new() -> Self {
+        Self {
+            geometry_origin: (0, 0),
+            logical_position: None,
+            scale: 1,
+        }
+    }
+
+    fn effective_origin(&self) -> (i32, i32) {
+        self.logical_position.unwrap_or(self.geometry_origin)
+    }
+
+    fn update_geometry_origin(&mut self, origin: (i32, i32)) {
+        self.geometry_origin = origin;
+    }
+
+    fn update_logical_position(&mut self, position: (i32, i32)) {
+        self.logical_position = Some(position);
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OutputSelectionError {
+    NoOutputs,
+    AmbiguousOrigin,
+    MissingLogicalPosition,
+}
+
+fn output_distance_squared(left: (i32, i32), right: (i32, i32)) -> i128 {
+    let dx = i128::from(left.0) - i128::from(right.0);
+    let dy = i128::from(left.1) - i128::from(right.1);
+    dx * dx + dy * dy
+}
+
+fn select_output_id(
+    output_infos: &BTreeMap<u32, OutputInfo>,
+    output_order: &[u32],
+    xdg_output_available: bool,
+    prefer_origin: Option<(i32, i32)>,
+) -> Result<u32, OutputSelectionError> {
+    if output_order.is_empty() {
+        return Err(OutputSelectionError::NoOutputs);
+    }
+    let Some(prefer_origin) = prefer_origin else {
+        return output_order
+            .iter()
+            .filter_map(|id| output_infos.get(id).map(|info| (*id, info)))
+            .min_by_key(|(_, info)| info.effective_origin())
+            .map(|(id, _)| id)
+            .ok_or(OutputSelectionError::NoOutputs);
+    };
+    if xdg_output_available
+        && output_order.len() > 1
+        && output_order.iter().any(|id| {
+            output_infos
+                .get(id)
+                .is_none_or(|info| info.logical_position.is_none())
+        })
+    {
+        return Err(OutputSelectionError::MissingLogicalPosition);
+    }
+
+    let ranked = output_order
+        .iter()
+        .filter_map(|id| output_infos.get(id).map(|info| (*id, info)))
+        .map(|(id, info)| {
+            (
+                output_distance_squared(info.effective_origin(), prefer_origin),
+                id,
+                info.effective_origin(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let closest_distance = ranked
+        .iter()
+        .map(|(distance, _, _)| *distance)
+        .min()
+        .ok_or(OutputSelectionError::NoOutputs)?;
+    let nearest = ranked
+        .iter()
+        .filter(|(distance, _, _)| *distance == closest_distance)
+        .map(|(_, id, origin)| (*id, *origin))
+        .collect::<Vec<_>>();
+    let has_duplicate_nearest_origin = nearest.iter().enumerate().any(|(index, (_, origin))| {
+        nearest[..index]
+            .iter()
+            .any(|(_, previous)| previous == origin)
+    });
+    if has_duplicate_nearest_origin {
+        return Err(OutputSelectionError::AmbiguousOrigin);
+    }
+    ranked
+        .into_iter()
+        .min_by_key(|(distance, _, origin)| (*distance, origin.0, origin.1))
+        .map(|(_, id, _)| id)
+        .ok_or(OutputSelectionError::NoOutputs)
+}
+
+#[derive(Default)]
+struct AppState {
+    /// Bound screencopy manager (None if compositor lacks the protocol).
+    screencopy_manager: Option<zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1>,
+    /// All advertised wl_output globals.
+    outputs: Vec<wl_output::WlOutput>,
+    output_infos: BTreeMap<u32, OutputInfo>,
+    xdg_output_manager: Option<zxdg_output_manager_v1::ZxdgOutputManagerV1>,
+    xdg_outputs: Vec<zxdg_output_v1::ZxdgOutputV1>,
+    /// Bound wl_shm.
+    shm: Option<wl_shm::WlShm>,
+    /// Bound screencopy manager version, capped at 3 (the highest we bind).
+    screencopy_version: u32,
+    /// Buffer events received from the compositor, one per offered format.
+    frame_candidates: Vec<FrameInfo>,
+    /// Raw values of offered formats the wayland-client crate does not name.
+    frame_unknown_formats: Vec<u32>,
+    /// Frame buffer parameters received from the compositor.
+    frame_info: Option<FrameInfo>,
+    /// Set once the compositor finished listing formats (v3 `buffer_done`).
+    frame_list_complete: bool,
+    /// Set to true when the compositor sends the `ready` event.
+    frame_ready: bool,
+    /// Set to true when the compositor sends the `failed` event.
+    frame_failed: bool,
+}
+
+impl AppState {
+    fn output_info_mut(&mut self, id: u32) -> &mut OutputInfo {
+        self.output_infos.entry(id).or_insert_with(OutputInfo::new)
+    }
+}
+
+// ─── Registry dispatcher ────────────────────────────────────────────────────
+
+impl Dispatch<wl_registry::WlRegistry, ()> for AppState {
+    fn event(
+        state: &mut Self,
+        registry: &wl_registry::WlRegistry,
+        event: wl_registry::Event,
+        _: &(),
+        _: &Connection,
+        qh: &QueueHandle<Self>,
+    ) {
+        if let wl_registry::Event::Global {
+            name,
+            interface,
+            version,
+        } = event
+        {
+            match interface.as_str() {
+                "zwlr_screencopy_manager_v1" => {
+                    let bound_version = version.min(3);
+                    let mgr = registry
+                        .bind::<zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1, _, _>(
+                            name,
+                            bound_version,
+                            qh,
+                            (),
+                        );
+                    state.screencopy_manager = Some(mgr);
+                    state.screencopy_version = bound_version;
+                }
+                "zxdg_output_manager_v1" if state.xdg_output_manager.is_none() => {
+                    let manager = registry
+                        .bind::<zxdg_output_manager_v1::ZxdgOutputManagerV1, _, _>(
+                            name,
+                            version.min(3),
+                            qh,
+                            (),
+                        );
+                    let xdg_outputs = state
+                        .outputs
+                        .iter()
+                        .map(|output| {
+                            let id = output.id().protocol_id();
+                            manager.get_xdg_output(output, qh, id)
+                        })
+                        .collect::<Vec<_>>();
+                    state.xdg_outputs.extend(xdg_outputs);
+                    state.xdg_output_manager = Some(manager);
+                }
+                "wl_output" => {
+                    let output =
+                        registry.bind::<wl_output::WlOutput, _, _>(name, version.min(4), qh, ());
+                    let id = output.id().protocol_id();
+                    state.output_info_mut(id);
+                    if let Some(manager) = &state.xdg_output_manager {
+                        state
+                            .xdg_outputs
+                            .push(manager.get_xdg_output(&output, qh, id));
+                    }
+                    state.outputs.push(output);
+                }
+                "wl_shm" => {
+                    let shm = registry.bind::<wl_shm::WlShm, _, _>(name, 1, qh, ());
+                    state.shm = Some(shm);
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+// ─── wl_output dispatcher (we don't need output events, just the object) ────
+
+impl Dispatch<wl_output::WlOutput, ()> for AppState {
+    fn event(
+        state: &mut Self,
+        output: &wl_output::WlOutput,
+        event: wl_output::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        let id = output.id().protocol_id();
+        match event {
+            wl_output::Event::Geometry { x, y, .. } => {
+                state.output_info_mut(id).update_geometry_origin((x, y));
+            }
+            wl_output::Event::Scale { factor } => {
+                state.output_info_mut(id).scale = factor.max(1);
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Dispatch<zxdg_output_manager_v1::ZxdgOutputManagerV1, ()> for AppState {
+    fn event(
+        _: &mut Self,
+        _: &zxdg_output_manager_v1::ZxdgOutputManagerV1,
+        _: zxdg_output_manager_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl Dispatch<zxdg_output_v1::ZxdgOutputV1, u32> for AppState {
+    fn event(
+        state: &mut Self,
+        _: &zxdg_output_v1::ZxdgOutputV1,
+        event: zxdg_output_v1::Event,
+        output_id: &u32,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let zxdg_output_v1::Event::LogicalPosition { x, y } = event {
+            state
+                .output_info_mut(*output_id)
+                .update_logical_position((x, y));
+        }
+    }
+}
+
+// ─── wl_shm dispatchers ─────────────────────────────────────────────────────
+
+impl Dispatch<wl_shm::WlShm, ()> for AppState {
+    fn event(
+        _: &mut Self,
+        _: &wl_shm::WlShm,
+        _: wl_shm::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl Dispatch<wl_shm_pool::WlShmPool, ()> for AppState {
+    fn event(
+        _: &mut Self,
+        _: &wl_shm_pool::WlShmPool,
+        _: wl_shm_pool::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl Dispatch<wl_buffer::WlBuffer, ()> for AppState {
+    fn event(
+        _: &mut Self,
+        _: &wl_buffer::WlBuffer,
+        _: wl_buffer::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+// ─── zwlr_screencopy_manager_v1 dispatcher ──────────────────────────────────
+
+impl Dispatch<zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1, ()> for AppState {
+    fn event(
+        _: &mut Self,
+        _: &zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1,
+        _: zwlr_screencopy_manager_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        // Manager emits no events.
+    }
+}
+
+// ─── zwlr_screencopy_frame_v1 dispatcher ────────────────────────────────────
+
+impl Dispatch<zwlr_screencopy_frame_v1::ZwlrScreencopyFrameV1, ()> for AppState {
+    fn event(
+        state: &mut Self,
+        _frame: &zwlr_screencopy_frame_v1::ZwlrScreencopyFrameV1,
+        event: zwlr_screencopy_frame_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        match event {
+            // The compositor sends one Buffer event per format it can write.
+            // Collect them and commit to a supported one once the list is
+            // complete, or immediately on manager versions below 3 that never
+            // send buffer_done.
+            zwlr_screencopy_frame_v1::Event::Buffer {
+                format,
+                width,
+                height,
+                stride,
+            } => match format {
+                wayland_client::WEnum::Value(fmt) => {
+                    let candidate = FrameInfo {
+                        width,
+                        height,
+                        stride,
+                        format: fmt,
+                    };
+                    if state.screencopy_version < 3
+                        && state.frame_info.is_none()
+                        && shm_format_info(fmt).is_some()
+                    {
+                        state.frame_info = Some(candidate);
+                    }
+                    state.frame_candidates.push(candidate);
+                }
+                wayland_client::WEnum::Unknown(raw) => {
+                    state.frame_unknown_formats.push(raw);
+                }
+            },
+            // v3+ compositors send this after all Buffer events are done.
+            zwlr_screencopy_frame_v1::Event::BufferDone => {
+                state.frame_list_complete = true;
+                if state.frame_info.is_none() {
+                    state.frame_info = choose_frame_format(&state.frame_candidates);
+                }
+            }
+
+            // Frame is ready to read.
+            zwlr_screencopy_frame_v1::Event::Ready { .. } => {
+                state.frame_ready = true;
+            }
+
+            // Capture failed (e.g. output disappeared).
+            zwlr_screencopy_frame_v1::Event::Failed => {
+                state.frame_failed = true;
+            }
+
+            // Flags (e.g. y_invert) — we ignore for now; compositors
+            // that set y_invert are extremely rare in practice.
+            zwlr_screencopy_frame_v1::Event::Flags { .. } => {}
+
+            // Damage regions (copy_with_damage only) — not used here.
+            zwlr_screencopy_frame_v1::Event::Damage { .. } => {}
+
+            // linux-dmabuf hints — we use shm only, so ignore.
+            zwlr_screencopy_frame_v1::Event::LinuxDmabuf { .. } => {}
+
+            _ => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn output_info(
+        geometry_origin: (i32, i32),
+        logical_position: Option<(i32, i32)>,
+        scale: i32,
+    ) -> OutputInfo {
+        OutputInfo {
+            geometry_origin,
+            logical_position,
+            scale,
+        }
+    }
+
+    #[test]
+    fn xdg_output_positions_select_outputs_when_core_origins_collide() {
+        let infos = BTreeMap::from([
+            (1, output_info((0, 0), Some((1280, 0)), 1)),
+            (2, output_info((0, 0), Some((0, 0)), 1)),
+        ]);
+        let order = [1, 2];
+
+        assert_eq!(select_output_id(&infos, &order, true, Some((0, 0))), Ok(2));
+        assert_eq!(
+            select_output_id(&infos, &order, true, Some((1280, 0))),
+            Ok(1)
+        );
+    }
+
+    #[test]
+    fn later_core_geometry_does_not_overwrite_xdg_logical_position() {
+        let mut info = OutputInfo::new();
+        info.update_logical_position((1536, 0));
+        info.update_geometry_origin((0, 0));
+        assert_eq!(info.effective_origin(), (1536, 0));
+
+        info.update_geometry_origin((0, 0));
+        assert_eq!(info.effective_origin(), (1536, 0));
+    }
+
+    #[test]
+    fn explicit_capture_rejects_duplicate_fallback_origins() {
+        let infos = BTreeMap::from([
+            (1, output_info((0, 0), None, 1)),
+            (2, output_info((0, 0), None, 1)),
+            (3, output_info((2, 0), None, 1)),
+        ]);
+        let order = [1, 2, 3];
+
+        assert_eq!(
+            select_output_id(&infos, &order, false, Some((1, 0))),
+            Err(OutputSelectionError::AmbiguousOrigin)
+        );
+        assert_eq!(select_output_id(&infos, &order, false, None), Ok(1));
+    }
+
+    #[test]
+    fn negative_logical_positions_remain_unscaled_in_fractional_layouts() {
+        let infos = BTreeMap::from([
+            (1, output_info((0, 0), Some((-1536, 240)), 1)),
+            (2, output_info((0, 0), Some((0, 0)), 2)),
+        ]);
+        let order = [1, 2];
+
+        assert_eq!(
+            select_output_id(&infos, &order, true, Some((-1536, 240))),
+            Ok(1)
+        );
+        assert_eq!(select_output_id(&infos, &order, true, Some((0, 0))), Ok(2));
+    }
+
+    #[test]
+    fn incomplete_xdg_positions_do_not_fall_back_for_explicit_multimonitor_capture() {
+        let infos = BTreeMap::from([
+            (1, output_info((0, 0), Some((0, 0)), 1)),
+            (2, output_info((0, 0), None, 1)),
+        ]);
+        let order = [1, 2];
+
+        assert_eq!(
+            select_output_id(&infos, &order, true, Some((0, 0))),
+            Err(OutputSelectionError::MissingLogicalPosition)
+        );
+    }
+
+    fn shm_buffer(width: usize, height: usize, stride: usize, bpp: usize, pixel: &[u8]) -> Vec<u8> {
+        let mut buffer = vec![0u8; stride * height];
+        for row in 0..height {
+            for x in 0..width {
+                let offset = row * stride + x * bpp;
+                buffer[offset..offset + bpp].copy_from_slice(pixel);
+            }
+        }
+        buffer
+    }
+
+    fn assert_32bpp_conversion(format: wl_shm::Format, memory: [u8; 4], expected: [u8; 4]) {
+        let src = shm_buffer(3, 2, 3 * 4, 4, &memory);
+        let out = convert_to_rgba(&src, 3, 2, 3 * 4, format).unwrap();
+        assert_eq!(out.len(), 3 * 2 * 4);
+        for px in 0..6 {
+            assert_eq!(&out[px * 4..px * 4 + 4], &expected);
+        }
+    }
+
+    #[test]
+    fn bgr888_2560x1440_padded_stride_does_not_panic() {
+        const WIDTH: usize = 2560;
+        const HEIGHT: usize = 1440;
+        const STRIDE: usize = 10240;
+        // The reported frame: 2560 wide, stride 10240, 24bpp Bgr888. A 24bpp
+        // row is 7680 bytes, padded to 10240, so the source is stride * height.
+        let src = shm_buffer(WIDTH, HEIGHT, STRIDE, 3, &[0x10, 0x20, 0x30]);
+        let out = convert_to_rgba(
+            &src,
+            WIDTH as u32,
+            HEIGHT as u32,
+            STRIDE as u32,
+            wl_shm::Format::Bgr888,
+        )
+        .unwrap();
+        assert_eq!(out.len(), WIDTH * HEIGHT * 4);
+        // R G B -> R G B A.
+        assert_eq!(&out[0..4], &[0x10, 0x20, 0x30, 0xff]);
+        let last_pixel = (HEIGHT - 1) * WIDTH + (WIDTH - 1);
+        assert_eq!(
+            &out[last_pixel * 4..last_pixel * 4 + 4],
+            &[0x10, 0x20, 0x30, 0xff]
+        );
+    }
+
+    #[test]
+    fn bgr888_2560x1440_minimum_stride_does_not_panic() {
+        const WIDTH: usize = 2560;
+        const HEIGHT: usize = 1440;
+        const BPP: usize = 3;
+        const STRIDE: usize = WIDTH * BPP; // 7680, wlroots' minimum 24bpp stride
+        let mut src = vec![0u8; STRIDE * HEIGHT];
+        for y in 0..HEIGHT {
+            for x in 0..WIDTH {
+                let px = &mut src[y * STRIDE + x * BPP..y * STRIDE + x * BPP + BPP];
+                px[0] = (x & 0xff) as u8; // R
+                px[1] = (y & 0xff) as u8; // G
+                px[2] = 0xc0; // B
+            }
+        }
+        let out = convert_to_rgba(
+            &src,
+            WIDTH as u32,
+            HEIGHT as u32,
+            STRIDE as u32,
+            wl_shm::Format::Bgr888,
+        )
+        .unwrap();
+        assert_eq!(out.len(), WIDTH * HEIGHT * 4);
+
+        let pixel = |x: usize, y: usize| &out[(y * WIDTH + x) * 4..(y * WIDTH + x) * 4 + 4];
+        // R G B -> R G B A, with per-pixel channels so row indexing is proven.
+        assert_eq!(pixel(0, 0), &[0x00, 0x00, 0xc0, 0xff]);
+        assert_eq!(pixel(WIDTH / 2, HEIGHT / 2), &[0x00, 0xd0, 0xc0, 0xff]);
+        assert_eq!(pixel(WIDTH - 1, HEIGHT - 1), &[0xff, 0x9f, 0xc0, 0xff]);
+    }
+
+    #[test]
+    fn argb8888_channel_order() {
+        assert_32bpp_conversion(
+            wl_shm::Format::Argb8888,
+            [0x11, 0x22, 0x33, 0x44],
+            [0x33, 0x22, 0x11, 0x44],
+        );
+    }
+
+    #[test]
+    fn xrgb8888_channel_order() {
+        assert_32bpp_conversion(
+            wl_shm::Format::Xrgb8888,
+            [0x11, 0x22, 0x33, 0x44],
+            [0x33, 0x22, 0x11, 0xff],
+        );
+    }
+
+    #[test]
+    fn abgr8888_channel_order() {
+        assert_32bpp_conversion(
+            wl_shm::Format::Abgr8888,
+            [0x11, 0x22, 0x33, 0x44],
+            [0x11, 0x22, 0x33, 0x44],
+        );
+    }
+
+    #[test]
+    fn xbgr8888_channel_order() {
+        assert_32bpp_conversion(
+            wl_shm::Format::Xbgr8888,
+            [0x11, 0x22, 0x33, 0x44],
+            [0x11, 0x22, 0x33, 0xff],
+        );
+    }
+
+    #[test]
+    fn bgra8888_channel_order() {
+        assert_32bpp_conversion(
+            wl_shm::Format::Bgra8888,
+            [0x11, 0x22, 0x33, 0x44],
+            [0x22, 0x33, 0x44, 0x11],
+        );
+    }
+
+    #[test]
+    fn bgrx8888_channel_order() {
+        assert_32bpp_conversion(
+            wl_shm::Format::Bgrx8888,
+            [0x11, 0x22, 0x33, 0x44],
+            [0x22, 0x33, 0x44, 0xff],
+        );
+    }
+
+    #[test]
+    fn rgba8888_channel_order() {
+        assert_32bpp_conversion(
+            wl_shm::Format::Rgba8888,
+            [0x11, 0x22, 0x33, 0x44],
+            [0x44, 0x33, 0x22, 0x11],
+        );
+    }
+
+    #[test]
+    fn rgbx8888_channel_order() {
+        assert_32bpp_conversion(
+            wl_shm::Format::Rgbx8888,
+            [0x11, 0x22, 0x33, 0x44],
+            [0x44, 0x33, 0x22, 0xff],
+        );
+    }
+
+    #[test]
+    fn rgb888_channel_order() {
+        let src = shm_buffer(4, 1, 4 * 3, 3, &[0x11, 0x22, 0x33]);
+        let out = convert_to_rgba(&src, 4, 1, 4 * 3, wl_shm::Format::Rgb888).unwrap();
+        assert_eq!(
+            out,
+            vec![
+                0x33, 0x22, 0x11, 0xff, 0x33, 0x22, 0x11, 0xff, 0x33, 0x22, 0x11, 0xff, 0x33, 0x22,
+                0x11, 0xff,
+            ]
+        );
+    }
+
+    #[test]
+    fn twenty_four_bit_formats_keep_red_and_blue_in_place() {
+        for (format, red, blue) in [
+            (
+                wl_shm::Format::Bgr888,
+                [0xff, 0x00, 0x00],
+                [0x00, 0x00, 0xff],
+            ),
+            (
+                wl_shm::Format::Rgb888,
+                [0x00, 0x00, 0xff],
+                [0xff, 0x00, 0x00],
+            ),
+        ] {
+            let mut src = Vec::new();
+            src.extend_from_slice(&red);
+            src.extend_from_slice(&blue);
+            let out = convert_to_rgba(&src, 2, 1, 6, format).unwrap();
+            assert_eq!(&out[0..4], &[0xff, 0x00, 0x00, 0xff], "{format:?} red");
+            assert_eq!(&out[4..8], &[0x00, 0x00, 0xff, 0xff], "{format:?} blue");
+        }
+    }
+
+    #[test]
+    fn padded_stride_is_read_per_row() {
+        const WIDTH: usize = 4;
+        const HEIGHT: usize = 2;
+        const BPP: usize = 4;
+        const STRIDE: usize = WIDTH * BPP + 8;
+        let mut src = shm_buffer(WIDTH, HEIGHT, STRIDE, BPP, &[0x11, 0x22, 0x33, 0x44]);
+        // Poison the padding bytes so reading them would show up in the output.
+        for row in 0..HEIGHT {
+            for offset in WIDTH * BPP..STRIDE {
+                src[row * STRIDE + offset] = 0xee;
+            }
+        }
+        let out = convert_to_rgba(
+            &src,
+            WIDTH as u32,
+            HEIGHT as u32,
+            STRIDE as u32,
+            wl_shm::Format::Argb8888,
+        )
+        .unwrap();
+        for px in 0..WIDTH * HEIGHT {
+            assert_eq!(&out[px * 4..px * 4 + 4], &[0x33, 0x22, 0x11, 0x44]);
+        }
+    }
+
+    #[test]
+    fn unsupported_format_is_refused_not_blank() {
+        let src = shm_buffer(2, 2, 2 * 2, 2, &[0x00, 0x00]);
+        let result = convert_to_rgba(&src, 2, 2, 2 * 2, wl_shm::Format::Rgb565);
+        assert!(matches!(result, Err(DisplayError::UnsupportedBackend(_))));
+    }
+
+    #[test]
+    fn undersized_stride_is_refused() {
+        let src = shm_buffer(4, 1, 4 * 4, 4, &[0x11, 0x22, 0x33, 0x44]);
+        // A 4-pixel 32bpp row needs 16 bytes; a 12-byte stride cannot hold it.
+        let result = convert_to_rgba(&src, 4, 1, 12, wl_shm::Format::Argb8888);
+        assert!(matches!(result, Err(DisplayError::CaptureError(_))));
+    }
+
+    #[test]
+    fn mismatched_buffer_size_is_refused() {
+        let src = shm_buffer(4, 2, 4 * 4, 4, &[0x11, 0x22, 0x33, 0x44]);
+        let result = convert_to_rgba(&src[..src.len() - 4], 4, 2, 16, wl_shm::Format::Argb8888);
+        assert!(matches!(result, Err(DisplayError::CaptureError(_))));
+    }
+
+    #[test]
+    fn format_selection_prefers_supported_candidate() {
+        let candidates = [
+            FrameInfo {
+                width: 10,
+                height: 10,
+                stride: 40,
+                format: wl_shm::Format::Rgb565,
+            },
+            FrameInfo {
+                width: 10,
+                height: 10,
+                stride: 40,
+                format: wl_shm::Format::Argb8888,
+            },
+            FrameInfo {
+                width: 10,
+                height: 10,
+                stride: 40,
+                format: wl_shm::Format::Xrgb8888,
+            },
+        ];
+        let chosen = choose_frame_format(&candidates).unwrap();
+        assert!(matches!(chosen.format, wl_shm::Format::Xrgb8888));
+    }
+
+    #[test]
+    fn format_selection_refuses_when_nothing_supported() {
+        let candidates = [
+            FrameInfo {
+                width: 10,
+                height: 10,
+                stride: 20,
+                format: wl_shm::Format::Rgb565,
+            },
+            FrameInfo {
+                width: 10,
+                height: 10,
+                stride: 20,
+                format: wl_shm::Format::Bgr565,
+            },
+        ];
+        assert!(choose_frame_format(&candidates).is_none());
+    }
+}

@@ -1,0 +1,1460 @@
+use super::super::composition::{BackgroundComposition, CompositionLayout, FloatRect};
+use super::super::pen_weight::{HighlighterMode, PenWeight};
+use super::super::render::{
+    apply_background_blur, apply_background_noise, apply_blur_rect, cairo_argb_to_rgba_image,
+    frame_has_attached_border, paint_attached_frame_border, rgba_image_to_surface, LiquidFrame,
+    BACKGROUND_BLUR_MAX_RADIUS,
+};
+use super::super::types::{
+    AnnotationAction, BackgroundStyle, DrawColor, EditorError, FrameStyle, Rect,
+};
+use super::super::window::motion_render::{draw_frozen_card, static_card_appearance, MotionStage};
+use super::EditorState;
+use crate::recording::editor::model::background_render::render_gradient;
+use image::RgbaImage;
+use std::path::Path;
+
+/// Backing sheets (Stack looks, Retro window) painted behind the card, then
+/// the outside border's underlay (see `render::paint_frame_underlay`).
+/// Shared by the wallpaper export and the frameless export so both agree.
+/// `underlay` is the border's thickness in canvas pixels and its colour.
+fn paint_frame_backings(
+    mut canvas: RgbaImage,
+    image_rect: &FloatRect,
+    radius: f64,
+    style: FrameStyle,
+    scale: f64,
+    over_fill: bool,
+    underlay: Option<(f64, DrawColor)>,
+) -> Result<RgbaImage, EditorError> {
+    let spec = style.spec();
+    let backings = [spec.backing1, spec.backing2];
+    if backings.iter().any(|b| b.is_some()) || underlay.is_some() {
+        if let Some(mut surface) = rgba_image_to_surface(&canvas) {
+            {
+                let context = gtk4::cairo::Context::new(&surface)
+                    .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+                for backing in backings.into_iter().flatten() {
+                    let _ = context.save();
+                    if backing.center_pivot {
+                        context.translate(
+                            image_rect.x + image_rect.width / 2.0 + backing.offset_x * scale,
+                            image_rect.y + image_rect.height / 2.0 + backing.offset_y * scale,
+                        );
+                        context.rotate(backing.rotation_deg.to_radians());
+                        context.translate(-image_rect.width / 2.0, -image_rect.height / 2.0);
+                    } else {
+                        // Pivot at the hidden bottom-right corner so
+                        // the slant fans top-left (Stack2).
+                        context.translate(
+                            image_rect.x + backing.offset_x * scale + image_rect.width,
+                            image_rect.y + backing.offset_y * scale + image_rect.height,
+                        );
+                        context.rotate(backing.rotation_deg.to_radians());
+                        context.translate(-image_rect.width, -image_rect.height);
+                    }
+                    draw_rounded_rect_path(
+                        &context,
+                        0.0,
+                        0.0,
+                        image_rect.width,
+                        image_rect.height,
+                        radius.max(0.0),
+                    );
+                    let color = style.backing_color(&backing, over_fill);
+                    context.set_source_rgba(color.r, color.g, color.b, color.a);
+                    let _ = context.fill();
+                    let _ = context.restore();
+                }
+                if let Some((thickness, color)) = underlay {
+                    super::super::render::paint_frame_underlay(
+                        &context, image_rect, radius, thickness, color,
+                    );
+                }
+            }
+            surface.flush();
+            let stride = gtk4::cairo::Format::ARgb32
+                .stride_for_width(canvas.width())
+                .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+            let surface_data = surface
+                .data()
+                .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+            canvas = cairo_argb_to_rgba_image(
+                canvas.width(),
+                canvas.height(),
+                stride as usize,
+                surface_data.as_ref(),
+            );
+        }
+    }
+    Ok(canvas)
+}
+
+/// Outside border around the image plus accent strokes. The stroke is
+/// centered on an expanded path so the inner edge aligns with the image
+/// edge and the outer edge carries the radius outward.
+fn stroke_frame_border(
+    context: &gtk4::cairo::Context,
+    image_rect: &FloatRect,
+    unit: f64,
+    base_radius: f64,
+    border_thickness: f64,
+    border_color: DrawColor,
+    style: FrameStyle,
+) {
+    let spec = style.spec();
+    if spec.liquid {
+        // Glass presets blend a band over the composited canvas instead of
+        // stroking a flat border; see `LiquidFrame::paint`.
+        if let Some(glass) = LiquidFrame::resolve(style, border_thickness, unit) {
+            let path = |path_context: &gtk4::cairo::Context, expand: f64| {
+                draw_rounded_rect_path(
+                    path_context,
+                    image_rect.x - expand,
+                    image_rect.y - expand,
+                    image_rect.width + expand * 2.0,
+                    image_rect.height + expand * 2.0,
+                    if base_radius <= 0.0 {
+                        0.0
+                    } else {
+                        base_radius + expand
+                    },
+                );
+            };
+            glass.paint(
+                context,
+                image_rect.y,
+                image_rect.y + image_rect.height,
+                path,
+            );
+        }
+        return;
+    }
+    if frame_has_attached_border(style) {
+        if spec.inset_border {
+            paint_attached_frame_border(
+                context,
+                image_rect,
+                base_radius,
+                border_thickness * unit,
+                border_color,
+                true,
+            );
+            super::super::render::paint_inset_inner_line(
+                context,
+                image_rect,
+                base_radius,
+                border_thickness * unit,
+                unit,
+                style,
+            );
+        }
+        return;
+    }
+    let mut expand = 0.0;
+    let stroke_outside = |context: &gtk4::cairo::Context,
+                          thickness: f64,
+                          r: f64,
+                          g: f64,
+                          b: f64,
+                          a: f64,
+                          extra: f64| {
+        let lw = (thickness * unit).max(0.0);
+        if lw <= 0.01 {
+            return extra;
+        }
+        let e = extra + lw / 2.0;
+        context.set_source_rgba(r, g, b, a);
+        context.set_line_width(lw);
+        // A zero radius stays a sharp mitered frame: the expanded path must
+        // not inherit half the line width as corner rounding.
+        let path_radius = if base_radius <= 0.0 {
+            0.0
+        } else {
+            base_radius + e
+        };
+        draw_rounded_rect_path(
+            context,
+            image_rect.x - e,
+            image_rect.y - e,
+            image_rect.width + e * 2.0,
+            image_rect.height + e * 2.0,
+            path_radius,
+        );
+        let _ = context.stroke();
+        extra + lw
+    };
+    if border_thickness > 0.0 && !spec.inset_border {
+        expand = stroke_outside(
+            context,
+            border_thickness,
+            border_color.r,
+            border_color.g,
+            border_color.b,
+            border_color.a,
+            expand,
+        );
+    }
+    for outer in [spec.outer1, spec.outer2].into_iter().flatten() {
+        expand += outer.gap * unit;
+        expand = stroke_outside(
+            context,
+            outer.thickness,
+            outer.color.r,
+            outer.color.g,
+            outer.color.b,
+            outer.color.a,
+            expand,
+        );
+    }
+}
+
+impl EditorState {
+    /// Snapshot the document for rendering in a worker without transferring GTK widgets.
+    pub(crate) fn export_snapshot(&self) -> impl FnOnce() -> Self + Send + 'static {
+        let source_upscale = self.source_upscale;
+        let export_scale = self.export_scale;
+        let base_image = std::sync::Arc::clone(&self.base_image);
+        let working_image = std::sync::Arc::clone(&self.working_image);
+        let actions = self.actions.clone();
+        let background_style = self.background_style.clone();
+        let background = (
+            self.background_padding,
+            self.background_insert,
+            self.auto_balance,
+            self.background_alignment,
+            self.background_corner_radius,
+            self.background_aspect_ratio,
+            self.background_blur,
+            self.background_noise,
+        );
+        let appearance = (
+            self.border_thickness,
+            self.border_color,
+            self.frame_style,
+            self.shadow_opacity,
+            self.shadow_blur,
+            self.shadow_offset_x,
+            self.shadow_offset_y,
+        );
+        let static_image_transform = self.static_image_transform;
+        let scene_shadow = self.scene_shadow.clone();
+        move || {
+            let mut snapshot = Self::new(RgbaImage::new(0, 0));
+            snapshot.source_upscale = source_upscale;
+            snapshot.export_scale = export_scale;
+            snapshot.base_image = base_image;
+            snapshot.working_image = working_image;
+            snapshot.actions = actions;
+            snapshot.background_style = background_style;
+            (
+                snapshot.background_padding,
+                snapshot.background_insert,
+                snapshot.auto_balance,
+                snapshot.background_alignment,
+                snapshot.background_corner_radius,
+                snapshot.background_aspect_ratio,
+                snapshot.background_blur,
+                snapshot.background_noise,
+            ) = background;
+            (
+                snapshot.border_thickness,
+                snapshot.border_color,
+                snapshot.frame_style,
+                snapshot.shadow_opacity,
+                snapshot.shadow_blur,
+                snapshot.shadow_offset_x,
+                snapshot.shadow_offset_y,
+            ) = appearance;
+            snapshot.static_image_transform = static_image_transform;
+            snapshot.scene_shadow = scene_shadow;
+            snapshot
+        }
+    }
+
+    fn paint_attached_border_underlay(
+        &self,
+        canvas: RgbaImage,
+        layout: &CompositionLayout,
+    ) -> Result<RgbaImage, EditorError> {
+        if !frame_has_attached_border(self.frame_style)
+            || self.frame_style.spec().inset_border
+            || self.border_thickness <= 0.01
+        {
+            return Ok(canvas);
+        }
+        let Some(mut surface) = rgba_image_to_surface(&canvas) else {
+            return Ok(canvas);
+        };
+        let unit = layout.scale_factor * layout.draw_scale;
+        {
+            let context = gtk4::cairo::Context::new(&surface)
+                .map_err(|error| EditorError::ImageSave(error.to_string()))?;
+            paint_attached_frame_border(
+                &context,
+                &layout.image_rect,
+                self.background_corner_radius * unit,
+                self.border_thickness * unit,
+                self.border_color,
+                false,
+            );
+        }
+        surface.flush();
+        let stride = surface.stride() as usize;
+        let data = surface
+            .data()
+            .map_err(|error| EditorError::ImageSave(error.to_string()))?;
+        Ok(cairo_argb_to_rgba_image(
+            canvas.width(),
+            canvas.height(),
+            stride,
+            &data,
+        ))
+    }
+
+    pub fn to_rendered_image(&self) -> Result<RgbaImage, EditorError> {
+        let (width, height) = self.working_image.dimensions();
+        if width == 0 || height == 0 {
+            return Err(EditorError::ImageSave(
+                "image has invalid dimensions".into(),
+            ));
+        }
+        if crate::capture::editor::types::frame_needs_canvas(
+            self.frame_style,
+            self.border_thickness,
+        ) {
+            return self.to_framed_image_without_background();
+        }
+
+        let stride = gtk4::cairo::Format::ARgb32
+            .stride_for_width(width)
+            .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+
+        let data = super::super::render::rgba_to_cairo_argb_bytes(&self.working_image);
+        let mut surface = gtk4::cairo::ImageSurface::create_for_data(
+            data,
+            gtk4::cairo::Format::ARgb32,
+            width as i32,
+            height as i32,
+            stride,
+        )
+        .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+
+        {
+            let context = gtk4::cairo::Context::new(&surface)
+                .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+
+            if self.border_thickness > 0.0 {
+                let thickness = self.border_thickness.max(0.0) * self.export_scale;
+                if thickness > 0.01 {
+                    let card = FloatRect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: width as f64,
+                        height: height as f64,
+                    };
+                    paint_attached_frame_border(
+                        &context,
+                        &card,
+                        0.0,
+                        thickness,
+                        self.border_color,
+                        true,
+                    );
+                    super::super::render::paint_inset_inner_line(
+                        &context,
+                        &card,
+                        0.0,
+                        thickness,
+                        self.export_scale,
+                        self.frame_style,
+                    );
+                }
+            }
+
+            context.scale(self.export_scale, self.export_scale);
+            for action in &self.actions {
+                if matches!(
+                    action,
+                    AnnotationAction::Obfuscate { .. } | AnnotationAction::Focus { .. }
+                ) {
+                    continue;
+                }
+                super::super::render::draw_annotation_action(&context, action);
+            }
+        }
+
+        surface.flush();
+        let surface_data = surface
+            .data()
+            .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+
+        Ok(super::super::render::cairo_argb_to_rgba_image(
+            width,
+            height,
+            stride as usize,
+            surface_data.as_ref(),
+        ))
+    }
+
+    /// Frame styles without a wallpaper: the card grows a transparent canvas
+    /// holding the backing window plus the outside border, all following the
+    /// Border Radius. Plain screenshots (Default, no border) keep the legacy
+    /// direct path above.
+    fn to_framed_image_without_background(&self) -> Result<RgbaImage, EditorError> {
+        let layout = self.background_layout_for(&self.working_image);
+        let canvas_w = layout.canvas_width.round().max(1.0) as u32;
+        let canvas_h = layout.canvas_height.round().max(1.0) as u32;
+        let mut canvas = RgbaImage::from_pixel(canvas_w, canvas_h, image::Rgba([0, 0, 0, 0]));
+        let radius = self.background_corner_radius * layout.scale_factor * layout.draw_scale;
+        canvas = paint_frame_backings(
+            canvas,
+            &layout.image_rect,
+            radius,
+            self.frame_style,
+            self.export_scale,
+            false,
+            self.frame_underlay(&layout),
+        )?;
+
+        let working: &RgbaImage = self.working_image.as_ref();
+        let mut final_shot = if (layout.draw_scale - 1.0).abs() > 0.001 {
+            image::imageops::resize(
+                working,
+                layout.image_rect.width.round().max(1.0) as u32,
+                layout.image_rect.height.round().max(1.0) as u32,
+                image::imageops::FilterType::CatmullRom,
+            )
+        } else {
+            working.clone()
+        };
+        if self.background_corner_radius > 0.0 {
+            apply_corner_radius(&mut final_shot, radius);
+        }
+        canvas = self.paint_attached_border_underlay(canvas, &layout)?;
+        image::imageops::overlay(
+            &mut canvas,
+            &final_shot,
+            layout.image_rect.x.round() as i64,
+            layout.image_rect.y.round() as i64,
+        );
+
+        let (width, height) = (canvas.width(), canvas.height());
+        if width == 0 || height == 0 {
+            return Ok(canvas);
+        }
+        let Some(mut surface) = rgba_image_to_surface(&canvas) else {
+            return Ok(canvas);
+        };
+        {
+            let context = gtk4::cairo::Context::new(&surface)
+                .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+            let unit = layout.scale_factor * layout.draw_scale;
+            stroke_frame_border(
+                &context,
+                &layout.image_rect,
+                unit,
+                radius,
+                self.border_thickness,
+                self.border_color,
+                self.frame_style,
+            );
+            context.translate(layout.image_rect.x, layout.image_rect.y);
+            context.scale(layout.draw_scale, layout.draw_scale);
+            context.scale(self.export_scale, self.export_scale);
+            for action in self.vector_annotation_actions() {
+                super::super::render::draw_annotation_action(&context, action);
+            }
+        }
+        surface.flush();
+        let stride = gtk4::cairo::Format::ARgb32
+            .stride_for_width(width)
+            .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+        let surface_data = surface
+            .data()
+            .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+        Ok(cairo_argb_to_rgba_image(
+            width,
+            height,
+            stride as usize,
+            surface_data.as_ref(),
+        ))
+    }
+
+    /// Report the rendered canvas size without running source enhancement.
+    pub(crate) fn export_dimensions(
+        &self,
+        upscale: super::super::upscale::SourceUpscale,
+    ) -> (u32, u32) {
+        let factor = f64::from(upscale.factor());
+        if self.background_style == BackgroundStyle::None
+            && !crate::capture::editor::types::frame_needs_canvas(
+                self.frame_style,
+                self.border_thickness,
+            )
+        {
+            return (
+                self.working_image.width().saturating_mul(upscale.factor()),
+                self.working_image.height().saturating_mul(upscale.factor()),
+            );
+        }
+        let layout = self.background_layout_for(&self.working_image);
+        let (width, height) = (layout.canvas_width * factor, layout.canvas_height * factor);
+        if self.background_style == BackgroundStyle::None
+            && self.static_image_transform.is_identity()
+        {
+            (
+                width.round().max(1.0) as u32,
+                height.round().max(1.0) as u32,
+            )
+        } else {
+            (width as u32, height as u32)
+        }
+    }
+
+    /// Reject unsupported source and enhanced canvas sizes before inference.
+    pub(crate) fn validate_upscale_export(
+        &self,
+        upscale: super::super::upscale::SourceUpscale,
+    ) -> Result<(), String> {
+        super::super::upscale::validate_input(&self.working_image, upscale)?;
+        if upscale.factor() > 1 || self.export_scale > 1.0 {
+            let (width, height) = self.export_dimensions(upscale);
+            if u64::from(width) * u64::from(height) > 16_777_216 || width.max(height) > 16_384 {
+                return Err("The enhanced canvas exceeds the 16-megapixel output limit. Reduce upscaling or background padding.".into());
+            }
+        }
+        Ok(())
+    }
+
+    /// The final still every output path writes: save, copy, upload and
+    /// export. A Studio-styled still fails closed here, so no output can skip
+    /// the licence check.
+    pub fn to_final_image(&self) -> Result<RgbaImage, EditorError> {
+        crate::studio_entitlement::ensure_export_allowed(self.studio_capabilities())
+            .map_err(|error| EditorError::ImageSave(error.to_string()))?;
+        self.render_final_image()
+    }
+
+    /// Whether the canvas should carry the Studio preview mark: a Studio style,
+    /// or a pose (tilt or position) that the export would also gate.
+    pub(crate) fn needs_studio_preview_mark(&self) -> bool {
+        self.uses_studio_style()
+            || crate::studio_entitlement::capabilities_for_static_image(self.static_image_transform)
+                .static_presentation
+    }
+
+    /// Whether the still uses a Studio presentation control: a frame style or
+    /// an outside border, or a scene shadow the background layout leaves
+    /// visible around the image. The Background panel (fill, padding, insert,
+    /// alignment, blur, radius, noise) and frame ratios are free.
+    pub(crate) fn uses_studio_style(&self) -> bool {
+        if self.frame_style != FrameStyle::Default || self.border_thickness > 0.0 {
+            return true;
+        }
+        let layout = self.background_layout_for(&self.working_image);
+        if layout.shadow.is_none() {
+            return false;
+        }
+        // A card that fills the canvas leaves the shadow nothing to show in.
+        let image = layout.image_rect;
+        const EPSILON: f64 = 0.5;
+        image.x > EPSILON
+            || image.y > EPSILON
+            || layout.canvas_width - (image.x + image.width) > EPSILON
+            || layout.canvas_height - (image.y + image.height) > EPSILON
+    }
+
+    pub(crate) fn studio_capabilities(&self) -> crate::studio_entitlement::StudioCapabilities {
+        crate::studio_entitlement::StudioCapabilities {
+            image_upscale: self.source_upscale.factor() > 1,
+            ..crate::studio_entitlement::capabilities_for_image_style(
+                self.static_image_transform,
+                self.uses_studio_style(),
+            )
+        }
+    }
+
+    /// Flatten the still without the Studio check. Previews (the upscale
+    /// before/after comparison) and tests of the render itself use this;
+    /// anything that leaves the editor must go through `to_final_image`.
+    pub(crate) fn render_final_image(&self) -> Result<RgbaImage, EditorError> {
+        self.validate_upscale_export(self.source_upscale)
+            .map_err(EditorError::ImageSave)?;
+        if self.source_upscale.factor() > 1 {
+            return self.upscaled_export_state(true)?.render_final_image();
+        }
+        let image = if !self.static_image_transform.is_identity() {
+            self.to_static_transformed_image()
+        } else if self.background_style != BackgroundStyle::None {
+            // Annotations paint above the background/wallpaper in canvas space,
+            // so text/shapes placed on the padding stay visible instead of being
+            // baked into the screenshot underneath the wallpaper. Use the clean
+            // working image (effects only) for the card, then overlay vectors.
+            self.render_with_background_and_annotations(&self.working_image)
+        } else {
+            self.to_rendered_image()
+        }?;
+        Ok(image)
+    }
+
+    /// Prepare source pixels at export resolution while keeping annotation coordinates native.
+    pub(crate) fn upscaled_export_state(&self, neural: bool) -> Result<Self, EditorError> {
+        self.upscaled_export_state_with_progress(neural, &|_| true)
+    }
+
+    /// `upscaled_export_state`, reporting neural tiles to `on_tile`; see
+    /// `upscale::enhance_with_progress`.
+    pub(crate) fn upscaled_export_state_with_progress(
+        &self,
+        neural: bool,
+        on_tile: &dyn Fn(usize) -> bool,
+    ) -> Result<Self, EditorError> {
+        let factor = self.source_upscale.factor();
+        let pixels = if neural {
+            super::super::upscale::enhance_with_progress(
+                &self.working_image,
+                self.source_upscale,
+                on_tile,
+            )
+            .map_err(EditorError::ImageSave)?
+        } else {
+            super::super::upscale::validate_input(&self.working_image, self.source_upscale)
+                .map_err(EditorError::ImageSave)?;
+            image::imageops::resize(
+                &*self.working_image,
+                self.working_image.width() * factor,
+                self.working_image.height() * factor,
+                image::imageops::FilterType::CatmullRom,
+            )
+        };
+        let mut state = self.export_snapshot()();
+        state.source_upscale = super::super::upscale::SourceUpscale::Off;
+        state.export_scale *= f64::from(factor);
+        state.working_image = std::sync::Arc::new(pixels);
+        state.base_image = std::sync::Arc::clone(&state.working_image);
+        Ok(state)
+    }
+
+    /// Render a Motion card with source enhancement before vector annotations.
+    pub(crate) fn to_motion_export_card(&self) -> Result<RgbaImage, EditorError> {
+        if self.source_upscale.factor() > 1 {
+            self.upscaled_export_state(true)?.to_motion_card_image()
+        } else {
+            self.to_motion_card_image()
+        }
+    }
+
+    fn to_static_transformed_image(&self) -> Result<RgbaImage, EditorError> {
+        let screenshot = self.working_image.as_ref();
+        let layout = if self.background_style == BackgroundStyle::None
+            && !crate::capture::editor::types::frame_needs_canvas(
+                self.frame_style,
+                self.border_thickness,
+            ) {
+            BackgroundComposition::new(screenshot.width() as f64, screenshot.height() as f64)
+                .with_style(BackgroundStyle::None)
+                .with_padding(0.0)
+                .with_aspect_ratio(super::super::types::CropAspectRatio::Original)
+                .with_frame_style(self.frame_style)
+                .with_frame_border_thickness(self.border_thickness)
+                .compute()
+        } else {
+            self.background_layout_for(screenshot)
+        };
+        let mut background = self.render_background_base(screenshot, &layout)?;
+        let canvas_width = background.width();
+        let canvas_height = background.height();
+        let card = self.to_motion_card_image()?;
+        let card_surface = rgba_image_to_surface(&card)
+            .ok_or_else(|| EditorError::ImageSave("could not create card surface".into()))?;
+        let mut surface = rgba_image_to_surface(&background)
+            .ok_or_else(|| EditorError::ImageSave("could not create background surface".into()))?;
+        {
+            let context = gtk4::cairo::Context::new(&surface)
+                .map_err(|error| EditorError::ImageSave(error.to_string()))?;
+            let appearance = static_card_appearance(
+                self.background_corner_radius,
+                self.frame_style,
+                self.border_thickness,
+                [
+                    self.border_color.r,
+                    self.border_color.g,
+                    self.border_color.b,
+                    self.border_color.a,
+                ],
+                self.shadow_opacity,
+                self.shadow_blur,
+                (self.shadow_offset_x, self.shadow_offset_y),
+            );
+            draw_frozen_card(
+                &context,
+                &card_surface,
+                layout,
+                MotionStage::frame(f64::from(canvas_width), f64::from(canvas_height)),
+                self.static_image_transform.motion_transform(),
+                &appearance,
+            );
+        }
+        surface.flush();
+        let stride = gtk4::cairo::Format::ARgb32
+            .stride_for_width(canvas_width)
+            .map_err(|error| EditorError::ImageSave(error.to_string()))?;
+        let surface_data = surface
+            .data()
+            .map_err(|error| EditorError::ImageSave(error.to_string()))?;
+        background = cairo_argb_to_rgba_image(
+            canvas_width,
+            canvas_height,
+            stride as usize,
+            surface_data.as_ref(),
+        );
+        Ok(background)
+    }
+
+    /// Background-free card for Motion: the screenshot (effects baked) plus
+    /// vector annotations, with no wallpaper/padding, no corner radius, no
+    /// frame backings/borders, and no shadow. Motion composites all of that
+    /// itself from the shared `MotionAppearance`, so baking any of it here
+    /// would stack a second background behind the one already there and warp
+    /// it with the camera.
+    pub fn to_motion_card_image(&self) -> Result<RgbaImage, EditorError> {
+        let (width, height) = self.working_image.dimensions();
+        if width == 0 || height == 0 {
+            return Err(EditorError::ImageSave(
+                "image has invalid dimensions".into(),
+            ));
+        }
+        let stride = gtk4::cairo::Format::ARgb32
+            .stride_for_width(width)
+            .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+        let data = super::super::render::rgba_to_cairo_argb_bytes(&self.working_image);
+        let mut surface = gtk4::cairo::ImageSurface::create_for_data(
+            data,
+            gtk4::cairo::Format::ARgb32,
+            width as i32,
+            height as i32,
+            stride,
+        )
+        .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+        {
+            let context = gtk4::cairo::Context::new(&surface)
+                .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+            context.scale(self.export_scale, self.export_scale);
+            for action in self.vector_annotation_actions() {
+                super::super::render::draw_annotation_action(&context, action);
+            }
+        }
+        surface.flush();
+        let surface_data = surface
+            .data()
+            .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+        Ok(super::super::render::cairo_argb_to_rgba_image(
+            width,
+            height,
+            stride as usize,
+            surface_data.as_ref(),
+        ))
+    }
+
+    fn vector_annotation_actions(&self) -> impl Iterator<Item = &AnnotationAction> {
+        self.actions.iter().filter(|action| {
+            !matches!(
+                action,
+                AnnotationAction::Obfuscate { .. } | AnnotationAction::Focus { .. }
+            )
+        })
+    }
+
+    fn paint_vector_annotations_on_canvas(
+        &self,
+        canvas: RgbaImage,
+        layout: &CompositionLayout,
+    ) -> Result<RgbaImage, EditorError> {
+        let (width, height) = (canvas.width(), canvas.height());
+        if width == 0 || height == 0 {
+            return Ok(canvas);
+        }
+        let Some(mut surface) = rgba_image_to_surface(&canvas) else {
+            return Ok(canvas);
+        };
+        {
+            let context = gtk4::cairo::Context::new(&surface)
+                .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+            // Frame preset: outside border around the image plus accent strokes.
+            {
+                let unit = layout.scale_factor * layout.draw_scale;
+                let base_radius =
+                    self.background_corner_radius * layout.scale_factor * layout.draw_scale;
+                stroke_frame_border(
+                    &context,
+                    &layout.image_rect,
+                    unit,
+                    base_radius,
+                    self.border_thickness,
+                    self.border_color,
+                    self.frame_style,
+                );
+            }
+            context.translate(layout.image_rect.x, layout.image_rect.y);
+            context.scale(layout.draw_scale, layout.draw_scale);
+            context.scale(self.export_scale, self.export_scale);
+            for action in self.vector_annotation_actions() {
+                super::super::render::draw_annotation_action(&context, action);
+            }
+        }
+        surface.flush();
+        let stride = gtk4::cairo::Format::ARgb32
+            .stride_for_width(width)
+            .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+        let surface_data = surface
+            .data()
+            .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+        Ok(cairo_argb_to_rgba_image(
+            width,
+            height,
+            stride as usize,
+            surface_data.as_ref(),
+        ))
+    }
+
+    fn render_with_background_and_annotations(
+        &self,
+        clean_screenshot: &RgbaImage,
+    ) -> Result<RgbaImage, EditorError> {
+        let canvas = self.render_with_background(clean_screenshot)?;
+        let layout = self.background_layout_for(clean_screenshot);
+        let canvas = self.paint_vector_annotations_on_canvas(canvas, &layout)?;
+        Ok(canvas)
+    }
+
+    fn background_layout_for(&self, screenshot: &RgbaImage) -> CompositionLayout {
+        let scale = self.export_scale;
+        let mut layout = BackgroundComposition::new(
+            screenshot.width() as f64 / scale,
+            screenshot.height() as f64 / scale,
+        )
+        .with_style(self.background_style.clone())
+        .with_padding(self.background_padding)
+        .with_shadow_profile(
+            self.shadow_opacity,
+            self.shadow_blur,
+            self.shadow_offset_x,
+            self.shadow_offset_y,
+        )
+        .with_insert(self.background_insert)
+        .with_alignment(self.background_alignment)
+        .with_corner_radius(self.background_corner_radius)
+        .with_aspect_ratio(self.background_aspect_ratio)
+        .with_frame_style(self.frame_style)
+        .with_frame_border_thickness(self.border_thickness)
+        .compute();
+        let scale_rect = |rect: FloatRect| FloatRect {
+            x: rect.x * scale,
+            y: rect.y * scale,
+            width: rect.width * scale,
+            height: rect.height * scale,
+        };
+        layout.canvas_width *= scale;
+        layout.canvas_height *= scale;
+        layout.image_rect = scale_rect(layout.image_rect);
+        layout.shadow_rect = layout.shadow_rect.map(scale_rect);
+        layout.shadow = layout.shadow.map(|mut shadow| {
+            shadow.offset_x *= scale;
+            shadow.offset_y *= scale;
+            shadow.blur *= scale;
+            shadow.rect = scale_rect(shadow.rect);
+            shadow
+        });
+        layout.scale_factor *= scale;
+        layout
+    }
+
+    /// The outside border's underlay for `paint_frame_backings`, if the
+    /// style strokes one around the card.
+    fn frame_underlay(&self, layout: &CompositionLayout) -> Option<(f64, DrawColor)> {
+        super::super::render::frame_needs_underlay(self.frame_style, self.border_thickness)
+            .then_some((
+                self.border_thickness * layout.scale_factor * layout.draw_scale,
+                self.border_color,
+            ))
+    }
+
+    fn render_background_base(
+        &self,
+        screenshot: &RgbaImage,
+        layout: &CompositionLayout,
+    ) -> Result<RgbaImage, EditorError> {
+        let mut canvas = match &self.background_style {
+            BackgroundStyle::PlainColor(color) => RgbaImage::from_pixel(
+                layout.canvas_width as u32,
+                layout.canvas_height as u32,
+                image::Rgba([
+                    (color.r.clamp(0.0, 1.0) * 255.0) as u8,
+                    (color.g.clamp(0.0, 1.0) * 255.0) as u8,
+                    (color.b.clamp(0.0, 1.0) * 255.0) as u8,
+                    (color.a.clamp(0.0, 1.0) * 255.0) as u8,
+                ]),
+            ),
+            BackgroundStyle::Gradient(gradient) => {
+                let bitmap = render_gradient(
+                    gradient,
+                    layout.canvas_width.max(1.0) as u32,
+                    layout.canvas_height.max(1.0) as u32,
+                );
+                let mut rgba = Vec::with_capacity(bitmap.pixels.len() / 3 * 4);
+                for rgb in bitmap.pixels.chunks_exact(3) {
+                    rgba.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
+                }
+                RgbaImage::from_raw(bitmap.width, bitmap.height, rgba)
+                    .expect("gradient raster matches its own dimensions")
+            }
+            BackgroundStyle::Wallpaper(path) => self.load_and_resize_background(
+                path,
+                layout.canvas_width as u32,
+                layout.canvas_height as u32,
+            )?,
+            BackgroundStyle::Blurred(blur_idx) => {
+                let base_radius = match blur_idx {
+                    0 => 10.0,
+                    1 => 35.0,
+                    2 => 80.0,
+                    _ => 20.0,
+                };
+                const MAX_BLUR_DIM: u32 = 800;
+                let (width, height) = screenshot.dimensions();
+                let mut blurred = if width > MAX_BLUR_DIM || height > MAX_BLUR_DIM {
+                    let scale = MAX_BLUR_DIM as f64 / f64::from(width.max(height));
+                    image::imageops::resize(
+                        screenshot,
+                        (f64::from(width) * scale).round().max(1.0) as u32,
+                        (f64::from(height) * scale).round().max(1.0) as u32,
+                        image::imageops::FilterType::Triangle,
+                    )
+                } else {
+                    screenshot.clone()
+                };
+                let (blur_width, blur_height) = blurred.dimensions();
+                let slider_radius = self.background_blur.clamp(0.0, 1.0)
+                    * BACKGROUND_BLUR_MAX_RADIUS
+                    * (f64::from(blur_width) / layout.canvas_width.max(1.0));
+                apply_blur_rect(
+                    &mut blurred,
+                    Rect {
+                        x: 0,
+                        y: 0,
+                        width: blur_width as i32,
+                        height: blur_height as i32,
+                    },
+                    base_radius + slider_radius,
+                    false,
+                );
+                image::imageops::resize(
+                    &blurred,
+                    layout.canvas_width as u32,
+                    layout.canvas_height as u32,
+                    image::imageops::FilterType::Triangle,
+                )
+            }
+            BackgroundStyle::None => {
+                RgbaImage::new(layout.canvas_width as u32, layout.canvas_height as u32)
+            }
+        };
+
+        if matches!(
+            self.background_style,
+            BackgroundStyle::Gradient(_) | BackgroundStyle::Wallpaper(_)
+        ) {
+            apply_background_blur(&mut canvas, self.background_blur, self.export_scale);
+        }
+        if self.background_style != BackgroundStyle::None {
+            canvas = apply_background_noise(canvas, self.background_noise);
+        }
+        Ok(canvas)
+    }
+
+    fn render_with_background(&self, screenshot: &RgbaImage) -> Result<RgbaImage, EditorError> {
+        let layout = self.background_layout_for(screenshot);
+
+        let mut canvas = match &self.background_style {
+            BackgroundStyle::PlainColor(color) => {
+                let pixel = image::Rgba([
+                    (color.r.clamp(0.0, 1.0) * 255.0) as u8,
+                    (color.g.clamp(0.0, 1.0) * 255.0) as u8,
+                    (color.b.clamp(0.0, 1.0) * 255.0) as u8,
+                    (color.a.clamp(0.0, 1.0) * 255.0) as u8,
+                ]);
+                RgbaImage::from_pixel(
+                    layout.canvas_width as u32,
+                    layout.canvas_height as u32,
+                    pixel,
+                )
+            }
+            BackgroundStyle::Gradient(gradient) => {
+                // Render the shared spec at export resolution so the still
+                // matches the Motion preview and export byte-for-byte.
+                let bitmap = render_gradient(
+                    gradient,
+                    layout.canvas_width.max(1.0) as u32,
+                    layout.canvas_height.max(1.0) as u32,
+                );
+                let mut rgba = Vec::with_capacity(bitmap.pixels.len() / 3 * 4);
+                for rgb in bitmap.pixels.chunks_exact(3) {
+                    rgba.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
+                }
+                RgbaImage::from_raw(bitmap.width, bitmap.height, rgba)
+                    .expect("gradient raster matches its own dimensions")
+            }
+            BackgroundStyle::Wallpaper(path) => self.load_and_resize_background(
+                path,
+                layout.canvas_width as u32,
+                layout.canvas_height as u32,
+            )?,
+            BackgroundStyle::Blurred(blur_idx) => {
+                let base_radius = match blur_idx {
+                    0 => 10.0,
+                    1 => 35.0,
+                    2 => 80.0,
+                    _ => 20.0,
+                };
+                // Match the editor's on-screen preview: downsample the screenshot
+                // to <=800px on its longest edge BEFORE blurring, then upscale to
+                // canvas size. The on-screen draw path does this for the cached
+                // preview surface, but the original save path re-blurred at full
+                // resolution which dominated "Done" latency on large captures
+                // (4K screenshots could spend 1-2 s just blurring before encode).
+                // Blur is intrinsically smooth, so the visible result of
+                // downsample -> blur -> upscale is indistinguishable from
+                // full-resolution blur.
+                const MAX_BLUR_DIM: u32 = 800;
+                let (sw, sh) = screenshot.dimensions();
+                let mut blurred = if sw > MAX_BLUR_DIM || sh > MAX_BLUR_DIM {
+                    let scale = MAX_BLUR_DIM as f64 / (sw.max(sh) as f64);
+                    image::imageops::resize(
+                        screenshot,
+                        ((sw as f64) * scale).round().max(1.0) as u32,
+                        ((sh as f64) * scale).round().max(1.0) as u32,
+                        image::imageops::FilterType::Triangle,
+                    )
+                } else {
+                    screenshot.clone()
+                };
+                let (bw, bh) = blurred.dimensions();
+                // The Appearance slider adds to the style's own blur level. Its
+                // radius is measured in canvas pixels, so convert it to this
+                // working image before blurring.
+                let slider_radius = self.background_blur.clamp(0.0, 1.0)
+                    * BACKGROUND_BLUR_MAX_RADIUS
+                    * (f64::from(bw) / layout.canvas_width.max(1.0));
+                apply_blur_rect(
+                    &mut blurred,
+                    Rect {
+                        x: 0,
+                        y: 0,
+                        width: bw as i32,
+                        height: bh as i32,
+                    },
+                    base_radius + slider_radius,
+                    false,
+                );
+                image::imageops::resize(
+                    &blurred,
+                    layout.canvas_width as u32,
+                    layout.canvas_height as u32,
+                    image::imageops::FilterType::Triangle,
+                )
+            }
+            BackgroundStyle::None => return Ok(screenshot.clone()),
+        };
+
+        // The Appearance blur softens the fill only, and it lands before the
+        // grain so noise stays crisp on top of a blurred background.
+        if matches!(
+            self.background_style,
+            BackgroundStyle::Gradient(_) | BackgroundStyle::Wallpaper(_)
+        ) {
+            apply_background_blur(&mut canvas, self.background_blur, self.export_scale);
+        }
+
+        // Background grain belongs to the fill, so it lands before the card,
+        // its backings, and its shadow: the same layer order the canvas preview
+        // and the Motion renderer use.
+        canvas = apply_background_noise(canvas, self.background_noise);
+
+        // Backing sheets (Stack looks, Retro window) behind the card.
+        {
+            let radius = self.background_corner_radius * layout.scale_factor * layout.draw_scale;
+            canvas = paint_frame_backings(
+                canvas,
+                &layout.image_rect,
+                radius,
+                self.frame_style,
+                self.export_scale,
+                true,
+                self.frame_underlay(&layout),
+            )?;
+        }
+
+        let mut final_screenshot = if (layout.draw_scale - 1.0).abs() > 0.001 {
+            image::imageops::resize(
+                screenshot,
+                layout.image_rect.width.round().max(1.0) as u32,
+                layout.image_rect.height.round().max(1.0) as u32,
+                image::imageops::FilterType::CatmullRom,
+            )
+        } else {
+            screenshot.clone()
+        };
+
+        if self.background_corner_radius > 0.0 {
+            let radius = self.background_corner_radius * layout.scale_factor * layout.draw_scale;
+            apply_corner_radius(&mut final_screenshot, radius);
+        }
+
+        if let Some(shadow) = layout.shadow {
+            let shadow_layer = render_shadow_layer(
+                final_screenshot.width(),
+                final_screenshot.height(),
+                shadow.blur,
+                shadow.opacity,
+                self.background_corner_radius * layout.scale_factor * layout.draw_scale,
+            )?;
+            image::imageops::overlay(
+                &mut canvas,
+                &shadow_layer,
+                shadow.rect.x.round() as i64,
+                shadow.rect.y.round() as i64,
+            );
+        }
+
+        canvas = self.paint_attached_border_underlay(canvas, &layout)?;
+
+        image::imageops::overlay(
+            &mut canvas,
+            &final_screenshot,
+            layout.image_rect.x.round() as i64,
+            layout.image_rect.y.round() as i64,
+        );
+
+        Ok(canvas)
+    }
+
+    fn load_and_resize_background(
+        &self,
+        path: &Path,
+        width: u32,
+        height: u32,
+    ) -> Result<RgbaImage, EditorError> {
+        let img = image::open(path).map_err(|e| EditorError::ImageLoad(e.to_string()))?;
+        let rgba = img.into_rgba8();
+        Ok(image::imageops::resize(
+            &rgba,
+            width,
+            height,
+            image::imageops::FilterType::Triangle,
+        ))
+    }
+
+    pub fn set_highlighter_mode(&mut self, mode: HighlighterMode) {
+        self.highlighter_mode = mode;
+    }
+
+    pub fn set_pen_weight(&mut self, weight: PenWeight) {
+        self.pen_weight = weight;
+    }
+}
+
+pub(super) fn render_shadow_layer(
+    width: u32,
+    height: u32,
+    blur: f64,
+    opacity: f64,
+    corner_radius: f64,
+) -> Result<RgbaImage, EditorError> {
+    let spread_px = (blur * 1.35).ceil().max(0.0) as i32;
+    let shadow_width = width as i32 + spread_px * 2;
+    let shadow_height = height as i32 + spread_px * 2;
+    let stride = gtk4::cairo::Format::ARgb32
+        .stride_for_width(shadow_width as u32)
+        .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+    let mut surface =
+        gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, shadow_width, shadow_height)
+            .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+    {
+        let context = gtk4::cairo::Context::new(&surface)
+            .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+        context.set_source_rgba(0.0, 0.0, 0.0, opacity.clamp(0.0, 1.0));
+        draw_rounded_rect_path(
+            &context,
+            spread_px as f64,
+            spread_px as f64,
+            width as f64,
+            height as f64,
+            corner_radius,
+        );
+        let _ = context.fill();
+    }
+    surface.flush();
+    let data = surface
+        .data()
+        .map_err(|e| EditorError::ImageSave(e.to_string()))?;
+    let mut layer = cairo_argb_to_rgba_image(
+        shadow_width as u32,
+        shadow_height as u32,
+        stride as usize,
+        data.as_ref(),
+    );
+    // The still export shares the Motion card shadow's recipe (3 passes at
+    // 0.4x blur). The 1.35x margin contains the 1.2x spread, so the falloff
+    // never clips into a hard edge. The on-screen preview no longer rasterizes
+    // here: it paints through the shared `paint_card_shadow` so Static and
+    // Motion show the same shadow, so this path serves the still PNG only.
+    if blur > 0.0 {
+        let blur_rect = Rect {
+            x: 0,
+            y: 0,
+            width: layer.width() as i32,
+            height: layer.height() as i32,
+        };
+        let pass_radius = (blur * 0.4).max(1.0);
+        for _ in 0..3 {
+            apply_blur_rect(&mut layer, blur_rect, pass_radius, true);
+        }
+    }
+    Ok(layer)
+}
+
+fn draw_rounded_rect_path(
+    context: &gtk4::cairo::Context,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    radius: f64,
+) {
+    // One smooth-corner implementation for preview + export; the clip, the
+    // shadow, the borders and the backings must all trace the same outline.
+    super::super::render::rounded_rect_path(context, x, y, width, height, radius);
+}
+
+fn apply_corner_radius(image: &mut RgbaImage, radius: f64) {
+    let (width, height) = image.dimensions();
+    if width == 0 || height == 0 || radius <= 0.0 {
+        return;
+    }
+    let radius = radius.min(width as f64 / 2.0).min(height as f64 / 2.0);
+    if radius <= 0.0 {
+        return;
+    }
+    let Some(source_surface) = rgba_image_to_surface(image) else {
+        return;
+    };
+    let stride = match gtk4::cairo::Format::ARgb32.stride_for_width(width) {
+        Ok(stride) => stride,
+        Err(_) => return,
+    };
+    let mut clipped_surface = match gtk4::cairo::ImageSurface::create(
+        gtk4::cairo::Format::ARgb32,
+        width as i32,
+        height as i32,
+    ) {
+        Ok(surface) => surface,
+        Err(_) => return,
+    };
+    {
+        let context = match gtk4::cairo::Context::new(&clipped_surface) {
+            Ok(context) => context,
+            Err(_) => return,
+        };
+        context.set_antialias(gtk4::cairo::Antialias::Best);
+        draw_rounded_rect_path(&context, 0.0, 0.0, width as f64, height as f64, radius);
+        context.clip();
+        if context
+            .set_source_surface(&source_surface, 0.0, 0.0)
+            .is_err()
+        {
+            return;
+        }
+        let _ = context.paint();
+    }
+    clipped_surface.flush();
+    let surface_data = match clipped_surface.data() {
+        Ok(data) => data,
+        Err(_) => return,
+    };
+    *image = cairo_argb_to_rgba_image(width, height, stride as usize, surface_data.as_ref());
+}
+
+#[cfg(test)]
+mod tests {
+    use image::RgbaImage;
+
+    use super::EditorState;
+    use super::{apply_corner_radius, render_shadow_layer};
+    use crate::capture::editor::types::{BackgroundStyle, CropAspectRatio, DrawColor, FrameStyle};
+    use crate::capture::editor::upscale::SourceUpscale;
+    use crate::recording::editor::model::{MotionSceneShadow, MotionSceneShadowPreset};
+
+    #[test]
+    fn corner_radius_antialiases_top_right_edge() {
+        let mut image = RgbaImage::from_pixel(40, 40, image::Rgba([255, 255, 255, 255]));
+
+        apply_corner_radius(&mut image, 12.0);
+
+        let top_right_band_has_partial_alpha = (28..40).any(|x| {
+            (0..12).any(|y| {
+                let alpha = image.get_pixel(x, y)[3];
+                alpha > 0 && alpha < 255
+            })
+        });
+
+        assert!(
+            top_right_band_has_partial_alpha,
+            "expected antialiased pixels along the top-right rounded edge"
+        );
+        assert_eq!(image.get_pixel(39, 0)[3], 0);
+        assert_eq!(image.get_pixel(20, 20)[3], 255);
+    }
+
+    fn studio_document() -> EditorState {
+        EditorState::new(RgbaImage::from_pixel(
+            100,
+            80,
+            image::Rgba([240, 0, 0, 255]),
+        ))
+    }
+
+    fn blue_fill() -> BackgroundStyle {
+        BackgroundStyle::PlainColor(DrawColor::new(0.0, 0.0, 1.0, 1.0))
+    }
+
+    /// A spread cast shadow, synced the way the Background panel syncs it so
+    /// the shadow fields the render reads match the layer.
+    fn cast_shadow(state: &mut EditorState) {
+        state.scene_shadow = MotionSceneShadow {
+            preset: MotionSceneShadowPreset::Spread,
+            opacity: 0.6,
+            light: (0.0, 0.0),
+        };
+        state.sync_shadow_fields();
+    }
+
+    #[test]
+    fn default_appearance_is_free() {
+        assert!(!studio_document().uses_studio_style());
+    }
+
+    #[test]
+    fn background_panel_controls_stay_free_and_frame_styles_do_not() {
+        let mut background = studio_document();
+        background.background_style = blue_fill();
+        background.background_padding = 16.0;
+        background.background_blur = 0.5;
+        background.background_corner_radius = 20.0;
+        background.background_noise = 0.5;
+        background.background_insert = 10.0;
+        assert!(
+            !background.uses_studio_style(),
+            "the Background panel is free"
+        );
+
+        let mut style = studio_document();
+        style.frame_style = FrameStyle::InsetLight;
+        assert!(style.uses_studio_style());
+
+        let mut ratio = studio_document();
+        ratio.background_style = blue_fill();
+        ratio.background_padding = 16.0;
+        ratio.background_aspect_ratio = CropAspectRatio::Square;
+        assert!(!ratio.uses_studio_style(), "frame ratios stay free");
+    }
+
+    #[test]
+    fn a_stale_padding_without_a_fill_stays_free() {
+        let mut state = studio_document();
+        state.background_padding = 16.0;
+        assert!(!state.uses_studio_style());
+    }
+
+    #[test]
+    fn a_scene_shadow_is_studio_only_once_padding_reveals_it() {
+        let mut state = studio_document();
+        cast_shadow(&mut state);
+        assert!(
+            !state.uses_studio_style(),
+            "no background, nothing to reveal"
+        );
+        state.background_style = blue_fill();
+        state.background_padding = 16.0;
+        assert!(state.uses_studio_style());
+        state.scene_shadow.preset = MotionSceneShadowPreset::None;
+        state.sync_shadow_fields();
+        assert!(!state.uses_studio_style());
+    }
+
+    #[test]
+    fn a_styled_document_is_locked_and_a_clean_one_is_not() {
+        // These assertions are about the licence gate, not the free trial.
+        let _trial = crate::studio_trial::test_trial_used_up();
+        let mut styled = studio_document();
+        styled.frame_style = FrameStyle::InsetLight;
+        let error = styled
+            .to_final_image()
+            .expect_err("a styled still fails closed");
+        assert!(error.to_string().contains("Studio"), "{error}");
+        assert!(
+            studio_document().to_final_image().is_ok(),
+            "a clean still stays free"
+        );
+        let mut wallpapered = studio_document();
+        wallpapered.background_style = blue_fill();
+        wallpapered.background_padding = 16.0;
+        wallpapered.background_corner_radius = 20.0;
+        assert!(
+            wallpapered.to_final_image().is_ok(),
+            "a fill, padding and rounded corners stay free"
+        );
+        let _entitlement = crate::studio_entitlement::test_studio_entitlement();
+        assert_eq!(
+            styled.to_final_image().unwrap(),
+            styled.render_final_image().unwrap()
+        );
+    }
+
+    #[test]
+    fn studio_gates_only_nonidentity_final_output() {
+        let _trial = crate::studio_trial::test_trial_used_up();
+        let mut state = studio_document();
+        state.static_image_transform.perspective = 0.4;
+        assert!(state.to_final_image().is_ok());
+        state.static_image_transform.yaw = 12.0;
+        assert!(state.render_final_image().is_ok());
+        assert!(state.to_final_image().is_err());
+        let _entitlement = crate::studio_entitlement::test_studio_entitlement();
+        assert_eq!(
+            state.to_final_image().unwrap(),
+            state.render_final_image().unwrap()
+        );
+    }
+
+    #[test]
+    fn studio_capabilities_follow_the_upscale_mode() {
+        let mut state = studio_document();
+        assert!(!state.studio_capabilities().image_upscale);
+        state.source_upscale = SourceUpscale::Neural2x;
+        assert!(state.studio_capabilities().image_upscale);
+    }
+
+    #[test]
+    fn shadow_sheet_blurs_and_contains_its_falloff() {
+        let layer = render_shadow_layer(64, 64, 20.0, 0.8, 8.0).expect("shadow layer");
+        assert_eq!((layer.width(), layer.height()), (118, 118));
+        // Solid core survives the blur.
+        assert!(layer.get_pixel(59, 59)[3] > 180);
+        // Falloff exists just outside the card: the blur really ran.
+        let fringe = layer.get_pixel(96, 59)[3];
+        assert!(fringe > 0 && fringe < 200, "fringe alpha {fringe}");
+        // Falloff fits inside the sheet: no clipped hard edge at the border.
+        assert!(layer.get_pixel(59, 0)[3] < 16);
+    }
+}

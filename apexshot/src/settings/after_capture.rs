@@ -1,0 +1,199 @@
+use crate::config::AppConfig;
+use crate::i18n::t;
+use gtk4::{prelude::*, Align, Box as GtkBox, CheckButton, Grid, Label, Orientation};
+
+#[allow(dead_code)]
+pub struct AfterCaptureWidgets {
+    pub wrapper: GtkBox,
+    pub screenshot_after_capture_checks: Vec<CheckButton>,
+    pub rec_copy_to_clipboard: CheckButton,
+    pub rec_save: CheckButton,
+    pub rec_show_quick_access: CheckButton,
+    pub rec_open_video_editor: CheckButton,
+    pub rec_auto_zoom_on_import: CheckButton,
+}
+
+pub fn build_after_capture_section(config: &AppConfig) -> AfterCaptureWidgets {
+    let after_capture_wrapper = GtkBox::new(Orientation::Vertical, 8);
+    after_capture_wrapper.set_halign(Align::Fill);
+    after_capture_wrapper.set_hexpand(true);
+
+    let after_capture_heading = Label::new(None);
+    after_capture_heading.add_css_class("settings-group-title");
+    after_capture_heading.set_xalign(0.0);
+    after_capture_heading.set_halign(Align::Start);
+    after_capture_heading.set_wrap(true);
+    // The hint finishes the heading's sentence: one label, so the copy follows
+    // the colon and wraps at the page's width instead of being cut to a
+    // narrower column of its own.
+    after_capture_heading.set_markup(&format!(
+        "<b>{}</b> <span weight=\"normal\" alpha=\"62%\">{}</span>",
+        gtk4::glib::markup_escape_text(&t("After capture:")),
+        gtk4::glib::markup_escape_text(&t(
+            "Here you can decide what should happen after taking a screenshot or recording your screen.",
+        )),
+    ));
+
+    let after_capture_table = GtkBox::new(Orientation::Vertical, 0);
+    after_capture_table.set_halign(Align::Center);
+    after_capture_table.set_hexpand(true);
+
+    let after_capture_header_row = Grid::new();
+    after_capture_header_row.add_css_class("settings-table-row");
+    after_capture_header_row.set_column_spacing(18);
+    after_capture_header_row.set_hexpand(true);
+
+    let screenshot_header = Label::new(Some(&t("Screenshot")));
+    screenshot_header.add_css_class("settings-table-header");
+    screenshot_header.set_halign(Align::Center);
+    let screenshot_header_cell = GtkBox::new(Orientation::Horizontal, 0);
+    screenshot_header_cell.set_size_request(108, -1);
+    screenshot_header_cell.set_halign(Align::Center);
+    screenshot_header_cell.append(&screenshot_header);
+
+    let recording_header = Label::new(Some(&t("Recording")));
+    recording_header.add_css_class("settings-table-header");
+    recording_header.set_halign(Align::Center);
+    let recording_header_cell = GtkBox::new(Orientation::Horizontal, 0);
+    recording_header_cell.set_size_request(80, -1);
+    recording_header_cell.set_halign(Align::Center);
+    recording_header_cell.append(&recording_header);
+
+    let action_header = Label::new(Some(&t("Action")));
+    action_header.add_css_class("settings-table-header");
+    action_header.set_halign(Align::Start);
+    action_header.set_xalign(0.0);
+
+    after_capture_header_row.attach(&screenshot_header_cell, 0, 0, 1, 1);
+    after_capture_header_row.attach(&recording_header_cell, 1, 0, 1, 1);
+    after_capture_header_row.attach(&action_header, 2, 0, 1, 1);
+    after_capture_table.append(&after_capture_header_row);
+
+    let after_capture_rows = [
+        (
+            "Show Quick Access overlay",
+            config.after_capture_show_quick_access,
+        ),
+        (
+            "Copy to clipboard",
+            config.after_capture_copy_file_to_clipboard,
+        ),
+        ("Save", config.after_capture_save),
+        ("Open Annotate tool", config.after_capture_open_annotate),
+        ("Open Video Editor", config.rec_video_open_editor),
+        (
+            "Automatic zoom on import",
+            config.rec_video_auto_zoom_on_import,
+        ),
+    ];
+    let mut screenshot_after_capture_checks = Vec::new();
+    let mut rec_copy_to_clipboard = CheckButton::new();
+    let mut rec_save = CheckButton::new();
+    let mut rec_show_quick_access = CheckButton::new();
+    let mut rec_open_video_editor = CheckButton::new();
+    let mut rec_auto_zoom_on_import = CheckButton::new();
+    rec_auto_zoom_on_import.set_active(config.rec_video_auto_zoom_on_import);
+
+    for (index, (action, active)) in after_capture_rows.into_iter().enumerate() {
+        let row = Grid::new();
+        row.add_css_class("settings-table-row");
+        if index % 2 == 1 {
+            row.add_css_class("settings-table-row-muted");
+        }
+        row.set_column_spacing(18);
+        row.set_hexpand(true);
+
+        let screenshot_cell = GtkBox::new(Orientation::Horizontal, 0);
+        screenshot_cell.set_size_request(108, -1);
+        screenshot_cell.set_halign(Align::Center);
+        if action != "Open Video Editor" && action != "Automatic zoom on import" {
+            let screenshot_check = CheckButton::new();
+            screenshot_check.set_active(active);
+            screenshot_after_capture_checks.push(screenshot_check.clone());
+            screenshot_cell.append(&screenshot_check);
+        }
+
+        let recording_cell = GtkBox::new(Orientation::Horizontal, 0);
+        recording_cell.set_size_request(80, -1);
+        recording_cell.set_halign(Align::Center);
+        // Only the Windows shell shows the Quick Access card after a recording.
+        let recording_supported = match action {
+            "Open Annotate tool" => false,
+            "Show Quick Access overlay" => cfg!(target_os = "windows"),
+            _ => true,
+        };
+        if recording_supported {
+            let recording_check = CheckButton::new();
+            match action {
+                "Show Quick Access overlay" => {
+                    recording_check.set_active(config.rec_after_capture_show_quick_access);
+                    rec_show_quick_access = recording_check.clone();
+                }
+                "Copy to clipboard" => {
+                    recording_check.set_active(config.rec_after_capture_copy_to_clipboard);
+                    rec_copy_to_clipboard = recording_check.clone();
+                }
+                "Save" => {
+                    recording_check.set_active(config.rec_after_capture_save);
+                    rec_save = recording_check.clone();
+                }
+                "Open Video Editor" => {
+                    recording_check.set_active(active);
+                    rec_open_video_editor = recording_check.clone();
+                }
+                "Automatic zoom on import" => {
+                    recording_check.set_active(active);
+                    rec_auto_zoom_on_import = recording_check.clone();
+                }
+                _ => {}
+            }
+            recording_cell.append(&recording_check);
+        }
+
+        let action_label = Label::new(Some(&t(action)));
+        action_label.set_xalign(0.0);
+        action_label.set_halign(Align::Start);
+
+        row.attach(&screenshot_cell, 0, 0, 1, 1);
+        row.attach(&recording_cell, 1, 0, 1, 1);
+        row.attach(&action_label, 2, 0, 1, 1);
+        after_capture_table.append(&row);
+    }
+
+    let after_capture_table_frame = GtkBox::new(Orientation::Vertical, 0);
+    after_capture_table_frame.add_css_class("settings-table-frame");
+    after_capture_table_frame.set_halign(Align::Center);
+    after_capture_table_frame.set_margin_start(4);
+    after_capture_table_frame.append(&after_capture_table);
+
+    let after_capture_table_row = GtkBox::new(Orientation::Horizontal, 0);
+    after_capture_table_row.set_halign(Align::Fill);
+    after_capture_table_row.set_hexpand(true);
+    after_capture_table_row.append(&after_capture_table_frame);
+
+    after_capture_wrapper.append(&after_capture_heading);
+    after_capture_wrapper.append(&after_capture_table_row);
+
+    AfterCaptureWidgets {
+        wrapper: after_capture_wrapper,
+        screenshot_after_capture_checks,
+        rec_copy_to_clipboard,
+        rec_save,
+        rec_show_quick_access,
+        rec_open_video_editor,
+        rec_auto_zoom_on_import,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn after_capture_wrapper_does_not_force_a_fixed_width() {
+        let source = include_str!("after_capture.rs");
+        let production_source = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            !production_source.contains("set_size_request(450, -1);"),
+            "after capture settings wrapper still hardcodes a 450px width"
+        );
+    }
+}

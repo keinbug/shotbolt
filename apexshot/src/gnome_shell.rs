@@ -1,0 +1,842 @@
+use std::process::Command;
+use std::time::Duration;
+
+use anyhow::Context;
+
+use crate::capture_overlay::RecordingRequest;
+
+const MASK_DBUS_DEST: &str = "org.apexshot.ShellOverlay";
+const FLATPAK_MASK_DBUS_DEST: &str = "org.apexshot.ApexShot.ShellOverlay";
+const MASK_DBUS_PATH: &str = "/org/apexshot/ShellOverlay";
+const MASK_DBUS_IFACE: &str = "org.apexshot.ShellOverlay";
+const UNKNOWN_METHOD_ERROR: &str = "org.freedesktop.DBus.Error.UnknownMethod";
+
+fn is_unknown_method_name(name: &str) -> bool {
+    name == UNKNOWN_METHOD_ERROR
+}
+
+fn is_unknown_method_error(error: &zbus::Error) -> bool {
+    matches!(
+        error,
+        zbus::Error::MethodError(name, _, _) if is_unknown_method_name(name.as_str())
+    )
+}
+
+fn call_v2_or_legacy<T>(
+    versioned: zbus::Result<T>,
+    legacy: impl FnOnce() -> zbus::Result<T>,
+) -> zbus::Result<T> {
+    match versioned {
+        Err(error) if is_unknown_method_error(&error) => legacy(),
+        result => result,
+    }
+}
+
+fn shell_overlay_name_for(portal_only: bool) -> &'static str {
+    if portal_only {
+        FLATPAK_MASK_DBUS_DEST
+    } else {
+        MASK_DBUS_DEST
+    }
+}
+
+pub(crate) fn shell_overlay_bus_name() -> &'static str {
+    shell_overlay_name_for(crate::app_identity::portal_only())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecordingMaskGeometry {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+#[derive(Debug)]
+pub struct MaskHandle {
+    shown: bool,
+}
+
+#[derive(Debug)]
+pub struct CountdownHandle {
+    shown: bool,
+}
+
+impl CountdownHandle {
+    /// Report whether the shell actually displayed the countdown.
+    pub fn is_shown(&self) -> bool {
+        self.shown
+    }
+}
+
+impl Drop for CountdownHandle {
+    fn drop(&mut self) {
+        if self.shown {
+            let _ = hide_recording_countdown();
+            self.shown = false;
+        }
+    }
+}
+
+impl MaskHandle {
+    pub fn inactive() -> Self {
+        Self { shown: false }
+    }
+
+    pub fn hide(mut self) {
+        if self.shown {
+            let _ = hide_recording_mask();
+            self.shown = false;
+        }
+    }
+}
+
+impl Drop for MaskHandle {
+    fn drop(&mut self) {
+        if self.shown {
+            let _ = hide_recording_mask();
+            self.shown = false;
+        }
+    }
+}
+
+pub fn should_use_gnome_shell_mask(wayland_display: Option<&str>, desktop: Option<&str>) -> bool {
+    let is_wayland = wayland_display.is_some_and(|value| !value.trim().is_empty());
+    let is_gnome = desktop.is_some_and(|value| {
+        value
+            .split(':')
+            .any(|part| part.trim().eq_ignore_ascii_case("gnome"))
+    });
+    is_wayland && is_gnome
+}
+
+pub fn current_session_supports_gnome_shell_overlay() -> bool {
+    current_session_supports_gnome_shell_mask()
+}
+
+pub fn current_session_supports_gnome_shell_mask() -> bool {
+    should_use_gnome_shell_mask(
+        std::env::var("WAYLAND_DISPLAY").ok().as_deref(),
+        std::env::var("XDG_CURRENT_DESKTOP").ok().as_deref(),
+    )
+}
+
+/// True when the ApexShot GNOME Shell extension is on the bus
+/// (`org.apexshot.ShellOverlay` natively, or the scoped Flatpak alias). Used to
+/// prefer panel timer / shell stop UI over the desktop-notification indicator.
+pub fn is_shell_overlay_service_available() -> bool {
+    overlay_name_has_owner()
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MutterMonitorInfo {
+    pub logical_x: i32,
+    pub logical_y: i32,
+    pub logical_width: i32,
+    pub logical_height: i32,
+    pub physical_width: i32,
+    pub physical_height: i32,
+    pub scale: f64,
+}
+
+pub fn query_mutter_monitor_configs() -> Result<Vec<MutterMonitorInfo>, String> {
+    if let Some(msg) = crate::app_identity::host_escape_blocked("gdbus") {
+        return Err(msg);
+    }
+    let output = Command::new("gdbus")
+        .args([
+            "call",
+            "--session",
+            "--dest",
+            "org.gnome.Mutter.DisplayConfig",
+            "--object-path",
+            "/org/gnome/Mutter/DisplayConfig",
+            "--method",
+            "org.gnome.Mutter.DisplayConfig.GetCurrentState",
+        ])
+        .output()
+        .map_err(|e| format!("gdbus command failed: {e}"))?;
+
+    if !output.status.success() {
+        return Err("gdbus call returned non-zero exit status".into());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_mutter_monitor_configs(&stdout)
+}
+
+fn parse_mutter_monitor_configs(response: &str) -> Result<Vec<MutterMonitorInfo>, String> {
+    let (monitors_section, logical_monitors_section) = split_mutter_sections(response)?;
+
+    let logical_monitors = extract_top_level_array(&logical_monitors_section)
+        .ok_or("failed to extract logical_monitors array")?;
+
+    if logical_monitors.is_empty() {
+        return Err("no logical monitors parsed".into());
+    }
+
+    let mut monitors = Vec::new();
+    for lm_text in &logical_monitors {
+        let connector = find_connector_in_logical_monitor(lm_text).unwrap_or_default();
+
+        let fields = parse_nested_values(lm_text);
+
+        if fields.len() < 3 {
+            continue;
+        }
+
+        let logical_x = fields[0].parse::<i32>().unwrap_or(0);
+        let logical_y = fields[1].parse::<i32>().unwrap_or(0);
+        let scale = fields[2].parse::<f64>().unwrap_or(1.0);
+
+        let (phys_w, phys_h, log_w, log_h) = find_monitor_mode(&monitors_section, connector);
+
+        let logical_width = log_w;
+        let logical_height = log_h;
+
+        monitors.push(MutterMonitorInfo {
+            logical_x,
+            logical_y,
+            logical_width,
+            logical_height,
+            physical_width: phys_w,
+            physical_height: phys_h,
+            scale,
+        });
+    }
+
+    Ok(monitors)
+}
+
+fn split_mutter_sections(response: &str) -> Result<(String, String), String> {
+    let mut idx = 0;
+    let chars: Vec<char> = response.chars().collect();
+
+    while idx < chars.len() && chars[idx] != '(' {
+        idx += 1;
+    }
+    idx += 1; // skip '('
+
+    while idx < chars.len() && chars[idx] != ',' {
+        idx += 1;
+    }
+    idx += 1; // skip ',' after serial
+
+    skip_whitespace(&chars, &mut idx);
+
+    // Now at start of monitors array
+    if idx >= chars.len() || chars[idx] != '[' {
+        return Err("expected '[' for monitors array".into());
+    }
+
+    let monitors_start = idx;
+    idx += 1;
+    let mut depth: i32 = 1;
+    while idx < chars.len() && depth > 0 {
+        match chars[idx] {
+            '[' => depth += 1,
+            ']' => depth -= 1,
+            _ => {}
+        }
+        idx += 1;
+    }
+
+    let monitors_section = response[monitors_start..idx].to_string();
+
+    skip_whitespace(&chars, &mut idx);
+    if idx < chars.len() && chars[idx] == ',' {
+        idx += 1;
+    }
+    skip_whitespace(&chars, &mut idx);
+
+    // Now at start of logical_monitors array
+    if idx >= chars.len() || chars[idx] != '[' {
+        return Err("expected '[' for logical_monitors array".into());
+    }
+
+    let lm_start = idx;
+    idx += 1;
+    depth = 1;
+    while idx < chars.len() && depth > 0 {
+        match chars[idx] {
+            '[' => depth += 1,
+            ']' => depth -= 1,
+            _ => {}
+        }
+        idx += 1;
+    }
+
+    let logical_monitors_section = response[lm_start..idx].to_string();
+
+    Ok((monitors_section, logical_monitors_section))
+}
+
+fn skip_whitespace(chars: &[char], idx: &mut usize) {
+    while *idx < chars.len() && chars[*idx].is_whitespace() {
+        *idx += 1;
+    }
+}
+
+fn extract_top_level_array(section: &str) -> Option<Vec<String>> {
+    let chars: Vec<char> = section.chars().collect();
+    let mut idx = 0;
+    skip_whitespace(&chars, &mut idx);
+
+    if idx >= chars.len() || chars[idx] != '[' {
+        return None;
+    }
+    idx += 1;
+
+    let mut items = Vec::new();
+    let mut depth = 0;
+    let mut start;
+
+    while idx < chars.len() {
+        match chars[idx] {
+            '(' if depth == 0 => {
+                start = idx;
+                depth = 1;
+                idx += 1;
+                while idx < chars.len() && depth > 0 {
+                    match chars[idx] {
+                        '(' => depth += 1,
+                        ')' => depth -= 1,
+                        _ => {}
+                    }
+                    idx += 1;
+                }
+                let item = section[start..idx].to_string();
+                items.push(item);
+            }
+            ']' => {
+                break;
+            }
+            _ => {
+                idx += 1;
+            }
+        }
+    }
+
+    Some(items)
+}
+
+fn parse_nested_values(text: &str) -> Vec<String> {
+    let mut values = Vec::new();
+    let chars: Vec<char> = text.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        while i < chars.len()
+            && (chars[i] == '('
+                || chars[i] == ')'
+                || chars[i] == '['
+                || chars[i] == ']'
+                || chars[i] == '{'
+                || chars[i] == ' '
+                || chars[i] == ','
+                || chars[i] == '\n')
+        {
+            i += 1;
+        }
+        if i >= chars.len() {
+            break;
+        }
+        if chars[i] == '<' {
+            while i < chars.len() && chars[i] != '>' {
+                i += 1;
+            }
+            if i < chars.len() {
+                i += 1;
+            }
+            continue;
+        }
+        let mut val = String::new();
+        while i < chars.len()
+            && chars[i] != ','
+            && chars[i] != ')'
+            && chars[i] != ']'
+            && chars[i] != '\n'
+        {
+            val.push(chars[i]);
+            i += 1;
+        }
+        let val = val.trim().to_string();
+        if !val.is_empty() {
+            values.push(val);
+        }
+    }
+    values
+}
+
+fn find_connector_in_logical_monitor(lm_text: &str) -> Option<&str> {
+    let start = lm_text.find("('")?;
+    let connector_start = start + 2;
+    let connector_end = lm_text[connector_start..].find('\'')?;
+    Some(&lm_text[connector_start..connector_start + connector_end])
+}
+
+fn find_monitor_mode(after_modes: &str, connector: &str) -> (i32, i32, i32, i32) {
+    let mut pos = 0;
+    while pos < after_modes.len() {
+        let remaining = &after_modes[pos..];
+        if !remaining.starts_with("(('") {
+            pos += 1;
+            continue;
+        }
+        let conn_start = pos + 3;
+        if let Some(conn_end) = after_modes[conn_start..].find('\'') {
+            let found_connector = &after_modes[conn_start..conn_start + conn_end];
+            if found_connector == connector {
+                let after_conn = &after_modes[conn_start + conn_end..];
+                if let Some(is_current) = after_conn.find("is-current") {
+                    let after_current = &after_conn[is_current..];
+                    if after_current.contains("true") {
+                        let mode_start = match after_conn.find("('") {
+                            Some(s) => s,
+                            None => return (1920, 1080, 1920, 1080),
+                        };
+                        let mode_section = &after_conn[mode_start..];
+                        let mode_close = match mode_section.find("')") {
+                            Some(s) => s,
+                            None => return (1920, 1080, 1920, 1080),
+                        };
+                        let mode_str = &mode_section[..mode_close + 2];
+                        let values = parse_nested_values(mode_str);
+                        let phys_w = values.get(1).and_then(|v| v.parse().ok()).unwrap_or(1920);
+                        let phys_h = values.get(2).and_then(|v| v.parse().ok()).unwrap_or(1080);
+                        let scale = values
+                            .get(4)
+                            .and_then(|v| v.parse::<f64>().ok())
+                            .unwrap_or(1.0);
+                        let log_w = (phys_w as f64 / scale).round() as i32;
+                        let log_h = (phys_h as f64 / scale).round() as i32;
+                        return (phys_w, phys_h, log_w, log_h);
+                    }
+                }
+            }
+        }
+        pos += 1;
+    }
+    (1920, 1080, 1920, 1080)
+}
+
+pub fn logical_to_physical_crop(
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    monitors: &[MutterMonitorInfo],
+) -> Option<(u32, u32, u32, u32)> {
+    let center_x = x + width / 2;
+    let center_y = y + height / 2;
+
+    let target = monitors.iter().find(|m| {
+        center_x >= m.logical_x
+            && center_x < m.logical_x + m.logical_width
+            && center_y >= m.logical_y
+            && center_y < m.logical_y + m.logical_height
+    })?;
+
+    let mut sorted: Vec<&MutterMonitorInfo> = monitors.iter().collect();
+    sorted.sort_by(|a, b| {
+        if a.logical_x == b.logical_x {
+            a.logical_y.cmp(&b.logical_y)
+        } else {
+            a.logical_x.cmp(&b.logical_x)
+        }
+    });
+
+    let mut physical_origin_x: i32 = 0;
+    for m in &sorted {
+        if std::ptr::eq(*m, target) {
+            break;
+        }
+        physical_origin_x += m.physical_width;
+    }
+
+    let phys_x =
+        physical_origin_x as u32 + ((x - target.logical_x) as f64 * target.scale).round() as u32;
+    let phys_y = ((y - target.logical_y) as f64 * target.scale).round() as u32;
+    let phys_w = ((width as f64 * target.scale).round() as u32).max(1);
+    let phys_h = ((height as f64 * target.scale).round() as u32).max(1);
+
+    Some((phys_x, phys_y, phys_w, phys_h))
+}
+
+pub fn geometry_from_request(request: &RecordingRequest) -> RecordingMaskGeometry {
+    RecordingMaskGeometry {
+        x: request.x,
+        y: request.y,
+        width: request.width,
+        height: request.height,
+    }
+}
+
+pub fn show_recording_mask(geometry: RecordingMaskGeometry) -> anyhow::Result<MaskHandle> {
+    if geometry.width <= 0 || geometry.height <= 0 || !current_session_supports_gnome_shell_mask() {
+        return Ok(MaskHandle::inactive());
+    }
+
+    let _ = hide_recording_mask();
+
+    overlay_call_timeout(Duration::from_secs(2), move |proxy| {
+        call_v2_or_legacy(
+            proxy.call::<_, _, ()>(
+                "ShowMaskV2",
+                &(
+                    crate::daemon::DAEMON_BUS_NAME,
+                    geometry.x,
+                    geometry.y,
+                    geometry.width,
+                    geometry.height,
+                ),
+            ),
+            || {
+                proxy.call::<_, _, ()>(
+                    "ShowMask",
+                    &(geometry.x, geometry.y, geometry.width, geometry.height),
+                )
+            },
+        )
+        .context("ShowMask failed")
+    })?;
+
+    Ok(MaskHandle { shown: true })
+}
+
+pub fn hide_recording_mask_best_effort() {
+    let _ = hide_recording_mask();
+    let _ = hide_recording_countdown();
+}
+
+pub struct RecordingChromeGuard;
+
+impl RecordingChromeGuard {
+    pub fn clear_on_drop() -> Self {
+        Self
+    }
+}
+
+impl Drop for RecordingChromeGuard {
+    fn drop(&mut self) {
+        hide_recording_mask_best_effort();
+    }
+}
+
+pub fn show_recording_countdown(
+    geometry: RecordingMaskGeometry,
+    seconds: u32,
+) -> anyhow::Result<CountdownHandle> {
+    if geometry.width <= 0
+        || geometry.height <= 0
+        || seconds == 0
+        || !current_session_supports_gnome_shell_mask()
+    {
+        return Ok(CountdownHandle { shown: false });
+    }
+
+    overlay_call_timeout(Duration::from_secs(2), move |proxy| {
+        call_v2_or_legacy(
+            proxy.call::<_, _, ()>(
+                "ShowCountdownV2",
+                &(
+                    crate::daemon::DAEMON_BUS_NAME,
+                    geometry.x,
+                    geometry.y,
+                    geometry.width,
+                    geometry.height,
+                    seconds,
+                ),
+            ),
+            || {
+                proxy.call::<_, _, ()>(
+                    "ShowCountdown",
+                    &(
+                        geometry.x,
+                        geometry.y,
+                        geometry.width,
+                        geometry.height,
+                        seconds,
+                    ),
+                )
+            },
+        )
+        .context("ShowCountdown failed")
+    })?;
+    Ok(CountdownHandle { shown: true })
+}
+
+#[cfg(test)]
+fn show_mask_args(geometry: RecordingMaskGeometry) -> Vec<String> {
+    vec![
+        format!("int32:{}", geometry.x),
+        format!("int32:{}", geometry.y),
+        format!("int32:{}", geometry.width),
+        format!("int32:{}", geometry.height),
+    ]
+}
+
+#[cfg(test)]
+fn show_countdown_args(geometry: RecordingMaskGeometry, seconds: u32) -> Vec<String> {
+    let mut args = show_mask_args(geometry);
+    args.push(format!("uint32:{seconds}"));
+    args
+}
+
+fn hide_recording_mask() -> anyhow::Result<()> {
+    overlay_call_timeout(Duration::from_secs(2), |proxy| {
+        call_v2_or_legacy(
+            proxy.call::<_, _, ()>("HideMaskV2", &(crate::daemon::DAEMON_BUS_NAME,)),
+            || proxy.call::<_, _, ()>("HideMask", &()),
+        )
+        .context("HideMask failed")
+    })
+}
+
+fn hide_recording_countdown() -> anyhow::Result<()> {
+    overlay_call_timeout(Duration::from_secs(2), |proxy| {
+        call_v2_or_legacy(
+            proxy.call::<_, _, ()>("HideCountdownV2", &(crate::daemon::DAEMON_BUS_NAME,)),
+            || proxy.call::<_, _, ()>("HideCountdown", &()),
+        )
+        .context("HideCountdown failed")
+    })
+}
+
+#[derive(Debug, Clone)]
+pub struct PointerTrackResult {
+    pub t0_monotonic_us: i64,
+    pub samples: Vec<(f64, i32, i32, String)>,
+    pub clicks: Vec<(f64, i32, i32, i32)>,
+    /// Mouse press intervals `(down, up, button, dragged)` in recording
+    /// seconds. Empty when the installed extension predates the call that
+    /// carries them.
+    pub presses: Vec<(f64, f64, i32, bool)>,
+}
+
+pub fn should_use_pointer_track() -> bool {
+    current_session_supports_gnome_shell_overlay() && is_shell_overlay_service_available()
+}
+
+fn overlay_name_has_owner() -> bool {
+    crate::utils::run_off_tokio(|| {
+        let conn = zbus::blocking::connection::Builder::session()
+            .ok()?
+            .method_timeout(Duration::from_secs(1))
+            .build()
+            .ok()?;
+        let proxy = zbus::blocking::fdo::DBusProxy::new(&conn).ok()?;
+        let name = zbus::names::BusName::try_from(shell_overlay_bus_name()).ok()?;
+        proxy.name_has_owner(name).ok()
+    })
+    .unwrap_or(false)
+}
+
+fn overlay_call_timeout<T>(
+    timeout: Duration,
+    f: impl FnOnce(&zbus::blocking::Proxy<'_>) -> anyhow::Result<T> + Send + 'static,
+) -> anyhow::Result<T>
+where
+    T: Send + 'static,
+{
+    crate::utils::run_off_tokio(move || {
+        let conn = zbus::blocking::connection::Builder::session()
+            .context("failed to create session bus builder for ShellOverlay")?
+            .method_timeout(timeout)
+            .build()
+            .context("failed to connect to session bus for ShellOverlay")?;
+        let proxy = zbus::blocking::Proxy::new(
+            &conn,
+            shell_overlay_bus_name(),
+            MASK_DBUS_PATH,
+            MASK_DBUS_IFACE,
+        )
+        .context("failed to create ShellOverlay proxy")?;
+        f(&proxy)
+    })
+}
+
+fn with_shell_overlay_proxy<T>(
+    f: impl FnOnce(&zbus::blocking::Proxy<'_>) -> anyhow::Result<T> + Send + 'static,
+) -> anyhow::Result<T>
+where
+    T: Send + 'static,
+{
+    overlay_call_timeout(Duration::from_secs(5), f)
+}
+
+pub fn start_pointer_track() -> anyhow::Result<()> {
+    with_shell_overlay_proxy(|proxy| {
+        call_v2_or_legacy(
+            proxy.call::<_, _, ()>("StartPointerTrackV3", &(crate::daemon::DAEMON_BUS_NAME,)),
+            || proxy.call::<_, _, ()>("StartPointerTrack", &()),
+        )
+        .context("StartPointerTrack failed")
+    })
+}
+
+pub fn stop_pointer_track() -> anyhow::Result<PointerTrackResult> {
+    with_shell_overlay_proxy(|proxy| {
+        // Prefer the current daemon-scoped API and preserve compatibility with
+        // extensions that predate it.
+        let versioned = proxy.call::<_, _, (
+            i64,
+            Vec<(f64, i32, i32, String)>,
+            Vec<(f64, i32, i32, i32)>,
+            Vec<(f64, f64, i32, bool)>,
+        )>("StopPointerTrackV3", &(crate::daemon::DAEMON_BUS_NAME,));
+        let with_presses = call_v2_or_legacy(versioned, || {
+            proxy.call::<_, _, (
+                i64,
+                Vec<(f64, i32, i32, String)>,
+                Vec<(f64, i32, i32, i32)>,
+                Vec<(f64, f64, i32, bool)>,
+            )>("StopPointerTrackV2", &())
+        });
+        let (t0_monotonic_us, samples, clicks, presses) = match with_presses {
+            Ok(result) => result,
+            Err(error) if is_unknown_method_error(&error) => {
+                let (t0_monotonic_us, samples, clicks) = proxy
+                    .call::<_, _, (i64, Vec<(f64, i32, i32, String)>, Vec<(f64, i32, i32, i32)>)>(
+                        "StopPointerTrack",
+                        &(),
+                    )
+                    .context("StopPointerTrack failed")?;
+                return Ok(PointerTrackResult {
+                    t0_monotonic_us,
+                    samples,
+                    clicks,
+                    presses: Vec::new(),
+                });
+            }
+            Err(error) => return Err(error).context("StopPointerTrackV2 failed"),
+        };
+        Ok(PointerTrackResult {
+            t0_monotonic_us,
+            samples,
+            clicks,
+            presses,
+        })
+    })
+}
+
+pub fn get_pointer_snapshot() -> anyhow::Result<(i32, i32, String, bool)> {
+    with_shell_overlay_proxy(|proxy| {
+        proxy
+            .call::<_, _, (i32, i32, String, bool)>("GetPointerSnapshot", &())
+            .context("GetPointerSnapshot failed")
+    })
+}
+
+pub fn get_monitor_geometry_at(x: i32, y: i32) -> anyhow::Result<(i32, i32, u32, u32)> {
+    with_shell_overlay_proxy(move |proxy| {
+        let (monitor_x, monitor_y, width, height, valid) = proxy
+            .call::<_, _, (i32, i32, i32, i32, bool)>("GetMonitorGeometryAt", &(x, y))
+            .context("GetMonitorGeometryAt failed")?;
+        if !valid || width <= 0 || height <= 0 {
+            anyhow::bail!("GNOME Shell did not find a monitor at ({x},{y})");
+        }
+        Ok((monitor_x, monitor_y, width as u32, height as u32))
+    })
+}
+
+pub fn print_pointer_debug() -> anyhow::Result<()> {
+    if !current_session_supports_gnome_shell_overlay() {
+        anyhow::bail!("pointer debug requires GNOME Wayland");
+    }
+    if !is_shell_overlay_service_available() {
+        anyhow::bail!(
+            "{} is not on the bus — enable the ApexShot GNOME extension",
+            shell_overlay_bus_name()
+        );
+    }
+    let (x, y, kind, valid) = get_pointer_snapshot()?;
+    println!("pointer snapshot x={x} y={y} kind={kind} valid={valid}");
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gnome_mask_disabled_outside_gnome_wayland() {
+        assert!(!should_use_gnome_shell_mask(Some("wayland-0"), Some("KDE")));
+        assert!(!should_use_gnome_shell_mask(None, Some("GNOME")));
+        assert!(!should_use_gnome_shell_mask(Some(""), Some("GNOME")));
+    }
+
+    #[test]
+    fn gnome_mask_enabled_for_gnome_wayland() {
+        assert!(should_use_gnome_shell_mask(
+            Some("wayland-0"),
+            Some("ubuntu:GNOME")
+        ));
+        assert!(should_use_gnome_shell_mask(
+            Some("wayland-1"),
+            Some("GNOME")
+        ));
+    }
+
+    #[test]
+    fn legacy_shell_calls_fallback_only_for_unknown_method() {
+        assert!(is_unknown_method_name(UNKNOWN_METHOD_ERROR));
+        assert!(!is_unknown_method_name(
+            "org.freedesktop.DBus.Error.AccessDenied"
+        ));
+        assert!(!is_unknown_method_name(
+            "org.freedesktop.DBus.Error.NoReply"
+        ));
+    }
+
+    #[test]
+    fn shell_overlay_selects_the_scoped_flatpak_alias() {
+        assert_eq!(shell_overlay_name_for(false), MASK_DBUS_DEST);
+        assert_eq!(shell_overlay_name_for(true), FLATPAK_MASK_DBUS_DEST);
+    }
+
+    #[test]
+    fn mask_payload_carries_capture_geometry() {
+        assert_eq!(
+            show_mask_args(RecordingMaskGeometry {
+                x: 10,
+                y: 20,
+                width: 1920,
+                height: 1080,
+            }),
+            vec![
+                "int32:10".to_string(),
+                "int32:20".to_string(),
+                "int32:1920".to_string(),
+                "int32:1080".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn countdown_payload_carries_capture_geometry_and_duration() {
+        assert_eq!(
+            show_countdown_args(
+                RecordingMaskGeometry {
+                    x: 10,
+                    y: 20,
+                    width: 1920,
+                    height: 1080,
+                },
+                3,
+            ),
+            vec![
+                "int32:10".to_string(),
+                "int32:20".to_string(),
+                "int32:1920".to_string(),
+                "int32:1080".to_string(),
+                "uint32:3".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn countdown_handle_reports_when_the_shell_did_not_show_it() {
+        assert!(!CountdownHandle { shown: false }.is_shown());
+        assert!(CountdownHandle { shown: true }.is_shown());
+    }
+}

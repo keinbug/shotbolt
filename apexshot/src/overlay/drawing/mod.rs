@@ -1,0 +1,706 @@
+use super::background::{paint_surface_clipped, paint_surface_fullscreen, BackgroundFrame};
+use super::geometry::current_selection_rect;
+use super::icons::{draw_toolbar_icon, ToolbarIcon};
+use super::layout::*;
+use super::state::{OverlayMode, SelectorState};
+use std::f64::consts::PI;
+use std::sync::{Arc, Mutex};
+
+mod mode_overlays;
+
+pub(crate) fn draw_resize_markers(
+    context: &gtk4::cairo::Context,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) {
+    let half = HANDLE_MARKER_LENGTH / 2.0;
+
+    context.set_source_rgba(BRAND_ORANGE_R, BRAND_ORANGE_G, BRAND_ORANGE_B, 0.96);
+    context.set_line_width(HANDLE_MARKER_THICKNESS);
+    context.set_line_cap(gtk4::cairo::LineCap::Round);
+
+    // Corner L-markers
+    context.move_to(x, y + half);
+    context.line_to(x, y);
+    context.line_to(x + half, y);
+
+    context.move_to(x + width - half, y);
+    context.line_to(x + width, y);
+    context.line_to(x + width, y + half);
+
+    context.move_to(x, y + height - half);
+    context.line_to(x, y + height);
+    context.line_to(x + half, y + height);
+
+    context.move_to(x + width - half, y + height);
+    context.line_to(x + width, y + height);
+    context.line_to(x + width, y + height - half);
+
+    // Mid-edge line markers
+    context.move_to(x + width / 2.0 - half, y);
+    context.line_to(x + width / 2.0 + half, y);
+
+    context.move_to(x + width / 2.0 - half, y + height);
+    context.line_to(x + width / 2.0 + half, y + height);
+
+    context.move_to(x, y + height / 2.0 - half);
+    context.line_to(x, y + height / 2.0 + half);
+
+    context.move_to(x + width, y + height / 2.0 - half);
+    context.line_to(x + width, y + height / 2.0 + half);
+
+    let _ = context.stroke();
+}
+
+pub(crate) fn rounded_rect_path(
+    context: &gtk4::cairo::Context,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    radius: f64,
+) {
+    let r = radius.min(width / 2.0).min(height / 2.0).max(0.0);
+    context.new_sub_path();
+    context.arc(x + width - r, y + r, r, -PI / 2.0, 0.0);
+    context.arc(x + width - r, y + height - r, r, 0.0, PI / 2.0);
+    context.arc(x + r, y + height - r, r, PI / 2.0, PI);
+    context.arc(x + r, y + r, r, PI, PI * 1.5);
+    context.close_path();
+}
+
+pub(crate) fn draw_frosted_panel(
+    context: &gtk4::cairo::Context,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    radius: f64,
+    screen_width: f64,
+    screen_height: f64,
+    background: Option<&BackgroundFrame>,
+) {
+    // Drop shadow
+    rounded_rect_path(context, x, y + 3.0, width, height, radius);
+    context.set_source_rgba(0.0, 0.0, 0.0, 0.30);
+    let _ = context.fill();
+
+    // Frosted-glass fill: clip to the panel shape, then layer:
+    //   1. Real blurred screenshot (scaled from the pre-blurred 1/4-res surface)
+    //   2. Dark tint  — ensures readability on any background (incl. white)
+    //   3. Subtle white highlight — gives the "glass" sheen
+    let _ = context.save();
+    rounded_rect_path(context, x, y, width, height, radius);
+    context.clip();
+
+    if let Some(background) = background {
+        // Scale the blurred surface so it maps to screen coordinates.
+        // The blur surface is 1/4 the original image size, so we scale by
+        // (screen / blur_surface_size) to fill the screen, then the clip
+        // reveals only the portion behind this panel.
+        let blur_w = background.toolbar_blur_surface.width().max(1) as f64;
+        let blur_h = background.toolbar_blur_surface.height().max(1) as f64;
+        let scale_x = screen_width / blur_w;
+        let scale_y = screen_height / blur_h;
+
+        let _ = context.save();
+        context.scale(scale_x, scale_y);
+        if context
+            .set_source_surface(&background.toolbar_blur_surface, 0.0, 0.0)
+            .is_ok()
+        {
+            let _ = context.paint();
+        }
+        let _ = context.restore();
+
+        // Dark glass tint matching editor root background (#141414 at ~90% opacity)
+        context.set_source_rgba(20.0 / 255.0, 20.0 / 255.0, 20.0 / 255.0, 230.0 / 255.0);
+        let _ = context.paint();
+    } else {
+        // No screenshot (X11 transparent overlay): solid dark base.
+        context.set_source_rgba(0.08, 0.08, 0.08, 1.0);
+        let _ = context.paint();
+    }
+
+    // Subtle white sheen (0.04 alpha) for a polished feel
+    context.set_source_rgba(1.0, 1.0, 1.0, 10.0 / 255.0);
+    let _ = context.paint();
+
+    // Panel border (matching editor's .editor-root border: 1px solid rgba(255, 255, 255, 0.10))
+    // Drawn inside clip so the outer half is clipped away (C++ behavior)
+    context.set_source_rgba(1.0, 1.0, 1.0, 0.10);
+    context.set_line_width(1.0);
+    context.set_antialias(gtk4::cairo::Antialias::Default);
+    rounded_rect_path(context, x, y, width, height, radius);
+    let _ = context.stroke();
+    let _ = context.restore();
+}
+
+pub(super) fn draw_text_centered(
+    context: &gtk4::cairo::Context,
+    rect: RectF,
+    text: &str,
+    size: f64,
+    bold: bool,
+    rgba: (f64, f64, f64, f64),
+) {
+    let weight = if bold {
+        gtk4::cairo::FontWeight::Bold
+    } else {
+        gtk4::cairo::FontWeight::Normal
+    };
+    context.select_font_face(
+        crate::typography::UI_FONT_FAMILY,
+        gtk4::cairo::FontSlant::Normal,
+        weight,
+    );
+    context.set_font_size(size);
+    context.set_source_rgba(rgba.0, rgba.1, rgba.2, rgba.3);
+    if let Ok(extents) = context.text_extents(text) {
+        let x = rect.x + rect.width / 2.0 - extents.width() / 2.0 - extents.x_bearing();
+        let y = rect.y + rect.height / 2.0 - extents.height() / 2.0 - extents.y_bearing();
+        context.move_to(x, y);
+        let _ = context.show_text(text);
+    }
+}
+
+/// Screen-fixed top-center instruction bar ("Draw an area" + aspect pills +
+/// crop/cancel buttons). Mirrors C++ `drawTopInstructionBar`: dark fill
+/// (25,25,28,246) with a white rim, active pill/button in orange, hover as a
+/// white wash. Cairo font sizes are C++ points scaled by 4/3, matching the
+/// existing toolbar conversions (e.g. 9.4pt -> 12.5).
+pub(crate) fn draw_top_instruction_bar(
+    context: &gtk4::cairo::Context,
+    st: &SelectorState,
+    screen_width: f64,
+) {
+    use super::geometry::ratios_equal;
+    use super::hit_testing::top_bar_visible;
+    if !top_bar_visible(st) {
+        return;
+    }
+    let Some(layout) = compute_top_bar_layout(screen_width) else {
+        return;
+    };
+    let bar = layout.bar;
+
+    // Shadow + solid dark body + rim.
+    rounded_rect_path(
+        context,
+        bar.x,
+        bar.y + 3.0,
+        bar.width,
+        bar.height,
+        TOP_BAR_RADIUS,
+    );
+    context.set_source_rgba(0.0, 0.0, 0.0, 105.0 / 255.0);
+    let _ = context.fill();
+    rounded_rect_path(context, bar.x, bar.y, bar.width, bar.height, TOP_BAR_RADIUS);
+    context.set_source_rgba(25.0 / 255.0, 25.0 / 255.0, 28.0 / 255.0, 246.0 / 255.0);
+    let _ = context.fill_preserve();
+    context.set_source_rgba(1.0, 1.0, 1.0, 54.0 / 255.0);
+    context.set_line_width(1.2);
+    let _ = context.stroke();
+
+    // Label.
+    context.select_font_face(
+        crate::typography::UI_FONT_FAMILY,
+        gtk4::cairo::FontSlant::Normal,
+        gtk4::cairo::FontWeight::Bold,
+    );
+    context.set_font_size(14.0);
+    context.set_source_rgba(244.0 / 255.0, 244.0 / 255.0, 246.0 / 255.0, 245.0 / 255.0);
+    if let Ok(extents) = context.text_extents("Draw an area") {
+        let text_x = layout.label.x - extents.x_bearing();
+        let text_y = layout.label.y + layout.label.height / 2.0
+            - extents.height() / 2.0
+            - extents.y_bearing();
+        context.move_to(text_x, text_y);
+        let _ = context.show_text("Draw an area");
+    }
+
+    // Separators.
+    context.set_source_rgba(1.0, 1.0, 1.0, 30.0 / 255.0);
+    context.set_line_width(1.0);
+    let sep1_x = layout.label.x + layout.label.width + 12.0;
+    let sep2_x = layout.pills[3].x + layout.pills[3].width + 12.0;
+    context.move_to(sep1_x, bar.y + 10.0);
+    context.line_to(sep1_x, bar.y + bar.height - 10.0);
+    context.move_to(sep2_x, bar.y + 10.0);
+    context.line_to(sep2_x, bar.y + bar.height - 10.0);
+    let _ = context.stroke();
+
+    // Aspect pills (active when the current ratio matches, Free = 0.0).
+    for (i, pill) in layout.pills.iter().enumerate() {
+        let active = ratios_equal(st.top_bar_aspect_ratio, TOP_BAR_PILL_RATIOS[i]);
+        let hovered = st.hovered_top_bar_aspect == i as i32;
+        rounded_rect_path(context, pill.x, pill.y, pill.width, pill.height, 8.0);
+        if active {
+            context.set_source_rgba(1.0, 102.0 / 255.0, 0.0, 205.0 / 255.0);
+        } else if hovered {
+            context.set_source_rgba(1.0, 1.0, 1.0, 26.0 / 255.0);
+        } else {
+            context.set_source_rgba(1.0, 1.0, 1.0, 12.0 / 255.0);
+        }
+        let _ = context.fill();
+        let color = if active {
+            (1.0, 1.0, 1.0, 1.0)
+        } else {
+            (232.0 / 255.0, 232.0 / 255.0, 236.0 / 255.0, 1.0)
+        };
+        draw_text_centered(
+            context,
+            *pill,
+            TOP_BAR_PILL_LABELS[i],
+            12.7,
+            active || hovered,
+            color,
+        );
+    }
+
+    // Action buttons: crop (opens the ratio dropdown) + cancel X.
+    for (i, button) in layout.buttons.iter().enumerate() {
+        let hovered = st.hovered_top_bar_button == i as i32;
+        let crop_active = i == TOP_BAR_CROP_BUTTON
+            && (st.top_bar_crop_menu_open || st.top_bar_aspect_ratio > 0.0);
+        rounded_rect_path(
+            context,
+            button.x,
+            button.y,
+            button.width,
+            button.height,
+            8.0,
+        );
+        if crop_active {
+            context.set_source_rgba(1.0, 102.0 / 255.0, 0.0, 205.0 / 255.0);
+            let _ = context.fill();
+        } else if hovered {
+            // Hover wash matches the C++ bar (both crop and cancel buttons).
+            context.set_source_rgba(1.0, 1.0, 1.0, 26.0 / 255.0);
+            let _ = context.fill();
+        }
+        let cx = button.x + button.width / 2.0;
+        let cy = button.y + button.height / 2.0;
+        if i == TOP_BAR_CROP_BUTTON {
+            let color = if crop_active {
+                (1.0, 1.0, 1.0, 1.0)
+            } else {
+                (240.0 / 255.0, 240.0 / 255.0, 244.0 / 255.0, 1.0)
+            };
+            draw_toolbar_icon(context, ToolbarIcon::Crop, cx, cy, color);
+        } else {
+            // Clear the unfilled button rect built above — move_to/line_to
+            // append to the current path, so stroke() would otherwise outline
+            // the whole button on top of the X glyph.
+            context.new_path();
+            context.set_source_rgba(240.0 / 255.0, 240.0 / 255.0, 244.0 / 255.0, 1.0);
+            context.set_line_width(1.7);
+            context.set_line_cap(gtk4::cairo::LineCap::Round);
+            context.set_line_join(gtk4::cairo::LineJoin::Round);
+            context.move_to(cx - 4.5, cy - 4.5);
+            context.line_to(cx + 4.5, cy + 4.5);
+            context.move_to(cx - 4.5, cy + 4.5);
+            context.line_to(cx + 4.5, cy - 4.5);
+            let _ = context.stroke();
+        }
+    }
+
+    draw_top_bar_crop_menu(context, st, screen_width);
+}
+
+/// Ratio dropdown anchored under the crop button. Mirrors C++
+/// `drawTopBarCropMenu`: same dark style, hover wash + orange rim, white
+/// checkmark on Free / the matching ratio / Snap, separators after "Reset
+/// selection" and before "Snap to ratios".
+fn draw_top_bar_crop_menu(context: &gtk4::cairo::Context, st: &SelectorState, screen_width: f64) {
+    use super::geometry::ratios_equal;
+    use super::hit_testing::top_bar_visible;
+    if !top_bar_visible(st) || !st.top_bar_crop_menu_open {
+        return;
+    }
+    let Some(layout) = compute_top_bar_layout(screen_width) else {
+        return;
+    };
+    let anchor = layout.buttons[TOP_BAR_CROP_BUTTON];
+    let (panel, items) =
+        compute_top_bar_crop_menu(anchor, layout.bar.y + layout.bar.height, screen_width);
+    let menu_x = panel.x;
+    let menu_y = panel.y;
+    let menu_w = panel.width;
+    let menu_h = panel.height;
+
+    rounded_rect_path(context, menu_x, menu_y + 3.0, menu_w, menu_h, 12.0);
+    context.set_source_rgba(0.0, 0.0, 0.0, 105.0 / 255.0);
+    let _ = context.fill();
+    rounded_rect_path(context, menu_x, menu_y, menu_w, menu_h, 12.0);
+    context.set_source_rgba(25.0 / 255.0, 25.0 / 255.0, 28.0 / 255.0, 246.0 / 255.0);
+    let _ = context.fill_preserve();
+    context.set_source_rgba(1.0, 1.0, 1.0, 54.0 / 255.0);
+    context.set_line_width(1.2);
+    let _ = context.stroke();
+
+    for (i, item) in items.iter().enumerate() {
+        let indicator_x = item.x + 8.0;
+        if i as i32 == st.hovered_top_bar_crop_item {
+            rounded_rect_path(context, item.x, item.y, item.width, item.height, 7.0);
+            context.set_source_rgba(1.0, 1.0, 1.0, 24.0 / 255.0);
+            let _ = context.fill_preserve();
+            context.set_source_rgba(1.0, 102.0 / 255.0, 0.0, 170.0 / 255.0);
+            context.set_line_width(1.0);
+            let _ = context.stroke();
+        }
+        let checked = if i == TOP_BAR_CROP_ROW_RESET {
+            false
+        } else if TOP_BAR_CROP_RATIOS[i] <= 0.0 && i != TOP_BAR_CROP_ROW_SNAP {
+            // "Free" row (ratio 0.0): checked when no ratio is set.
+            st.top_bar_aspect_ratio <= 0.0
+        } else if i == TOP_BAR_CROP_ROW_SNAP {
+            st.top_bar_snap_to_ratios
+        } else {
+            ratios_equal(st.top_bar_aspect_ratio, TOP_BAR_CROP_RATIOS[i])
+        };
+        if checked {
+            context.set_source_rgba(1.0, 1.0, 1.0, 1.0);
+            context.set_line_width(1.5);
+            context.set_line_cap(gtk4::cairo::LineCap::Round);
+            context.set_line_join(gtk4::cairo::LineJoin::Round);
+            let cy = item.y + item.height / 2.0;
+            context.move_to(indicator_x + 3.5, cy);
+            context.line_to(indicator_x + 6.5, cy + 3.0);
+            context.line_to(indicator_x + 12.5, cy - 4.0);
+            let _ = context.stroke();
+        }
+        let bold = checked || i == TOP_BAR_CROP_ROW_RESET;
+        context.select_font_face(
+            crate::typography::UI_FONT_FAMILY,
+            gtk4::cairo::FontSlant::Normal,
+            if bold {
+                gtk4::cairo::FontWeight::Bold
+            } else {
+                gtk4::cairo::FontWeight::Normal
+            },
+        );
+        context.set_font_size(13.3);
+        context.set_source_rgba(242.0 / 255.0, 242.0 / 255.0, 244.0 / 255.0, 1.0);
+        if let Ok(extents) = context.text_extents(TOP_BAR_CROP_LABELS[i]) {
+            let label_x = item.x + 30.0 - extents.x_bearing();
+            let label_y = item.y + item.height / 2.0 - extents.height() / 2.0 - extents.y_bearing();
+            context.move_to(label_x, label_y);
+            let _ = context.show_text(TOP_BAR_CROP_LABELS[i]);
+        }
+    }
+
+    // Separators: below "Reset selection" and above "Snap to ratios".
+    context.set_source_rgba(1.0, 1.0, 1.0, 26.0 / 255.0);
+    context.set_line_width(1.0);
+    let y1 = menu_y + 5.0 + TOP_BAR_CROP_ITEM_H;
+    context.move_to(menu_x + 12.0, y1);
+    context.line_to(menu_x + menu_w - 12.0, y1);
+    let y2 = menu_y + 5.0 + TOP_BAR_CROP_ROW_SNAP as f64 * TOP_BAR_CROP_ITEM_H;
+    context.move_to(menu_x + 12.0, y2);
+    context.line_to(menu_x + menu_w - 12.0, y2);
+    let _ = context.stroke();
+}
+
+pub(crate) fn draw_overlay(
+    context: &gtk4::cairo::Context,
+    width: i32,
+    height: i32,
+    state: &Arc<Mutex<SelectorState>>,
+    background: Option<&BackgroundFrame>,
+) {
+    let mut st = state.lock().unwrap();
+
+    let screen_width = width.max(1) as f64;
+    let screen_height = height.max(1) as f64;
+
+    if st.overlay_mode == OverlayMode::CrosshairCapture {
+        if let Some(bg) = background {
+            paint_surface_fullscreen(
+                context,
+                &bg.surface,
+                bg.width,
+                bg.height,
+                screen_width,
+                screen_height,
+            );
+        }
+
+        let guide_x = st.current_x.clamp(0.0, screen_width);
+        let guide_y = st.current_y.clamp(0.0, screen_height);
+
+        let label = if st.is_dragging || st.completed {
+            let rect = current_selection_rect(&st);
+            let x = rect.left;
+            let y = rect.top;
+            let sel_w = rect.width();
+            let sel_h = rect.height();
+
+            context.set_source_rgba(
+                BRAND_ORANGE_R,
+                BRAND_ORANGE_G,
+                BRAND_ORANGE_B,
+                240.0 / 255.0,
+            );
+            context.set_line_width(2.0);
+            context.rectangle(
+                x + 0.5,
+                y + 0.5,
+                (sel_w - 1.0).max(0.0),
+                (sel_h - 1.0).max(0.0),
+            );
+            let _ = context.stroke();
+
+            context.set_source_rgba(BRAND_ORANGE_R, BRAND_ORANGE_G, BRAND_ORANGE_B, 40.0 / 255.0);
+            context.rectangle(x, y, sel_w, sel_h);
+            let _ = context.fill();
+
+            format!("{} × {}", sel_w as i32, sel_h as i32)
+        } else {
+            format!("{}, {}", guide_x as i32, guide_y as i32)
+        };
+
+        mode_overlays::draw_crosshair_mode_bubble(
+            context,
+            guide_x,
+            guide_y,
+            &label,
+            screen_width,
+            screen_height,
+        );
+        return;
+    }
+
+    // ── Step 1: paint the background across the entire screen ──
+    // Paint the original screenshot (if available) then darken it with a
+    // semi-transparent overlay. No blur — this keeps opening instant.
+    if let Some(bg) = background {
+        paint_surface_fullscreen(
+            context,
+            &bg.surface,
+            bg.width,
+            bg.height,
+            screen_width,
+            screen_height,
+        );
+        // Dark tint over the full screen; the selection area will be
+        // revealed sharp in Step 2 by painting the original on top.
+        context.set_source_rgba(0.0, 0.0, 0.0, 140.0 / 255.0);
+        let _ = context.paint();
+    } else {
+        // No pre-captured background (capture-after-selection / live overlay path).
+        // Use a very light tint so the desktop remains clearly visible.
+        // The selection rectangle will be fully cleared (Operator::Clear) to show
+        // the desktop at 100% brightness inside the selection.
+        context.set_source_rgba(0.0, 0.0, 0.0, 0.20);
+        let _ = context.paint();
+    }
+
+    // ── Window Hover Highlight ──
+    if let Some(win_idx) = st.hovered_window {
+        if !st.completed && !st.is_dragging {
+            let win = &st.windows[win_idx];
+            let x = win.x as f64;
+            let y = win.y as f64;
+            let w = win.width as f64;
+            let h = win.height as f64;
+
+            // Reveal the window area (remove the dark tint)
+            if let Some(bg) = background {
+                let _ = context.save();
+                context.rectangle(x, y, w, h);
+                context.clip();
+                paint_surface_fullscreen(
+                    context,
+                    &bg.surface,
+                    bg.width,
+                    bg.height,
+                    screen_width,
+                    screen_height,
+                );
+                let _ = context.restore();
+            } else {
+                let _ = context.save();
+                context.set_operator(gtk4::cairo::Operator::Clear);
+                context.rectangle(x, y, w, h);
+                let _ = context.fill();
+                let _ = context.restore();
+            }
+
+            // Draw a subtle border around the hovered window
+            context.set_source_rgba(BRAND_ORANGE_R, BRAND_ORANGE_G, BRAND_ORANGE_B, 0.8);
+            context.set_line_width(2.0);
+            context.rectangle(x + 1.0, y + 1.0, w - 2.0, h - 2.0);
+            let _ = context.stroke();
+
+            // Add a very subtle inner glow
+            context.set_source_rgba(BRAND_ORANGE_R, BRAND_ORANGE_G, BRAND_ORANGE_B, 0.1);
+            context.rectangle(x, y, w, h);
+            let _ = context.fill();
+        }
+    }
+
+    if st.fullscreen_mode {
+        // ── Fullscreen mode: the whole screen IS the selection ──
+        // The darkened background is already painted; add a very subtle extra
+        // vignette so the corner markers and toolbar stand out.
+        if background.is_some() {
+            context.set_source_rgba(0.0, 0.0, 0.0, 0.10);
+            let _ = context.paint();
+        } else {
+            // Full-screen mode with live background means the full desktop is
+            // selected, so clear the dimming tint entirely.
+            let _ = context.save();
+            context.set_operator(gtk4::cairo::Operator::Clear);
+            let _ = context.paint();
+            let _ = context.restore();
+        }
+
+        // Corner markers at screen edges
+        draw_resize_markers(context, 0.0, 0.0, screen_width, screen_height);
+
+        // No legacy left tool rail: quick capture owns mode selection up
+        // front; the top-center bar (drawn last below) owns aspects.
+    } else if st.is_dragging || st.completed {
+        // ── Normal area-selection mode ──
+        let rect = current_selection_rect(&st);
+        let x = rect.left;
+        let y = rect.top;
+        let sel_w = rect.width();
+        let sel_h = rect.height();
+
+        // ── Step 2: reveal the original (sharp) image inside the selection ──
+        if let Some(bg) = background {
+            paint_surface_clipped(
+                context,
+                &bg.surface,
+                bg.width,
+                bg.height,
+                screen_width,
+                screen_height,
+                x,
+                y,
+                sel_w,
+                sel_h,
+            );
+        } else {
+            // Live selector path: reveal the selected rectangle from the real
+            // desktop by clearing the tint in that region.
+            let _ = context.save();
+            context.set_operator(gtk4::cairo::Operator::Clear);
+            context.rectangle(x, y, sel_w, sel_h);
+            let _ = context.fill();
+            let _ = context.restore();
+        }
+
+        if st.is_dragging {
+            context.set_source_rgba(BRAND_ORANGE_R, BRAND_ORANGE_G, BRAND_ORANGE_B, 30.0 / 255.0);
+            context.rectangle(x, y, sel_w, sel_h);
+            let _ = context.fill();
+        }
+
+        draw_resize_markers(context, x, y, sel_w, sel_h);
+
+        // ── Step 3: toolbar + resize markers on top ──
+
+        // No legacy left tool rail here either (see above).
+
+        // Popups rendered on top of everything
+        if st.window_picker_open {
+            mode_overlays::draw_window_picker(
+                context,
+                x + sel_w / 2.0,
+                y + sel_h / 2.0,
+                screen_width,
+                screen_height,
+                background,
+                &st.windows,
+                st.hovered_window_picker_entry,
+            );
+        }
+    }
+    // else: idle state — the darkened background painted in Step 1 is enough.
+
+    // Timer capture countdown stays on top and centered on screen while the
+    // selection remains movable/resizable underneath.
+    if st.countdown_active {
+        let r = current_selection_rect(&st);
+        let pill_w = 112.0;
+        let pill_h = 44.0;
+        let pill_x = (screen_width - pill_w) / 2.0;
+        let pill_y = 28.0;
+        let (bx, by, bw, bh) = (pill_x, pill_y, pill_w, pill_h);
+        st.countdown_bubble_x = bx;
+        st.countdown_bubble_y = by;
+        st.countdown_bubble_w = bw;
+        st.countdown_bubble_h = bh;
+        mode_overlays::draw_countdown_bubble(
+            context,
+            r.left,
+            r.top,
+            r.width(),
+            r.height(),
+            screen_width,
+            screen_height,
+            st.countdown_value,
+            st.hovered_countdown_cancel,
+        );
+    }
+
+    // Scroll popup: centered on selection when available, otherwise screen-centered
+    if st.scroll_popup_open {
+        let (cx, cy) = if st.completed || st.is_dragging {
+            let r = current_selection_rect(&st);
+            (r.left + r.width() / 2.0, r.top + r.height() / 2.0)
+        } else {
+            (screen_width / 2.0, screen_height / 2.0)
+        };
+        mode_overlays::draw_scroll_popup(
+            context,
+            cx,
+            cy,
+            screen_width,
+            screen_height,
+            background,
+            st.hovered_scroll_popup_close,
+            st.hovered_scroll_download,
+        );
+    }
+
+    // ── Top-center instruction bar ("Draw an area") ─────────────────────────
+    // Screen-fixed; painted last so it floats above dim/selection chrome in
+    // fullscreen, area, and pre-selection idle states alike. Hidden while
+    // picking windows, counting down, or scroll-capturing (see
+    // hit_testing::top_bar_visible). The frozen-background crop path excludes
+    // it from the saved image, so overlap with the drag is safe.
+    draw_top_instruction_bar(context, &st, screen_width);
+}
+
+#[cfg(test)]
+mod tests {
+    /// The legacy left tool rail (tools panel, tool icons/labels, timer
+    /// badge) is retired: quick capture owns mode selection up front and the
+    /// top-center bar owns aspects. The rail renderer must stay deleted.
+    #[test]
+    fn legacy_tool_rail_stays_removed() {
+        let source = include_str!("mod.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production drawing source");
+        assert!(
+            !production.contains("fn draw_feature_toolbar"),
+            "legacy tool rail renderer must not come back"
+        );
+        assert!(
+            !production.contains("TOOLBAR_ICONS.iter()"),
+            "tool icon loop must not come back"
+        );
+        assert!(
+            production.contains("fn draw_top_instruction_bar"),
+            "top-center bar must remain the aspect UI"
+        );
+    }
+}

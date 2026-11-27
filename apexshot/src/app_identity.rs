@@ -1,0 +1,195 @@
+use std::path::{Path, PathBuf};
+
+// Flatpak ships the permanent Flathub ID; native packages keep the legacy ID
+// until the coordinated rename (plan §10.1).
+#[cfg(feature = "flatpak")]
+pub const OFFICIAL_APP_ID: &str = "org.apexshot.ApexShot";
+#[cfg(not(feature = "flatpak"))]
+pub const OFFICIAL_APP_ID: &str = "io.github.codegoddy.apexshot";
+
+#[cfg(feature = "flatpak")]
+pub const DEV_APP_ID: &str = "org.apexshot.ApexShot.Dev";
+#[cfg(not(feature = "flatpak"))]
+pub const DEV_APP_ID: &str = "io.github.codegoddy.apexshot.dev";
+
+#[cfg(feature = "flatpak")]
+pub const OFFICIAL_BINARY: &str = "/app/bin/apexshot";
+#[cfg(not(feature = "flatpak"))]
+pub const OFFICIAL_BINARY: &str = "/usr/bin/apexshot";
+pub const DEV_WRAPPER: &str = "/usr/local/bin/apexshot-dev";
+
+// Flatpak installs under /app/share; native packages use /usr/share.
+#[cfg(feature = "flatpak")]
+pub const OFFICIAL_DESKTOP_FILE: &str = "/app/share/applications/org.apexshot.ApexShot.desktop";
+#[cfg(not(feature = "flatpak"))]
+pub const OFFICIAL_DESKTOP_FILE: &str =
+    "/usr/share/applications/io.github.codegoddy.apexshot.desktop";
+
+fn path_looks_like_dev(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name == "apexshot-dev")
+        || path.components().any(|component| {
+            component
+                .as_os_str()
+                .to_str()
+                .is_some_and(|part| part == "apexshot-dev")
+        })
+}
+
+/// True when capture must use portals and host installation is unavailable.
+/// Compile-time (`--features flatpak`) or runtime (Flatpak sets `FLATPAK_ID`).
+pub fn portal_only() -> bool {
+    cfg!(feature = "flatpak") || std::env::var_os("FLATPAK_ID").is_some()
+}
+
+/// Error string when a host-escape path is attempted under portal-only.
+pub fn host_escape_blocked(what: &str) -> Option<String> {
+    portal_only().then(|| format!("{what} is unavailable in Flatpak/portal-only builds"))
+}
+
+/// App-private directory for capture-helper IPC in the sandbox.
+pub fn capture_runtime_dir() -> PathBuf {
+    let runtime = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    if !portal_only() {
+        return runtime;
+    }
+    let directory = runtime.join("app").join(OFFICIAL_APP_ID);
+    let _ = std::fs::create_dir_all(&directory);
+    directory
+}
+
+pub fn is_dev() -> bool {
+    if std::env::var("APEXSHOT_APP_FLAVOR")
+        .map(|value| value.eq_ignore_ascii_case("dev"))
+        .unwrap_or(false)
+    {
+        return true;
+    }
+
+    if std::env::args_os()
+        .next()
+        .map(PathBuf::from)
+        .as_deref()
+        .is_some_and(path_looks_like_dev)
+    {
+        return true;
+    }
+
+    std::env::current_exe()
+        .ok()
+        .as_deref()
+        .is_some_and(path_looks_like_dev)
+}
+
+pub fn app_id() -> &'static str {
+    if is_dev() {
+        DEV_APP_ID
+    } else {
+        OFFICIAL_APP_ID
+    }
+}
+
+pub fn app_name() -> &'static str {
+    if is_dev() {
+        "ApexShot Dev"
+    } else {
+        "ApexShot"
+    }
+}
+
+pub fn daemon_name() -> &'static str {
+    if is_dev() {
+        "ApexShot Dev Daemon"
+    } else {
+        "ApexShot Daemon"
+    }
+}
+
+pub fn icon_name() -> &'static str {
+    if is_dev() {
+        "apexshot"
+    } else {
+        OFFICIAL_APP_ID
+    }
+}
+
+/// The themed icon a tray host draws while a recording runs. Every package
+/// installs it beside the plain icon, so a host that reads `IconName` badges
+/// the item without needing an overlay pixmap.
+pub fn recording_icon_name() -> String {
+    format!("{}-recording", icon_name())
+}
+
+pub fn desktop_file_name() -> String {
+    format!("{}.desktop", app_id())
+}
+
+pub fn local_desktop_file_path() -> Option<PathBuf> {
+    let mut dir = dirs::data_dir()?;
+    dir.push("applications");
+    dir.push(desktop_file_name());
+    Some(dir)
+}
+
+pub fn preferred_command_path() -> PathBuf {
+    if is_dev() && Path::new(DEV_WRAPPER).exists() {
+        return PathBuf::from(DEV_WRAPPER);
+    }
+    if !is_dev() && Path::new(OFFICIAL_BINARY).exists() {
+        return PathBuf::from(OFFICIAL_BINARY);
+    }
+    std::env::current_exe().unwrap_or_else(|_| PathBuf::from("apexshot"))
+}
+
+pub fn desktop_file_for_portal() -> Option<PathBuf> {
+    if !is_dev() {
+        let system_desktop = PathBuf::from(OFFICIAL_DESKTOP_FILE);
+        if system_desktop.exists() {
+            return Some(system_desktop);
+        }
+    }
+    local_desktop_file_path().filter(|path| path.exists())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn portal_only_matches_flatpak_feature() {
+        assert_eq!(
+            portal_only(),
+            cfg!(feature = "flatpak") || std::env::var_os("FLATPAK_ID").is_some()
+        );
+    }
+
+    #[test]
+    fn installed_binary_matches_package_prefix() {
+        assert_eq!(
+            OFFICIAL_BINARY,
+            if cfg!(feature = "flatpak") {
+                "/app/bin/apexshot"
+            } else {
+                "/usr/bin/apexshot"
+            }
+        );
+    }
+
+    #[test]
+    fn the_recording_icon_is_the_app_icon_with_a_badge_suffix() {
+        assert_eq!(recording_icon_name(), format!("{}-recording", icon_name()));
+    }
+
+    #[cfg(feature = "flatpak")]
+    #[test]
+    fn sandbox_capture_ipc_is_app_private() {
+        assert!(capture_runtime_dir().ends_with("app/org.apexshot.ApexShot"));
+        assert_eq!(
+            crate::daemon::DAEMON_BUS_NAME,
+            "org.apexshot.ApexShot.Daemon"
+        );
+    }
+}

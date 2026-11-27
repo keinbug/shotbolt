@@ -1,0 +1,237 @@
+use crate::config::AppConfig;
+use crate::i18n::t;
+use gtk4::{prelude::*, Align, Box as GtkBox, CheckButton, Label, Orientation, Scale};
+
+use std::rc::Rc;
+
+use super::select::SettingsSelect;
+
+#[allow(dead_code)]
+pub struct QuickAccessSettingsWidgets {
+    pub section: GtkBox,
+    pub position_input: SettingsSelect,
+    pub overlay_size_input: Scale,
+    pub auto_close_enabled_check: CheckButton,
+    pub auto_close_action_input: SettingsSelect,
+    pub auto_close_interval_input: SettingsSelect,
+    pub close_after_dragging_check: CheckButton,
+    pub close_after_uploading_check: CheckButton,
+}
+
+pub fn build_quick_access_section(config: &AppConfig) -> QuickAccessSettingsWidgets {
+    let section = GtkBox::new(Orientation::Vertical, 0);
+    section.set_hexpand(true);
+    section.set_vexpand(true);
+
+    macro_rules! build_row {
+        ($content:expr, $is_muted:expr) => {{
+            let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
+            row.add_css_class("settings-table-row");
+            if $is_muted {
+                row.add_css_class("settings-table-row-muted");
+            }
+            row.set_hexpand(true);
+            row.append($content);
+            row
+        }};
+    }
+
+    let build_frame = || -> gtk4::Box {
+        let frame = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        frame.add_css_class("settings-table-frame");
+        frame.set_margin_bottom(24);
+        frame.set_margin_start(4);
+        frame.set_margin_end(4);
+        frame
+    };
+
+    // --- Overlay Group ---
+    let overlay_title = Label::new(Some(&t("Overlay")));
+    overlay_title.add_css_class("settings-group-title");
+    overlay_title.set_xalign(0.0);
+    overlay_title.set_halign(Align::Start);
+    overlay_title.set_margin_bottom(8);
+    section.append(&overlay_title);
+
+    let overlay_frame = build_frame();
+    overlay_frame.add_css_class("quick-access-overlay-card");
+
+    // Position
+    let position_input = SettingsSelect::new(
+        ["Left", "Right"].map(|pos| (pos, t(pos))),
+        &config.quick_access_position,
+    );
+    position_input.widget().set_hexpand(true);
+    position_input.widget().set_halign(Align::Fill);
+    let pos_hbox = GtkBox::new(Orientation::Horizontal, 12);
+    pos_hbox.set_hexpand(true);
+    let pos_label = Label::new(Some(&t("Position")));
+    pos_label.set_xalign(0.0);
+    pos_label.set_hexpand(true);
+    let pos_controls = GtkBox::new(Orientation::Horizontal, 0);
+    pos_controls.set_size_request(220, -1);
+    pos_controls.set_hexpand(false);
+    pos_controls.set_halign(Align::End);
+    pos_controls.append(position_input.widget());
+    pos_hbox.append(&pos_label);
+    pos_hbox.append(&pos_controls);
+    overlay_frame.append(&build_row!(&pos_hbox, false));
+
+    // Overlay Size
+    let overlay_size_input = Scale::with_range(Orientation::Horizontal, 0.5, 1.5, 0.1);
+    overlay_size_input.set_value(config.quick_access_overlay_size);
+    overlay_size_input.set_digits(1);
+    overlay_size_input.add_css_class("quick-access-overlay-size");
+
+    let size_vbox = GtkBox::new(Orientation::Vertical, 4);
+    size_vbox.set_size_request(220, -1);
+    size_vbox.set_hexpand(false);
+    size_vbox.set_halign(Align::End);
+
+    overlay_size_input.set_draw_value(false);
+    overlay_size_input.set_size_request(180, -1);
+    overlay_size_input.set_hexpand(false);
+
+    let step_row = GtkBox::new(Orientation::Horizontal, 8);
+    step_row.set_valign(Align::Center);
+    step_row.append(&overlay_size_input);
+
+    let readout = Label::new(None);
+    readout.add_css_class("settings-scale-readout");
+    readout.set_xalign(1.0);
+    readout.set_width_chars(4);
+    step_row.append(&readout);
+
+    let write_readout: Rc<dyn Fn()> = {
+        let scale = overlay_size_input.clone();
+        let readout = readout.downgrade();
+        Rc::new(move || {
+            if let Some(readout) = readout.upgrade() {
+                readout.set_text(&format!("{}%", (scale.value() * 100.0).round() as i32));
+            }
+        })
+    };
+    write_readout();
+    {
+        let write_readout = Rc::clone(&write_readout);
+        overlay_size_input.connect_value_changed(move |_| write_readout());
+    }
+
+    size_vbox.append(&step_row);
+
+    let size_hbox = GtkBox::new(Orientation::Horizontal, 12);
+    size_hbox.set_hexpand(true);
+    let size_label = Label::new(Some(&t("Overlay size")));
+    size_label.set_xalign(0.0);
+    size_label.set_hexpand(true);
+    size_hbox.append(&size_label);
+    size_hbox.append(&size_vbox);
+    overlay_frame.append(&build_row!(&size_hbox, false));
+
+    section.append(&overlay_frame);
+
+    // --- Auto-close Group ---
+    let auto_close_title = Label::new(Some(&t("Auto-close")));
+    auto_close_title.add_css_class("settings-group-title");
+    auto_close_title.set_xalign(0.0);
+    auto_close_title.set_halign(Align::Start);
+    auto_close_title.set_margin_bottom(8);
+    section.append(&auto_close_title);
+
+    let auto_close_frame = build_frame();
+
+    // Auto-close check
+    let auto_close_enabled_check = CheckButton::new();
+    auto_close_enabled_check.set_active(config.quick_access_auto_close_enabled);
+    let auto_close_hbox = GtkBox::new(Orientation::Horizontal, 12);
+    auto_close_hbox.set_hexpand(true);
+    let auto_close_option = Label::new(Some(&t("Automatically close window")));
+    auto_close_option.set_xalign(0.0);
+    auto_close_option.set_hexpand(true);
+    auto_close_hbox.append(&auto_close_option);
+    auto_close_hbox.append(&auto_close_enabled_check);
+    auto_close_frame.append(&build_row!(&auto_close_hbox, false));
+
+    // Action
+    let auto_close_action_input = SettingsSelect::new(
+        [("Close", t("Close")), ("Hide", t("Hide (stay in Tray)"))],
+        &config.quick_access_auto_close_action,
+    );
+    let action_hbox = GtkBox::new(Orientation::Horizontal, 12);
+    action_hbox.set_hexpand(true);
+    let action_label = Label::new(Some(&t("Action")));
+    action_label.add_css_class("settings-sub-option");
+    action_label.set_xalign(0.0);
+    action_label.set_hexpand(true);
+    action_hbox.append(&action_label);
+    action_hbox.append(auto_close_action_input.widget());
+    auto_close_frame.append(&build_row!(&action_hbox, true));
+
+    // Interval
+    let auto_close_interval_input = SettingsSelect::new(
+        [
+            ("5", t("5 Seconds")),
+            ("10", t("10 Seconds")),
+            ("30", t("30 Seconds")),
+            ("60", t("1 Minute")),
+        ],
+        &config.quick_access_auto_close_interval.to_string(),
+    );
+    let interval_hbox = GtkBox::new(Orientation::Horizontal, 12);
+    interval_hbox.set_hexpand(true);
+    let interval_label = Label::new(Some(&t("Interval")));
+    interval_label.add_css_class("settings-sub-option");
+    interval_label.set_xalign(0.0);
+    interval_label.set_hexpand(true);
+    interval_hbox.append(&interval_label);
+    interval_hbox.append(auto_close_interval_input.widget());
+    auto_close_frame.append(&build_row!(&interval_hbox, false));
+    section.append(&auto_close_frame);
+
+    // --- Behaviors Group ---
+    let behaviors_title = Label::new(Some(&t("Behaviors")));
+    behaviors_title.add_css_class("settings-group-title");
+    behaviors_title.set_xalign(0.0);
+    behaviors_title.set_halign(Align::Start);
+    behaviors_title.set_margin_bottom(8);
+    section.append(&behaviors_title);
+
+    let behaviors_frame = build_frame();
+
+    // Drag
+    let close_after_dragging_check = CheckButton::new();
+    close_after_dragging_check.set_active(config.quick_access_close_after_dragging);
+    let drag_hbox = GtkBox::new(Orientation::Horizontal, 12);
+    drag_hbox.set_hexpand(true);
+    let drag_option = Label::new(Some(&t("Close window after dragging")));
+    drag_option.set_xalign(0.0);
+    drag_option.set_hexpand(true);
+    drag_hbox.append(&drag_option);
+    drag_hbox.append(&close_after_dragging_check);
+    behaviors_frame.append(&build_row!(&drag_hbox, false));
+
+    // Upload
+    let close_after_uploading_check = CheckButton::new();
+    close_after_uploading_check.set_active(config.quick_access_close_after_uploading);
+    let upload_hbox = GtkBox::new(Orientation::Horizontal, 12);
+    upload_hbox.set_hexpand(true);
+    let upload_option = Label::new(Some(&t("Close window after uploading")));
+    upload_option.set_xalign(0.0);
+    upload_option.set_hexpand(true);
+    upload_hbox.append(&upload_option);
+    upload_hbox.append(&close_after_uploading_check);
+    behaviors_frame.append(&build_row!(&upload_hbox, true));
+
+    section.append(&behaviors_frame);
+
+    QuickAccessSettingsWidgets {
+        section,
+        position_input,
+        overlay_size_input,
+        auto_close_enabled_check,
+        auto_close_action_input,
+        auto_close_interval_input,
+        close_after_dragging_check,
+        close_after_uploading_check,
+    }
+}

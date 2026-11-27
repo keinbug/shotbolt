@@ -1,0 +1,341 @@
+            .editor-color-picker-panel {
+                min-width: 252px;
+                padding: 0 0 0 10px;
+                margin-left: 8px;
+                border-left: 1px solid rgba(255, 255, 255, 0.08);
+            }
+
+            .editor-color-picker-panel-minimal {
+                min-width: 232px;
+                padding: 0;
+                margin-left: 0;
+                border-left: none;
+            }
+
+            .editor-color-popover-body-minimal {
+                padding: 12px;
+                border-radius: 16px;
+                background: #1e1e1e;
+                background-image: none;
+                border: 1px solid rgba(255, 255, 255, 0.09);
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+            }
+
+            .editor-color-picker-header {
+                padding: 0 2px;
+                margin-bottom: 2px;
+            }
+
+            .editor-color-picker-title {
+                font-size: 15px;
+                font-weight: 600;
+                color: #f2f2f2;
+            }
+
+            button.editor-eyedropper-button.editor-eyedropper-button-minimal,
+            button.editor-eyedropper-button.editor-eyedropper-button-minimal:hover,
+            button.editor-eyedropper-button.editor-eyedropper-button-minimal:active,
+            button.editor-eyedropper-button.editor-eyedropper-button-minimal:focus,
+            button.editor-eyedropper-button.editor-eyedropper-button-minimal:focus-visible {
+                min-width: 26px;
+                min-height: 26px;
+                border: none;
+                border-radius: 0;
+                background: transparent;
+                background-image: none;
+                box-shadow: none;
+                outline: none;
+                outline-offset: 0;
+                padding: 0;
+                transform: none;
+                transition: none;
+            }
+
+            button.editor-eyedropper-button.editor-eyedropper-button-minimal image {
+                color: rgba(255, 255, 255, 0.65);
+            }
+
+            .editor-root scale.editor-hue-slider-minimal {
+                min-height: 20px;
+                padding: 0;
+            }
+
+            .editor-root scale.editor-hue-slider-minimal trough {
+                min-height: 16px;
+                border-radius: 999px;
+                border: none;
+                box-shadow: none;
+            }
+
+            .editor-root scale.editor-hue-slider-minimal highlight {
+                background: transparent;
+                border: none;
+            }
+
+            .editor-root scale.editor-hue-slider-minimal slider {
+                min-width: 18px;
+                min-height: 18px;
+                border-radius: 999px;
+                background: #ffffff;
+                background-image: none;
+                border: 1px solid rgba(0, 0, 0, 0.18);
+                box-shadow:
+                    0 1px 4px rgba(0, 0, 0, 0.55),
+                    0 0 0 1px rgba(255, 255, 255, 0.65);
+            }
+
+            entry.editor-hex-entry.editor-hex-entry-minimal,
+            entry.editor-hex-entry.editor-hex-entry-minimal:hover,
+            entry.editor-hex-entry.editor-hex-entry-minimal:focus {
+                min-height: 34px;
+                border-radius: 8px;
+                font-size: 13px;
+                font-family: 'Inter', 'Noto Sans', system-ui, sans-serif;
+                font-weight: 500;
+                background: #2b2b2d;
+                background-image: none;
+                border: none;
+                box-shadow: none;
+                outline: none;
+                outline-offset: 0;
+                color: rgba(255, 255, 255, 0.85);
+            }
+
+            entry.editor-hex-entry.editor-hex-entry-minimal placeholder {
+                color: rgba(255, 255, 255, 0.35);
+            }
+
+            .editor-color-picker-panel-minimal .editor-gradient-area {
+                min-width: 232px;
+                min-height: 200px;
+                border-radius: 10px;
+                border: 1px solid rgba(255, 255, 255, 0.06);
+            }
+
+            .editor-color-picker-panel-minimal .editor-color-preview {
+                min-width: 30px;
+                min-height: 30px;
+                border-radius: 8px;
+            }
+
+            .editor-gradient-area {
+                min-width: 252px;
+                min-height: 150px;
+                border-radius: 8px;
+                border: 1px solid alpha(white, 0.08);
+                box-shadow: none;
+            }
+
+            /* --- Sliders (mirrors the video editor's minimal style) --- */
+            .editor-root scale {
+                min-height: 20px;
+            }
+
+            .editor-root scale trough {
+                min-height: 4px;
+                border-radius: 999px;
+                background: alpha(white, 0.08);
+                border: none;
+            }
+
+            .editor-root scale highlight {
+                min-height: 4px;
+                border-radius: 999px;
+                background: #ff670d;
+            }
+
+            .editor-root scale:disabled trough {
+                background: alpha(white, 0.04);
+            }
+
+            .editor-root scale:disabled highlight {
+                background: alpha(#ff670d, 0.42);
+            }
+
+            .editor-root.editor-theme-light scale trough {
+                background: alpha(#111827, 0.08);
+            }
+
+            .editor-root.editor-theme-light scale highlight {
+                background: #ff670d;
+            }
+
+            .editor-root.editor-theme-light scale:disabled trough {
+                background: alpha(#111827, 0.04);
+            }
+
+            .editor-root.editor-theme-light scale:disabled highlight {
+                background: alpha(#ff670d, 0.42);
+            }
+
+            .editor-root scale.editor-hue-slider trough {
+                min-height: 8px;
+                border-radius: 999px;
+                box-shadow: none;
+                border: 1px solid alpha(white, 0.08);
+                background-color: transparent;
+                background-image: linear-gradient(to right,
+                    #ff0000 0%, #ffff00 17%, #00ff00 33%,
+                    #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%);
+            }
+
+            .editor-root scale.editor-hue-slider highlight {
+                background: transparent;
+            }
+
+            .editor-color-preview {
+                min-width: 24px;
+                min-height: 24px;
+                border-radius: 7px;
+                background: #37805B;
+                border: 1px solid rgba(255, 255, 255, 0.22);
+                box-shadow:
+                    inset 0 1px 3px rgba(0,0,0,0.28),
+                    0 1px 2px rgba(0,0,0,0.26);
+            }
+
+            button.editor-eyedropper-button {
+                min-width: 30px;
+                min-height: 30px;
+                border: 1px solid rgba(255, 255, 255, 0.10);
+                border-radius: 7px;
+                background: rgba(255, 255, 255, 0.04);
+                padding: 0;
+                box-shadow: 0 1px 2px rgba(0,0,0,0.24);
+                transition: all 150ms ease;
+            }
+
+            button.editor-eyedropper-button:hover {
+                background: rgba(255, 255, 255, 0.11);
+                border-color: rgba(255, 255, 255, 0.18);
+                transform: translateY(-1px);
+                box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            }
+
+            button.editor-eyedropper-button:active {
+                background: rgba(255, 255, 255, 0.05);
+                transform: translateY(0);
+                box-shadow: none;
+            }
+
+            button.editor-eyedropper-button image {
+                margin: 0;
+            }
+
+            window.editor-eyedropper-picker-window {
+                background: transparent;
+            }
+
+            .editor-eyedropper-surface {
+                background: #000000;
+            }
+
+            .editor-screen-eyedropper-ring {
+                min-width: 132px;
+                min-height: 132px;
+                border-radius: 999px;
+                border: none;
+                box-shadow: none;
+                background: transparent;
+            }
+
+            entry.editor-hex-entry,
+            entry.editor-rgba-entry {
+                min-height: 30px;
+                border-radius: 6px;
+                padding: 2px 8px;
+                background: alpha(white, 0.05);
+                border: 1px solid alpha(white, 0.06);
+                box-shadow: none;
+                color: rgba(255, 255, 255, 0.92);
+                font-size: 12px;
+                font-family: 'DejaVu Sans Mono', 'Liberation Mono', Monospace;
+                font-style: normal;
+                font-weight: 600;
+                transition: background-color 120ms ease, border-color 120ms ease;
+            }
+
+            entry.editor-hex-entry:focus,
+            entry.editor-rgba-entry:focus {
+                border-color: alpha(white, 0.20);
+                background: alpha(white, 0.08);
+                box-shadow: none;
+            }
+
+            entry.editor-hex-entry text,
+            entry.editor-rgba-entry text {
+                color: rgba(255, 255, 255, 0.92);
+            }
+
+            .editor-color-field-label {
+                font-size: 10px;
+                font-weight: 600;
+                color: rgba(255, 255, 255, 0.52);
+                margin-top: 1px;
+                text-transform: uppercase;
+                letter-spacing: 0.55px;
+            }
+
+            button.editor-add-to-colors-button {
+                min-width: 220px;
+                min-height: 30px;
+                border-radius: 6px;
+                background: #ff670d;
+                color: #ffffff;
+                font-weight: 600;
+                font-size: 12px;
+                border: none;
+                padding: 0 14px;
+                outline: none;
+                transition: background-color 120ms ease;
+                box-shadow: none;
+            }
+
+            button.editor-add-to-colors-button:hover {
+                background: #C66B4A;
+                border: none;
+                box-shadow: none;
+            }
+
+            button.editor-add-to-colors-button:active {
+                background: #8A4A2D;
+                box-shadow: none;
+            }
+
+            .editor-color-dot.editor-color-black,
+            .editor-color-trigger-dot.editor-color-black { background: #121212; }
+            .editor-color-dot.editor-color-blue,
+            .editor-color-trigger-dot.editor-color-blue { background: #0a84ff; }
+            .editor-color-dot.editor-color-dark-green,
+            .editor-color-trigger-dot.editor-color-dark-green { background: #005933; }
+            .editor-color-dot.editor-color-red,
+            .editor-color-trigger-dot.editor-color-red { background: #eb2424; }
+            .editor-color-dot.editor-color-orange,
+            .editor-color-trigger-dot.editor-color-orange { background: #ff9900; }
+            .editor-color-dot.editor-color-yellow,
+            .editor-color-trigger-dot.editor-color-yellow { background: #ffd601; }
+            .editor-color-dot.editor-color-green,
+            .editor-color-trigger-dot.editor-color-green { background: #29ba5c; }
+            .editor-color-dot.editor-color-cyan,
+            .editor-color-trigger-dot.editor-color-cyan { background: #00cfc7; }
+            .editor-color-dot.editor-color-blue-bright,
+            .editor-color-trigger-dot.editor-color-blue-bright { background: #338efb; }
+            .editor-color-dot.editor-color-purple,
+            .editor-color-trigger-dot.editor-color-purple { background: #9e5cfb; }
+            .editor-color-dot.editor-color-pink,
+            .editor-color-trigger-dot.editor-color-pink { background: #ff1478; }
+            .editor-color-dot.editor-color-white,
+            .editor-color-trigger-dot.editor-color-white {
+                background: #f2f2f2;
+                border: 1px solid rgba(255, 255, 255, 0.16);
+            }
+
+            .editor-root .editor-custom-color .editor-custom-opacity scale trough,
+            .editor-root .editor-custom-color .editor-custom-opacity scale highlight,
+            .editor-root.editor-theme-light .editor-custom-color .editor-custom-opacity scale trough,
+            .editor-root.editor-theme-light .editor-custom-color .editor-custom-opacity scale highlight {
+                background: transparent;
+                background-image: none;
+                border: none;
+                box-shadow: none;
+            }

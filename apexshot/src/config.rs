@@ -1,0 +1,1912 @@
+use anyhow::Context;
+use serde::{Deserialize, Serialize};
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+pub const DEFAULT_SHUTTER_SOUND: &str = "Camera";
+/// UI color theme. `system` follows the desktop; `light` and `dark` force it.
+pub const DEFAULT_UI_THEME: &str = "system";
+
+/// Public ApexShot Cloud API. Used for normal installs when no override is set.
+/// Self-hosters / local dev can override via config `cloud_backend_url` or
+/// `APEXSHOT_CLOUD_BACKEND_URL` (and optionally `~/.config/apexshot/.env`).
+pub const DEFAULT_CLOUD_BACKEND_URL: &str = "https://api.apexshot.org";
+
+pub const DEFAULT_AFTER_CAPTURE_SHOW_QUICK_ACCESS: bool = true;
+pub const DEFAULT_AFTER_CAPTURE_COPY_FILE_TO_CLIPBOARD: bool = false;
+pub const DEFAULT_AFTER_CAPTURE_SAVE: bool = true;
+pub const DEFAULT_AFTER_CAPTURE_OPEN_ANNOTATE: bool = false;
+pub const DEFAULT_REC_AFTER_CAPTURE_COPY_TO_CLIPBOARD: bool = false;
+pub const DEFAULT_REC_AFTER_CAPTURE_SAVE: bool = true;
+pub const DEFAULT_REC_AFTER_CAPTURE_SHOW_QUICK_ACCESS: bool = true;
+const VIDEO_PRESET_ID_MAX_BYTES: usize = 80;
+pub const QUICK_ACCESS_OVERLAY_SCALE_MIN: f64 = 0.5;
+pub const QUICK_ACCESS_OVERLAY_SCALE_BASELINE: f64 = 1.0;
+pub const QUICK_ACCESS_OVERLAY_SCALE_MAX: f64 = 1.5;
+
+static CONFIG_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AppConfig {
+    pub start_at_login: bool,
+    pub play_sounds: bool,
+    pub shutter_sound: String,
+    pub show_menu_bar_icon: bool,
+    pub export_location: String,
+    pub screenshot_export_location: String,
+    pub video_export_location: String,
+    pub rec_filename_pattern: String,
+    /// When true, the video editor Save dialog reopens in the last export folder.
+    pub rec_remember_export_folder: bool,
+    pub last_video_export_dir: String,
+    pub after_capture_show_quick_access: bool,
+    pub after_capture_copy_file_to_clipboard: bool,
+    pub after_capture_save: bool,
+    pub after_capture_open_annotate: bool,
+    pub rec_after_capture_copy_to_clipboard: bool,
+    pub rec_after_capture_save: bool,
+    /// Windows only: show the Quick Access card after a recording.
+    pub rec_after_capture_show_quick_access: bool,
+    // Recording General tab settings
+    pub rec_controls: bool,
+    pub rec_hidpi: bool,
+    pub rec_notifications: bool,
+    pub rec_cursor: bool,
+    pub rec_remember_selection: bool,
+    pub rec_dim_screen: bool,
+    pub rec_countdown: bool,
+    // Remember selection: last selection area
+    pub last_selection_x: Option<i32>,
+    pub last_selection_y: Option<i32>,
+    pub last_selection_w: Option<i32>,
+    pub last_selection_h: Option<i32>,
+    // Recording Video tab settings
+    pub rec_video_max_res: u8,
+    pub rec_video_fps: u8,
+    /// 0 = Balanced (CRF 23), 1 = High (CRF 20), 2 = Ultra (CRF 16).
+    pub rec_video_quality: u8,
+    /// Windows screen codec: 0 = H.264, 1 = HEVC. The Linux recorder ignores it.
+    pub rec_video_codec: u8,
+    pub rec_video_mono: bool,
+    pub rec_video_open_editor: bool,
+    /// Place the recorded clicks' automatic zooms on a fresh import.
+    pub rec_video_auto_zoom_on_import: bool,
+    /// Record key presses beside a Windows recording so the editor can show
+    /// keyboard shortcuts. Off by default: keystrokes are only collected when
+    /// the user asks for them.
+    pub rec_capture_keystrokes: bool,
+    /// Video preset the editor applies to a recording it opens. `None` keeps
+    /// the built-in defaults.
+    pub rec_video_default_preset: Option<String>,
+    /// webrtcdsp noise suppression on the recording mic (GStreamer audio path).
+    pub rec_noise_suppression: bool,
+    pub rec_mic: bool,
+    pub rec_speaker: bool,
+    /// Linux: Pulse source the Quick Capture device menus picked for the mic,
+    /// and the one app whose audio the Speaker item records (empty = all
+    /// apps).
+    pub rec_mic_device: String,
+    pub rec_speaker_app: String,
+    // Webcam track. The Windows recorder writes the camera to its own file and
+    // the editor composites it, so these are layer settings rather than
+    // encoder ones.
+    pub rec_webcam_enabled: bool,
+    /// The dshow camera's friendly name. Empty means the first camera.
+    pub rec_webcam_device: String,
+    /// Size preset: 0 small, 1 medium, 2 large, 3 huge.
+    pub rec_webcam_size: u8,
+    /// Shape preset: 0 circle, 1 square, 2 rectangle, 3 vertical.
+    pub rec_webcam_shape: u8,
+    pub rec_webcam_flip: bool,
+    /// Bubble position across the capture: x left to right, y bottom to top.
+    pub rec_webcam_rel_x: f64,
+    pub rec_webcam_rel_y: f64,
+    // Quick Access settings
+    pub quick_access_position: String,
+    pub quick_access_overlay_size: f64,
+    pub quick_access_auto_close_enabled: bool,
+    pub quick_access_auto_close_action: String,
+    pub quick_access_auto_close_interval: u32,
+    pub quick_access_close_after_dragging: bool,
+    pub quick_access_close_after_uploading: bool,
+    // Screenshots tab settings
+    pub screenshot_format: String,
+    pub screenshot_freeze_screen: bool,
+    pub screenshot_crosshair_mode: String,
+    pub screenshot_show_magnifier: bool,
+    pub screenshot_timer_interval: u32,
+    pub screenshot_show_cursor: bool,
+    // Annotate tab settings
+    pub annotate_inverse_arrow: bool,
+    pub annotate_smooth_drawing: bool,
+    pub annotate_draw_shadow: bool,
+    pub annotate_auto_expand: bool,
+    pub annotate_show_color_names: bool,
+    pub annotate_always_on_top: bool,
+    /// Close the image editor after image or Motion exports succeed.
+    pub annotate_close_after_export: bool,
+    /// Replace the opened image when the image editor exports a still image.
+    pub annotate_overwrite_original_image: bool,
+    /// The colour each annotate tool last used, keyed by tool ("pen",
+    /// "arrow", ...) as `#rrggbbaa`, so a new editor session opens every tool
+    /// with the colour picked for it last.
+    pub annotate_tool_colors: std::collections::BTreeMap<String, String>,
+    /// Skip the Static → Motion confirm that annotations will be snapshotted.
+    pub skip_static_to_motion_confirm: bool,
+    /// Skip the Motion → Static confirm that motion segments will be cleared.
+    pub skip_motion_to_static_confirm: bool,
+    // Shortcut settings
+    pub shortcut_open_file: String,
+    pub shortcut_open_from_clipboard: String,
+    pub shortcut_restore_recently_closed: String,
+    pub shortcut_toggle_overlays: String,
+    pub shortcut_capture_area: String,
+    pub shortcut_capture_crosshair: String,
+    pub shortcut_capture_previous_area: String,
+    pub shortcut_capture_fullscreen: String,
+    pub shortcut_capture_menu: String,
+    pub shortcut_show_last_preview: String,
+    pub shortcut_save_last_capture: String,
+    pub shortcut_open_recording_ui: String,
+    pub shortcut_record_screen: String,
+    pub shortcut_recording_stop_save: String,
+    /// Windows only: pause or resume the running recording.
+    pub shortcut_recording_pause: String,
+    /// Windows only: restart the running recording, after a confirmation.
+    pub shortcut_recording_restart: String,
+    /// Windows only: mark the current moment of the running recording.
+    pub shortcut_recording_marker: String,
+    // Cloud settings
+    pub cloud_user_name: String,
+    pub cloud_user_email: String,
+    pub cloud_pro_plan: bool,
+    /// Last known ApexShot Cloud plan tier (`free`, `pro`, `team`, …), cached so
+    /// UI can render entitlement without a network round trip. Empty until an
+    /// account lookup has run. `cloud_pro_plan` is kept in sync with it.
+    pub cloud_plan_tier: String,
+    pub cloud_backend_url: String,
+    pub cloud_api_token: String,
+    pub cloud_refresh_token: String,
+    pub cloud_install_id: String,
+    // Upload destination selection + self-hosted XBackBone settings
+    pub cloud_destination: String,
+    pub xbackbone_url: String,
+    pub xbackbone_api_token: String,
+    /// When true and the selected cloud destination is configured, upload
+    /// automatically after a screenshot is saved (in addition to the manual
+    /// Upload button on Quick Access / the editor).
+    pub cloud_auto_upload_after_capture: bool,
+    /// Suggest ApexShot Cloud when a signed-out person copies a screenshot in
+    /// Quick Access. Rare and capped; see `studio_nudges::cloud_nudge_due`.
+    pub cloud_nudge_enabled: bool,
+    /// Set after the first successful ApexShot Cloud upload on a free plan, so
+    /// the result toast mentions link expiry only once.
+    pub cloud_link_expiry_notice_shown: bool,
+    // Advanced settings
+    pub adv_retina_suffix: bool,
+    pub adv_clipboard_mode: String,
+    pub adv_ocr_language: String,
+    pub adv_ocr_keep_line_breaks: bool,
+    /// Anonymous usage heartbeat (daemon). Opt out in Settings or via
+    /// `APEXSHOT_TELEMETRY=0`. Default on to match install-script telemetry.
+    pub telemetry_enabled: bool,
+    /// Windows usage telemetry requires an explicit opt-in.
+    pub windows_telemetry_enabled: bool,
+    /// UI color theme: `system` follows the desktop, `light` and `dark` force
+    /// it. Window builders read this before probing GTK / desktop settings.
+    pub ui_theme: String,
+    /// UI language. `system` follows the desktop locale; otherwise a catalog
+    /// code such as `es` or `pt_BR`.
+    pub ui_language: String,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            start_at_login: false,
+            play_sounds: true,
+            shutter_sound: DEFAULT_SHUTTER_SOUND.to_string(),
+            show_menu_bar_icon: true,
+            export_location: String::new(),
+            screenshot_export_location: String::new(),
+            video_export_location: String::new(),
+            rec_filename_pattern: "ApexShot Recording {Date} at {Time}".to_string(),
+            rec_remember_export_folder: true,
+            last_video_export_dir: String::new(),
+            after_capture_show_quick_access: DEFAULT_AFTER_CAPTURE_SHOW_QUICK_ACCESS,
+            after_capture_copy_file_to_clipboard: DEFAULT_AFTER_CAPTURE_COPY_FILE_TO_CLIPBOARD,
+            after_capture_save: DEFAULT_AFTER_CAPTURE_SAVE,
+            after_capture_open_annotate: DEFAULT_AFTER_CAPTURE_OPEN_ANNOTATE,
+            rec_after_capture_copy_to_clipboard: DEFAULT_REC_AFTER_CAPTURE_COPY_TO_CLIPBOARD,
+            rec_after_capture_save: DEFAULT_REC_AFTER_CAPTURE_SAVE,
+            rec_after_capture_show_quick_access: DEFAULT_REC_AFTER_CAPTURE_SHOW_QUICK_ACCESS,
+            rec_controls: true,
+            rec_hidpi: true,
+            rec_notifications: true,
+            rec_cursor: true,
+            rec_remember_selection: false,
+            rec_dim_screen: true,
+            rec_countdown: true,
+            last_selection_x: None,
+            last_selection_y: None,
+            last_selection_w: None,
+            last_selection_h: None,
+            // Video tab defaults
+            rec_video_max_res: 0, // 0 = Original
+            rec_video_fps: 1,     // 1 = 30fps
+            rec_video_quality: 1, // 1 = High
+            rec_video_codec: 0,   // 0 = H.264
+            rec_video_mono: false,
+            rec_video_open_editor: false,
+            rec_video_auto_zoom_on_import: true,
+            rec_capture_keystrokes: false,
+            rec_video_default_preset: None,
+            rec_noise_suppression: false,
+            rec_mic: false,
+            rec_speaker: false,
+            rec_mic_device: String::new(),
+            rec_speaker_app: String::new(),
+            rec_webcam_enabled: false,
+            rec_webcam_device: String::new(),
+            rec_webcam_size: 1,
+            rec_webcam_shape: 0,
+            rec_webcam_flip: false,
+            rec_webcam_rel_x: 1.0,
+            rec_webcam_rel_y: 0.0,
+            quick_access_position: "Left".to_string(),
+            quick_access_overlay_size: QUICK_ACCESS_OVERLAY_SCALE_BASELINE,
+            quick_access_auto_close_enabled: false,
+            quick_access_auto_close_action: "Close".to_string(),
+            quick_access_auto_close_interval: 30,
+            quick_access_close_after_dragging: true,
+            quick_access_close_after_uploading: true,
+            screenshot_format: "PNG".to_string(),
+            screenshot_freeze_screen: true,
+            screenshot_crosshair_mode: "Disabled".to_string(),
+            screenshot_show_magnifier: false,
+            screenshot_timer_interval: 0,
+            screenshot_show_cursor: true,
+            annotate_inverse_arrow: false,
+            annotate_smooth_drawing: true,
+            annotate_draw_shadow: true,
+            annotate_auto_expand: false,
+            annotate_show_color_names: false,
+            annotate_always_on_top: false,
+            annotate_close_after_export: false,
+            annotate_overwrite_original_image: false,
+            annotate_tool_colors: std::collections::BTreeMap::new(),
+            skip_static_to_motion_confirm: false,
+            skip_motion_to_static_confirm: false,
+            shortcut_open_file: String::new(),
+            shortcut_open_from_clipboard: String::new(),
+            shortcut_restore_recently_closed: String::new(),
+            shortcut_toggle_overlays: String::new(),
+            shortcut_capture_area: if cfg!(target_os = "windows") {
+                "Ctrl+Alt+Shift+A"
+            } else {
+                "Shift+Super+4"
+            }
+            .to_string(),
+            shortcut_capture_crosshair: "Ctrl+Alt+X".to_string(),
+            shortcut_capture_previous_area: String::new(),
+            shortcut_capture_fullscreen: if cfg!(target_os = "windows") {
+                "Ctrl+Alt+Shift+F"
+            } else {
+                "Shift+Super+3"
+            }
+            .to_string(),
+            shortcut_capture_menu: if cfg!(target_os = "windows") {
+                "Ctrl+Alt+Shift+M"
+            } else {
+                "Shift+Super+5"
+            }
+            .to_string(),
+            shortcut_show_last_preview: "Ctrl+Alt+P".to_string(),
+            shortcut_save_last_capture: String::new(),
+            shortcut_open_recording_ui: String::new(),
+            shortcut_record_screen: String::new(),
+            shortcut_recording_stop_save: "Ctrl+Alt+Shift+S".to_string(),
+            shortcut_recording_pause: "Ctrl+Alt+Shift+P".to_string(),
+            shortcut_recording_restart: "Ctrl+Alt+Shift+R".to_string(),
+            shortcut_recording_marker: "Ctrl+Alt+Shift+K".to_string(),
+            cloud_user_name: String::new(),
+            cloud_user_email: String::new(),
+            cloud_pro_plan: false,
+            cloud_plan_tier: String::new(),
+            cloud_backend_url: DEFAULT_CLOUD_BACKEND_URL.to_string(),
+            cloud_api_token: String::new(),
+            cloud_refresh_token: String::new(),
+            cloud_install_id: String::new(),
+            cloud_destination: "apexshot".to_string(),
+            xbackbone_url: String::new(),
+            xbackbone_api_token: String::new(),
+            cloud_auto_upload_after_capture: true,
+            cloud_nudge_enabled: true,
+            cloud_link_expiry_notice_shown: false,
+            adv_retina_suffix: true,
+            adv_clipboard_mode: "File & Image (default)".to_string(),
+            adv_ocr_language: "eng".to_string(),
+            adv_ocr_keep_line_breaks: true,
+            // Flatpak: off until the user explicitly opts in (plan §10.3 / §9.4).
+            telemetry_enabled: !cfg!(feature = "flatpak"),
+            windows_telemetry_enabled: false,
+            ui_theme: DEFAULT_UI_THEME.to_string(),
+            ui_language: crate::i18n::SYSTEM_LANGUAGE.to_string(),
+        }
+    }
+}
+
+impl AppConfig {
+    pub fn sanitized(mut self) -> Self {
+        self.shutter_sound = sanitize_shutter_sound(self.shutter_sound);
+        self.export_location = self.export_location.trim().to_string();
+        self.screenshot_export_location = self.screenshot_export_location.trim().to_string();
+        self.video_export_location = self.video_export_location.trim().to_string();
+        self.last_video_export_dir = self.last_video_export_dir.trim().to_string();
+        if self.screenshot_export_location.is_empty() && !self.export_location.is_empty() {
+            self.screenshot_export_location = self.export_location.clone();
+        }
+        if self.video_export_location.is_empty() && !self.export_location.is_empty() {
+            self.video_export_location = self.export_location.clone();
+        }
+        if self.after_capture_open_annotate {
+            self.after_capture_show_quick_access = false;
+        }
+        if self.rec_video_open_editor {
+            self.rec_after_capture_show_quick_access = false;
+        }
+        if !self.after_capture_show_quick_access
+            && !self.after_capture_copy_file_to_clipboard
+            && !self.after_capture_save
+            && !self.after_capture_open_annotate
+        {
+            self.after_capture_show_quick_access = DEFAULT_AFTER_CAPTURE_SHOW_QUICK_ACCESS;
+        }
+        self.rec_video_codec = self.rec_video_codec.min(1);
+        self.rec_video_default_preset = self
+            .rec_video_default_preset
+            .as_deref()
+            .and_then(sanitize_video_preset_id);
+        // The webcam layer's tables have four entries each, and the recorder
+        // and the editor both index them directly.
+        self.rec_webcam_size = self.rec_webcam_size.min(3);
+        self.rec_webcam_shape = self.rec_webcam_shape.min(3);
+        self.rec_webcam_rel_x = self.rec_webcam_rel_x.clamp(0.0, 1.0);
+        self.rec_webcam_rel_y = self.rec_webcam_rel_y.clamp(0.0, 1.0);
+        self.rec_webcam_device = self.rec_webcam_device.trim().chars().take(240).collect();
+        // A config edited by hand must not point outside the option table that
+        // Settings offers. Unknown values fall back to Original, the same way
+        // `max_resolution_for_setting` reads them.
+        if self.rec_video_max_res as usize >= crate::recording::VIDEO_MAX_RES_OPTION_COUNT {
+            self.rec_video_max_res = 0;
+        }
+        // Frame rate gets the same guard. The C++ overlay parses
+        // `--video-fps=<index>` against its four-option dropdown and silently
+        // keeps its own default when the index is out of range, so an
+        // unclamped config made the overlay show 50 fps while the encoder
+        // recorded 30. Unknown values fall back to 30 fps (index 1),
+        // matching `RecordingConfig::from_app_config_at` and the Settings
+        // save path.
+        if self.rec_video_fps as usize >= crate::recording::VIDEO_FPS_OPTION_COUNT {
+            self.rec_video_fps = 1;
+        }
+        self.quick_access_overlay_size =
+            sanitize_quick_access_overlay_size(self.quick_access_overlay_size);
+        self.quick_access_position = match self.quick_access_position.as_str() {
+            "Left" | "Right" => self.quick_access_position,
+            _ => "Left".to_string(),
+        };
+        self.quick_access_auto_close_action = match self.quick_access_auto_close_action.as_str() {
+            "Close" | "Hide" => self.quick_access_auto_close_action,
+            _ => "Close".to_string(),
+        };
+        self.screenshot_format = match self.screenshot_format.as_str() {
+            "PNG" | "JPEG" | "WebP" => self.screenshot_format,
+            _ => "PNG".to_string(),
+        };
+        if !matches!(self.screenshot_timer_interval, 0 | 1 | 3 | 5 | 10) {
+            self.screenshot_timer_interval = 0;
+        }
+        self.screenshot_crosshair_mode = match self.screenshot_crosshair_mode.as_str() {
+            "Disabled" | "Crosshair" | "Magnifier" => self.screenshot_crosshair_mode,
+            _ => "Disabled".to_string(),
+        };
+        self.cloud_destination = match self.cloud_destination.as_str() {
+            "apexshot" | "xbackbone" => self.cloud_destination,
+            _ => "apexshot".to_string(),
+        };
+        self.xbackbone_url = self.xbackbone_url.trim().to_string();
+        self.xbackbone_api_token = self.xbackbone_api_token.trim().to_string();
+        // Tiers are compared case-insensitively; normalise once on the way in.
+        self.cloud_plan_tier = self.cloud_plan_tier.trim().to_lowercase();
+        self.ui_theme = sanitize_ui_theme(&self.ui_theme);
+        self.ui_language = crate::i18n::sanitize_ui_language(&self.ui_language);
+        self
+    }
+
+    /// Explicit theme preference: `Some(true)` forces dark, `Some(false)`
+    /// forces light, `None` follows the desktop. Window builders check this
+    /// before probing GTK / gsettings.
+    pub fn forced_dark_theme(&self) -> Option<bool> {
+        match self.ui_theme.as_str() {
+            "dark" => Some(true),
+            "light" => Some(false),
+            _ => None,
+        }
+    }
+
+    pub fn video_editor_export_dir(&self, fallback: &std::path::Path) -> PathBuf {
+        if self.rec_remember_export_folder {
+            let last = self.last_video_export_dir.trim();
+            if !last.is_empty() {
+                let path = PathBuf::from(last);
+                if path.is_dir() {
+                    return path;
+                }
+            }
+        }
+        fallback.to_path_buf()
+    }
+
+    /// Folder the Motion MP4 export starts in. Motion is a video, so it follows
+    /// the video export story instead of the still's folder: the remembered
+    /// export folder when the user keeps one, else the configured Recordings
+    /// folder (`video_export_location`), else `fallback`.
+    pub fn motion_export_dir(&self, fallback: &std::path::Path) -> PathBuf {
+        let configured = self.video_export_location.trim();
+        let recordings = if configured.is_empty() {
+            fallback.to_path_buf()
+        } else {
+            PathBuf::from(configured)
+        };
+        self.video_editor_export_dir(&recordings)
+    }
+
+    pub fn remember_video_export_dir(&mut self, file: &std::path::Path) -> bool {
+        if !self.rec_remember_export_folder {
+            return false;
+        }
+        let Some(dir) = file.parent().filter(|dir| !dir.as_os_str().is_empty()) else {
+            return false;
+        };
+        let next = dir.to_string_lossy().into_owned();
+        if self.last_video_export_dir == next {
+            return false;
+        }
+        self.last_video_export_dir = next;
+        true
+    }
+}
+
+fn sanitize_ui_theme(value: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "light" => "light".to_string(),
+        "dark" => "dark".to_string(),
+        _ => DEFAULT_UI_THEME.to_string(),
+    }
+}
+
+fn sanitize_shutter_sound(value: String) -> String {
+    match value.trim() {
+        "Camera" | "Classic" | "Pop" | "None" => value.trim().to_string(),
+        _ => DEFAULT_SHUTTER_SOUND.to_string(),
+    }
+}
+
+fn sanitize_video_preset_id(value: &str) -> Option<String> {
+    let is_stored_id = !value.is_empty()
+        && value.len() <= VIDEO_PRESET_ID_MAX_BYTES
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_');
+    is_stored_id.then(|| value.to_string())
+}
+
+fn sanitize_quick_access_overlay_size(value: f64) -> f64 {
+    value.clamp(
+        QUICK_ACCESS_OVERLAY_SCALE_MIN,
+        QUICK_ACCESS_OVERLAY_SCALE_MAX,
+    )
+}
+
+fn should_migrate_legacy_quick_access_overlay_size(raw: &str, config: &AppConfig) -> bool {
+    !raw.contains("quick_access_position:")
+        && raw.contains("quick_access_overlay_size:")
+        && (config.quick_access_overlay_size - QUICK_ACCESS_OVERLAY_SCALE_MIN).abs() < f64::EPSILON
+}
+
+fn migrate_legacy_capture_shortcuts(config: &mut AppConfig, has_capture_menu: bool) -> bool {
+    let mut changed = false;
+    if !has_capture_menu {
+        let replacement = if !config.shortcut_capture_area.trim().is_empty() {
+            config.shortcut_capture_area.clone()
+        } else {
+            config.shortcut_open_recording_ui.clone()
+        };
+        if !replacement.is_empty() {
+            config.shortcut_capture_menu = replacement;
+            changed = true;
+        }
+    }
+    if !config.shortcut_open_recording_ui.is_empty() {
+        config.shortcut_open_recording_ui.clear();
+        changed = true;
+    }
+    changed
+}
+
+pub fn config_path() -> Option<PathBuf> {
+    let mut path = dirs::config_dir()?;
+    path.push("apexshot");
+    path.push("config.yml");
+    Some(path)
+}
+
+pub fn load_config() -> AppConfig {
+    let Some(path) = config_path() else {
+        return apply_cloud_env_overrides(AppConfig::default());
+    };
+
+    let raw = match fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return apply_cloud_env_overrides(AppConfig::default());
+        }
+        Err(_) => {
+            eprintln!("[config] Saved settings could not be read; defaults are active.");
+            return apply_cloud_env_overrides(AppConfig::default());
+        }
+    };
+
+    match serde_yml::from_str::<AppConfig>(&raw) {
+        Ok(config) => {
+            let mut sanitized = config.sanitized();
+            if should_migrate_legacy_quick_access_overlay_size(&raw, &sanitized) {
+                sanitized.quick_access_overlay_size = QUICK_ACCESS_OVERLAY_SCALE_BASELINE;
+            }
+            let has_capture_menu = serde_yml::from_str::<serde_yml::Value>(&raw)
+                .ok()
+                .and_then(|value| value.get("shortcut_capture_menu").cloned())
+                .is_some();
+            let shortcuts_changed =
+                migrate_legacy_capture_shortcuts(&mut sanitized, has_capture_menu);
+            let cloud_changed = apply_cloud_env_overrides_in_place(&mut sanitized);
+            if shortcuts_changed || cloud_changed {
+                // Persist migrations (default backend URL, drop ghost sessions)
+                // so Settings/login don't keep lying after the first launch.
+                let _ = save_config(&sanitized);
+            }
+            sanitized
+        }
+        Err(_) => {
+            eprintln!(
+                "[config] Saved settings could not be parsed; defaults are active and the original file is retained."
+            );
+            apply_cloud_env_overrides(AppConfig::default())
+        }
+    }
+}
+
+/// Resolve the cloud API base URL for requests.
+///
+/// Priority: non-empty config → `APEXSHOT_CLOUD_BACKEND_URL` → public default.
+pub fn resolve_cloud_backend_url(config: &AppConfig) -> String {
+    let from_config = config.cloud_backend_url.trim();
+    if !from_config.is_empty() {
+        return from_config.trim_end_matches('/').to_string();
+    }
+    if let Ok(url) = std::env::var("APEXSHOT_CLOUD_BACKEND_URL") {
+        let url = url.trim();
+        if !url.is_empty() {
+            return url.trim_end_matches('/').to_string();
+        }
+    }
+    DEFAULT_CLOUD_BACKEND_URL.trim_end_matches('/').to_string()
+}
+
+/// True when a real cloud session exists (access token present).
+/// Email alone is never enough — that produced false "Connected" states.
+pub fn is_cloud_logged_in(config: &AppConfig) -> bool {
+    !config.cloud_api_token.trim().is_empty()
+}
+
+fn apply_cloud_env_overrides(mut config: AppConfig) -> AppConfig {
+    apply_cloud_env_overrides_in_place(&mut config);
+    config
+}
+
+/// Apply cloud defaults / env overrides. Returns true if the config was changed
+/// and should be persisted.
+fn apply_cloud_env_overrides_in_place(config: &mut AppConfig) -> bool {
+    let mut changed = false;
+
+    // Env override always wins when set (dev / self-host).
+    if let Ok(url) = std::env::var("APEXSHOT_CLOUD_BACKEND_URL") {
+        let url = url.trim().to_string();
+        if !url.is_empty() && config.cloud_backend_url != url {
+            config.cloud_backend_url = url;
+            changed = true;
+        }
+    }
+
+    // Production installs must not require a .env file.
+    if config.cloud_backend_url.trim().is_empty() {
+        config.cloud_backend_url = DEFAULT_CLOUD_BACKEND_URL.to_string();
+        changed = true;
+    }
+
+    // Ghost account: email/name/pro without a token is not a session.
+    // Clear it so Settings cannot show "Connected" for a stranger.
+    if config.cloud_api_token.trim().is_empty()
+        && (!config.cloud_user_email.is_empty()
+            || !config.cloud_user_name.is_empty()
+            || config.cloud_pro_plan
+            || !config.cloud_plan_tier.is_empty()
+            || !config.cloud_refresh_token.is_empty())
+    {
+        config.cloud_user_email.clear();
+        config.cloud_user_name.clear();
+        config.cloud_refresh_token.clear();
+        config.cloud_pro_plan = false;
+        config.cloud_plan_tier.clear();
+        changed = true;
+    }
+
+    apply_xbackbone_overrides(config);
+    changed
+}
+
+fn apply_xbackbone_overrides(config: &mut AppConfig) {
+    if config.xbackbone_url.is_empty() {
+        if let Ok(url) = std::env::var("APEXSHOT_XBACKBONE_URL") {
+            config.xbackbone_url = url.trim().to_string();
+        }
+    }
+    if config.xbackbone_api_token.is_empty() {
+        if let Ok(token) = std::env::var("APEXSHOT_XBACKBONE_TOKEN") {
+            config.xbackbone_api_token = token.trim().to_string();
+        }
+    }
+    // Auto-detect an existing XBackBone CLI / KDE plugin config so users who
+    // already have `xbb` set up can go zero-config. Only used as a default —
+    // explicit Settings values (or env vars above) always win.
+    if config.xbackbone_url.is_empty() && config.xbackbone_api_token.is_empty() {
+        if let Some((url, token)) = read_xbackbone_config_file() {
+            config.xbackbone_url = url;
+            config.xbackbone_api_token = token;
+        }
+    }
+}
+
+fn read_xbackbone_config_file() -> Option<(String, String)> {
+    let mut path = dirs::config_dir()?;
+    path.push("xbackbone");
+    path.push("config");
+    let content = std::fs::read_to_string(path).ok()?;
+    parse_xbackbone_config_file(&content)
+}
+
+fn parse_xbackbone_config_file(content: &str) -> Option<(String, String)> {
+    let mut url = None;
+    let mut token = None;
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let (key, value) = line.split_once('=')?;
+        let key = key.trim();
+        let value = value.trim().trim_matches('"');
+        match key {
+            "XBB_URL" if !value.is_empty() => url = Some(value.to_string()),
+            "XBB_TOKEN" if !value.is_empty() => token = Some(value.to_string()),
+            _ => {}
+        }
+    }
+    match (url, token) {
+        (Some(u), Some(t)) => Some((u, t)),
+        _ => None,
+    }
+}
+
+pub fn save_config(config: &AppConfig) -> anyhow::Result<PathBuf> {
+    let path = config_path().context("Failed to resolve config directory")?;
+    let serialized = serde_yml::to_string(&config.clone().sanitized())
+        .context("Failed to serialize configuration")?;
+    write_config_atomically(&path, &serialized)?;
+
+    Ok(path)
+}
+
+fn write_config_atomically(path: &Path, serialized: &str) -> anyhow::Result<()> {
+    serde_yml::from_str::<AppConfig>(serialized).context("Serialized configuration is invalid")?;
+    let parent = path
+        .parent()
+        .context("Configuration path has no parent directory")?;
+    create_private_directory(parent)
+        .with_context(|| format!("Failed to create config directory {}", parent.display()))?;
+    #[cfg(unix)]
+    let _lock = lock_config_writes(path)?;
+    #[cfg(not(unix))]
+    lock_config_writes(path)?;
+
+    let sequence = CONFIG_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let temporary = parent.join(format!(".config-{}-{sequence}.tmp", std::process::id()));
+    let result: anyhow::Result<()> = (|| {
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        set_private_file_mode(&mut options);
+        let mut file = options.open(&temporary)?;
+        file.write_all(serialized.as_bytes())?;
+        file.sync_all()?;
+
+        preserve_invalid_config(path, parent)?;
+        fs::rename(&temporary, path)?;
+        // Directory fsync is a Unix durability step. Windows cannot open a
+        // directory as a file, and NTFS does not need the extra flush.
+        #[cfg(unix)]
+        File::open(parent)?.sync_all()?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result.with_context(|| format!("Failed to write config file {}", path.display()))
+}
+
+fn preserve_invalid_config(path: &Path, parent: &Path) -> anyhow::Result<()> {
+    let raw = match fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    if serde_yml::from_str::<AppConfig>(&raw).is_ok() {
+        return Ok(());
+    }
+
+    let sequence = CONFIG_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let backup = parent.join(format!(
+        "config.yml.invalid-{}-{sequence}",
+        std::process::id()
+    ));
+    fs::copy(path, &backup)?;
+    set_private_file_permissions(&backup)?;
+    File::open(&backup)?.sync_all()?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn lock_config_writes(path: &Path) -> anyhow::Result<File> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let parent = path
+        .parent()
+        .context("Configuration path has no parent directory")?;
+    let lock_path = parent.join(".config.yml.lock");
+    let mut options = OpenOptions::new();
+    options.write(true).create(true).mode(0o600);
+    let file = options.open(&lock_path)?;
+    set_private_file_permissions(&lock_path)?;
+    let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
+    if result == -1 {
+        return Err(std::io::Error::last_os_error())
+            .with_context(|| format!("Failed to lock config file {}", path.display()));
+    }
+    Ok(file)
+}
+
+#[cfg(not(unix))]
+fn lock_config_writes(_path: &Path) -> anyhow::Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
+fn create_private_directory(path: &Path) -> anyhow::Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true).mode(0o700).create(path)?;
+    set_private_directory_permissions(path)
+}
+
+#[cfg(not(unix))]
+fn create_private_directory(path: &Path) -> anyhow::Result<()> {
+    fs::create_dir_all(path)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_private_directory_permissions(path: &Path) -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_private_file_permissions(path: &Path) -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_private_file_permissions(_path: &Path) -> anyhow::Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_private_file_mode(options: &mut OpenOptions) {
+    use std::os::unix::fs::OpenOptionsExt;
+    options.mode(0o600);
+}
+
+#[cfg(not(unix))]
+fn set_private_file_mode(_options: &mut OpenOptions) {}
+
+#[cfg(all(test, not(unix)))]
+mod windows_tests {
+    use super::*;
+
+    #[test]
+    fn capture_defaults_use_windows_friendly_modifiers() {
+        let config = AppConfig::default();
+        assert_eq!(config.shortcut_capture_menu, "Ctrl+Alt+Shift+M");
+        assert_eq!(config.shortcut_capture_area, "Ctrl+Alt+Shift+A");
+        assert_eq!(config.shortcut_capture_fullscreen, "Ctrl+Alt+Shift+F");
+    }
+
+    #[test]
+    fn saved_empty_quick_capture_is_not_migrated() {
+        let mut config = AppConfig {
+            shortcut_capture_menu: String::new(),
+            shortcut_capture_area: "Ctrl+Alt+A".into(),
+            ..Default::default()
+        };
+        assert!(!migrate_legacy_capture_shortcuts(&mut config, true));
+        assert!(config.shortcut_capture_menu.is_empty());
+
+        assert!(migrate_legacy_capture_shortcuts(&mut config, false));
+        assert_eq!(config.shortcut_capture_menu, "Ctrl+Alt+A");
+    }
+
+    #[test]
+    fn config_writes_land_in_a_temp_directory_on_windows() {
+        let dir = std::env::temp_dir().join(format!(
+            "apexshot-config-save-{}-{}",
+            std::process::id(),
+            CONFIG_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        let path = dir.join("config.yml");
+        let serialized = serde_yml::to_string(&AppConfig::default().sanitized()).unwrap();
+        write_config_atomically(&path, &serialized).expect("config write");
+        assert!(path.exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    fn temporary_config_path() -> PathBuf {
+        std::env::temp_dir()
+            .join(format!(
+                "apexshot-config-test-{}-{}",
+                std::process::id(),
+                CONFIG_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            ))
+            .join("config.yml")
+    }
+
+    #[test]
+    fn default_config_has_expected_video_fps() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.rec_video_fps, 1);
+    }
+
+    #[test]
+    fn config_write_is_atomic_private_and_preserves_settings_and_session_tokens() {
+        let path = temporary_config_path();
+        let config = AppConfig {
+            cloud_api_token: "test-access-token".into(),
+            cloud_refresh_token: "test-refresh-token".into(),
+            rec_video_fps: 2,
+            ..AppConfig::default()
+        };
+        let serialized = serde_yml::to_string(&config).unwrap();
+
+        write_config_atomically(&path, &serialized).unwrap();
+
+        let saved: AppConfig = serde_yml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(saved.cloud_api_token == config.cloud_api_token);
+        assert!(saved.cloud_refresh_token == config.cloud_refresh_token);
+        assert_eq!(saved.rec_video_fps, 2);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(path.parent().unwrap())
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o700
+            );
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn invalid_config_write_preserves_the_previous_file() {
+        let path = temporary_config_path();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let previous = "rec_video_fps: 2\n";
+        fs::write(&path, previous).unwrap();
+
+        assert!(write_config_atomically(&path, "[invalid yaml").is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), previous);
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn replacing_malformed_config_retains_a_private_recovery_copy() {
+        let path = temporary_config_path();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "cloud_api_token: [malformed\n").unwrap();
+        let serialized = serde_yml::to_string(&AppConfig::default()).unwrap();
+
+        write_config_atomically(&path, &serialized).unwrap();
+
+        let backup = fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .map(Result::unwrap)
+            .find(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("config.yml.invalid-")
+            })
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(backup.path()).unwrap(),
+            "cloud_api_token: [malformed\n"
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                backup.metadata().unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn image_export_defaults_keep_the_editor_open_and_preserve_the_source() {
+        let config = AppConfig::default();
+
+        assert!(!config.annotate_close_after_export);
+        assert!(!config.annotate_overwrite_original_image);
+    }
+
+    #[test]
+    fn legacy_config_defaults_new_image_export_preferences_safely() {
+        let loaded: AppConfig = serde_yml::from_str("rec_video_fps: 1\n").unwrap();
+
+        assert!(!loaded.annotate_close_after_export);
+        assert!(!loaded.annotate_overwrite_original_image);
+    }
+
+    #[test]
+    fn configs_containing_removed_keys_still_load() {
+        // `AppConfig` has no `deny_unknown_fields`, so a config written by an
+        // older build must still load after a field is removed.
+        let raw = r#"{
+            "preview_auto_close_seconds": 42,
+            "hide_desktop_icons_while_capturing": true,
+            "rec_video_format": 1,
+            "wallpaper_mode": "Custom",
+            "shortcut_capture_window": "Shift+Super+5",
+            "cloud_screenshot_quality": "Lossless",
+            "adv_filename_pattern": "Old",
+            "rec_video_fps": 3,
+            "start_at_login": true
+        }"#;
+
+        let config: AppConfig = serde_yml::from_str(raw).unwrap();
+
+        assert_eq!(config.rec_video_fps, 3);
+        assert!(config.start_at_login);
+        assert_eq!(
+            config.rec_filename_pattern,
+            "ApexShot Recording {Date} at {Time}"
+        );
+        assert_eq!(config.cloud_destination, "apexshot");
+    }
+
+    #[test]
+    fn default_config_has_public_cloud_backend_url() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.cloud_backend_url, DEFAULT_CLOUD_BACKEND_URL);
+        assert_eq!(
+            resolve_cloud_backend_url(&cfg),
+            DEFAULT_CLOUD_BACKEND_URL.trim_end_matches('/')
+        );
+    }
+
+    #[test]
+    fn resolve_cloud_backend_url_falls_back_when_empty() {
+        let cfg = AppConfig {
+            cloud_backend_url: String::new(),
+            ..AppConfig::default()
+        };
+        assert_eq!(
+            resolve_cloud_backend_url(&cfg),
+            DEFAULT_CLOUD_BACKEND_URL.trim_end_matches('/')
+        );
+    }
+
+    #[test]
+    fn ghost_cloud_account_without_token_is_cleared() {
+        let mut cfg = AppConfig {
+            cloud_user_email: "stranger@example.com".to_string(),
+            cloud_user_name: "Stranger".to_string(),
+            cloud_pro_plan: true,
+            cloud_plan_tier: "pro".to_string(),
+            cloud_api_token: String::new(),
+            cloud_backend_url: String::new(),
+            ..AppConfig::default()
+        };
+        assert!(apply_cloud_env_overrides_in_place(&mut cfg));
+        assert!(cfg.cloud_user_email.is_empty());
+        assert!(cfg.cloud_user_name.is_empty());
+        assert!(!cfg.cloud_pro_plan);
+        assert!(cfg.cloud_plan_tier.is_empty());
+        assert_eq!(cfg.cloud_backend_url, DEFAULT_CLOUD_BACKEND_URL);
+        assert!(!is_cloud_logged_in(&cfg));
+    }
+
+    #[test]
+    fn cloud_plan_tier_round_trips_through_yaml_and_normalizes() {
+        let original = AppConfig {
+            cloud_api_token: "tok".to_string(),
+            cloud_plan_tier: "  Team ".to_string(),
+            cloud_pro_plan: true,
+            ..AppConfig::default()
+        };
+
+        let yaml = serde_yml::to_string(&original.clone().sanitized()).unwrap();
+        let loaded: AppConfig = serde_yml::from_str::<AppConfig>(&yaml).unwrap().sanitized();
+
+        assert_eq!(loaded.cloud_plan_tier, "team");
+        assert!(loaded.cloud_pro_plan);
+    }
+
+    #[test]
+    fn config_without_cloud_plan_tier_defaults_to_empty() {
+        let cfg: AppConfig = serde_yml::from_str("cloud_api_token: tok\n").unwrap();
+        assert!(cfg.cloud_plan_tier.is_empty());
+    }
+
+    #[test]
+    fn cloud_session_requires_token() {
+        let with_email_only = AppConfig {
+            cloud_user_email: "a@b.c".to_string(),
+            cloud_api_token: String::new(),
+            ..AppConfig::default()
+        };
+        assert!(!is_cloud_logged_in(&with_email_only));
+
+        let with_token = AppConfig {
+            cloud_api_token: "tok".to_string(),
+            ..AppConfig::default()
+        };
+        assert!(is_cloud_logged_in(&with_token));
+    }
+
+    #[test]
+    fn default_screenshot_timer_is_off() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.screenshot_timer_interval, 0);
+    }
+
+    #[test]
+    fn default_ui_theme_follows_the_system() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.ui_theme, DEFAULT_UI_THEME);
+        assert_eq!(cfg.forced_dark_theme(), None);
+    }
+
+    #[test]
+    fn sanitize_ui_theme_keeps_known_values_and_falls_back_to_system() {
+        let dark = AppConfig {
+            ui_theme: "Dark".into(),
+            ..AppConfig::default()
+        }
+        .sanitized();
+        assert_eq!(dark.ui_theme, "dark");
+        assert_eq!(dark.forced_dark_theme(), Some(true));
+
+        let light = AppConfig {
+            ui_theme: "light".into(),
+            ..AppConfig::default()
+        }
+        .sanitized();
+        assert_eq!(light.forced_dark_theme(), Some(false));
+
+        let unknown = AppConfig {
+            ui_theme: "sepia".into(),
+            ..AppConfig::default()
+        }
+        .sanitized();
+        assert_eq!(unknown.ui_theme, DEFAULT_UI_THEME);
+    }
+
+    #[test]
+    fn sanitize_keeps_recording_resolution_inside_the_option_table() {
+        for index in 0..crate::recording::VIDEO_MAX_RES_OPTION_COUNT as u8 {
+            let kept = AppConfig {
+                rec_video_max_res: index,
+                ..AppConfig::default()
+            }
+            .sanitized();
+            assert_eq!(kept.rec_video_max_res, index);
+        }
+
+        let out_of_range = AppConfig {
+            rec_video_max_res: 99,
+            ..AppConfig::default()
+        }
+        .sanitized();
+        assert_eq!(out_of_range.rec_video_max_res, 0);
+    }
+
+    #[test]
+    fn sanitize_keeps_video_fps_inside_the_option_table() {
+        for index in 0..crate::recording::VIDEO_FPS_OPTION_COUNT as u8 {
+            let kept = AppConfig {
+                rec_video_fps: index,
+                ..AppConfig::default()
+            }
+            .sanitized();
+            assert_eq!(kept.rec_video_fps, index);
+        }
+
+        // Unknown values read as 30 fps, the table default.
+        let out_of_range = AppConfig {
+            rec_video_fps: 99,
+            ..AppConfig::default()
+        }
+        .sanitized();
+        assert_eq!(out_of_range.rec_video_fps, 1);
+    }
+
+    #[test]
+    fn sanitize_normalizes_sound_and_export_location() {
+        let cfg = AppConfig {
+            shutter_sound: "Unknown".into(),
+            export_location: "  /tmp/apexshot  ".into(),
+            ..AppConfig::default()
+        }
+        .sanitized();
+
+        assert_eq!(cfg.shutter_sound, DEFAULT_SHUTTER_SOUND);
+        assert_eq!(cfg.export_location, "/tmp/apexshot");
+    }
+
+    #[test]
+    fn sanitize_migrates_legacy_shared_export_location() {
+        let cfg = AppConfig {
+            export_location: "  /tmp/shared  ".into(),
+            ..AppConfig::default()
+        }
+        .sanitized();
+
+        assert_eq!(cfg.screenshot_export_location, "/tmp/shared");
+        assert_eq!(cfg.video_export_location, "/tmp/shared");
+    }
+
+    #[test]
+    fn sanitize_preserves_explicit_per_feature_export_locations() {
+        let cfg = AppConfig {
+            export_location: "/tmp/shared".into(),
+            screenshot_export_location: " /tmp/screens ".into(),
+            video_export_location: " /tmp/video ".into(),
+            ..AppConfig::default()
+        }
+        .sanitized();
+
+        assert_eq!(cfg.screenshot_export_location, "/tmp/screens");
+        assert_eq!(cfg.video_export_location, "/tmp/video");
+    }
+
+    #[test]
+    fn sanitize_keeps_at_least_one_screenshot_after_capture_action_enabled() {
+        let cfg = AppConfig {
+            after_capture_show_quick_access: false,
+            after_capture_copy_file_to_clipboard: false,
+            after_capture_save: false,
+            after_capture_open_annotate: false,
+            ..AppConfig::default()
+        }
+        .sanitized();
+
+        assert!(cfg.after_capture_show_quick_access);
+    }
+
+    #[test]
+    fn sanitize_makes_open_annotate_disable_quick_access() {
+        let cfg = AppConfig {
+            after_capture_show_quick_access: true,
+            after_capture_open_annotate: true,
+            ..AppConfig::default()
+        }
+        .sanitized();
+
+        assert!(cfg.after_capture_open_annotate);
+        assert!(!cfg.after_capture_show_quick_access);
+    }
+
+    #[test]
+    fn sanitize_makes_open_video_editor_disable_recording_quick_access() {
+        let cfg = AppConfig {
+            rec_after_capture_show_quick_access: true,
+            rec_video_open_editor: true,
+            ..AppConfig::default()
+        }
+        .sanitized();
+
+        assert!(cfg.rec_video_open_editor);
+        assert!(!cfg.rec_after_capture_show_quick_access);
+    }
+
+    #[test]
+    fn save_last_capture_shortcut_is_optional_by_default_and_round_trips() {
+        assert!(AppConfig::default().shortcut_save_last_capture.is_empty());
+
+        let original = AppConfig {
+            shortcut_save_last_capture: "Ctrl+Alt+S".into(),
+            ..AppConfig::default()
+        };
+        let yaml = serde_yml::to_string(&original).expect("config should serialize");
+        let loaded: AppConfig = serde_yml::from_str(&yaml).expect("config should deserialize");
+
+        assert_eq!(
+            loaded.shortcut_save_last_capture,
+            original.shortcut_save_last_capture
+        );
+    }
+
+    #[test]
+    fn screenshot_settings_round_trip_preserves_retained_fields() {
+        let original = AppConfig {
+            screenshot_export_location: "/tmp/screens".into(),
+            screenshot_format: "JPEG".into(),
+            screenshot_freeze_screen: false,
+            screenshot_crosshair_mode: "Crosshair".into(),
+            screenshot_show_magnifier: true,
+            screenshot_timer_interval: 3,
+            screenshot_show_cursor: false,
+            ..AppConfig::default()
+        };
+
+        let yaml = serde_yml::to_string(&original).expect("config should serialize");
+        let loaded: AppConfig = serde_yml::from_str(&yaml).expect("config should deserialize");
+
+        assert_eq!(
+            loaded.screenshot_export_location,
+            original.screenshot_export_location
+        );
+        assert_eq!(loaded.screenshot_format, original.screenshot_format);
+        assert_eq!(
+            loaded.screenshot_freeze_screen,
+            original.screenshot_freeze_screen
+        );
+        assert_eq!(
+            loaded.screenshot_crosshair_mode,
+            original.screenshot_crosshair_mode
+        );
+        assert_eq!(
+            loaded.screenshot_show_magnifier,
+            original.screenshot_show_magnifier
+        );
+        assert_eq!(
+            loaded.screenshot_timer_interval,
+            original.screenshot_timer_interval
+        );
+        assert_eq!(
+            loaded.screenshot_show_cursor,
+            original.screenshot_show_cursor
+        );
+    }
+
+    #[test]
+    fn annotate_settings_round_trip_through_yaml() {
+        let original = AppConfig {
+            annotate_inverse_arrow: true,
+            annotate_smooth_drawing: false,
+            annotate_draw_shadow: false,
+            annotate_auto_expand: true,
+            annotate_show_color_names: true,
+            annotate_always_on_top: true,
+            annotate_close_after_export: true,
+            annotate_overwrite_original_image: true,
+            ..AppConfig::default()
+        };
+
+        let yaml = serde_yml::to_string(&original).unwrap();
+        let loaded: AppConfig = serde_yml::from_str(&yaml).unwrap();
+
+        assert_eq!(
+            loaded.annotate_inverse_arrow,
+            original.annotate_inverse_arrow
+        );
+        assert_eq!(
+            loaded.annotate_smooth_drawing,
+            original.annotate_smooth_drawing
+        );
+        assert_eq!(loaded.annotate_draw_shadow, original.annotate_draw_shadow);
+        assert_eq!(loaded.annotate_auto_expand, original.annotate_auto_expand);
+        assert_eq!(
+            loaded.annotate_show_color_names,
+            original.annotate_show_color_names
+        );
+        assert_eq!(
+            loaded.annotate_always_on_top,
+            original.annotate_always_on_top
+        );
+        assert_eq!(
+            loaded.annotate_close_after_export,
+            original.annotate_close_after_export
+        );
+        assert_eq!(
+            loaded.annotate_overwrite_original_image,
+            original.annotate_overwrite_original_image
+        );
+    }
+
+    #[test]
+    fn motion_confirm_skips_round_trip_through_yaml() {
+        let original = AppConfig {
+            skip_static_to_motion_confirm: true,
+            skip_motion_to_static_confirm: true,
+            ..AppConfig::default()
+        };
+        let yaml = serde_yml::to_string(&original).unwrap();
+        let loaded: AppConfig = serde_yml::from_str(&yaml).unwrap();
+        assert!(loaded.skip_static_to_motion_confirm);
+        assert!(loaded.skip_motion_to_static_confirm);
+    }
+
+    #[test]
+    fn legacy_annotate_show_dock_icon_key_is_ignored_on_load() {
+        let loaded: AppConfig =
+            serde_yml::from_str("annotate_always_on_top: true\nannotate_show_dock_icon: false\n")
+                .unwrap();
+
+        assert!(loaded.annotate_always_on_top);
+    }
+
+    #[test]
+    fn recording_settings_have_correct_defaults() {
+        let cfg = AppConfig::default();
+        assert!(cfg.rec_controls);
+        assert!(cfg.rec_hidpi);
+        assert!(cfg.rec_notifications);
+        assert!(cfg.rec_cursor);
+        assert!(!cfg.rec_remember_selection);
+        assert!(cfg.rec_remember_export_folder);
+        assert!(cfg.last_video_export_dir.is_empty());
+        assert!(cfg.rec_dim_screen);
+        assert!(cfg.rec_countdown);
+        assert!(cfg.last_selection_x.is_none());
+    }
+
+    #[test]
+    fn video_editor_export_dir_respects_remember_toggle() {
+        let fallback = PathBuf::from("/tmp/source");
+        let mut cfg = AppConfig::default();
+        assert_eq!(cfg.video_editor_export_dir(&fallback), fallback);
+
+        let last = std::env::temp_dir();
+        cfg.last_video_export_dir = last.to_string_lossy().into_owned();
+        assert_eq!(cfg.video_editor_export_dir(&fallback), last);
+
+        cfg.rec_remember_export_folder = false;
+        assert_eq!(cfg.video_editor_export_dir(&fallback), fallback);
+        assert!(!cfg.remember_video_export_dir(&last.join("clip.mp4")));
+
+        cfg.rec_remember_export_folder = true;
+        cfg.last_video_export_dir.clear();
+        assert!(cfg.remember_video_export_dir(&last.join("clip.mp4")));
+        assert_eq!(cfg.last_video_export_dir, last.to_string_lossy());
+    }
+
+    #[test]
+    fn motion_export_dir_prefers_remembered_then_recordings_folder() {
+        let fallback = PathBuf::from("/tmp/pictures");
+        let mut cfg = AppConfig::default();
+        // No remember folder, no configured recordings folder: the caller's
+        // fallback (XDG Videos) wins, never the still's folder.
+        assert_eq!(cfg.motion_export_dir(&fallback), fallback);
+
+        cfg.video_export_location = " /mnt/clips ".into();
+        assert_eq!(
+            cfg.motion_export_dir(&fallback),
+            PathBuf::from("/mnt/clips")
+        );
+
+        let last = std::env::temp_dir();
+        cfg.last_video_export_dir = last.to_string_lossy().into_owned();
+        assert_eq!(cfg.motion_export_dir(&fallback), last);
+
+        cfg.rec_remember_export_folder = false;
+        assert_eq!(
+            cfg.motion_export_dir(&fallback),
+            PathBuf::from("/mnt/clips")
+        );
+    }
+
+    #[test]
+    fn recording_overlay_settings_have_expected_defaults() {
+        let cfg = AppConfig::default();
+        assert!(!cfg.rec_mic);
+        assert!(!cfg.rec_speaker);
+    }
+
+    #[test]
+    fn webcam_layer_defaults_to_a_medium_circle_in_the_bottom_right() {
+        let cfg = AppConfig::default();
+        assert!(!cfg.rec_webcam_enabled);
+        assert!(cfg.rec_webcam_device.is_empty());
+        assert_eq!(cfg.rec_webcam_size, 1);
+        assert_eq!(cfg.rec_webcam_shape, 0);
+        assert!(!cfg.rec_webcam_flip);
+        assert_eq!(cfg.rec_webcam_rel_x, 1.0);
+        assert_eq!(cfg.rec_webcam_rel_y, 0.0);
+    }
+
+    #[test]
+    fn webcam_layer_settings_round_trip_through_yaml() {
+        let original = AppConfig {
+            rec_webcam_enabled: true,
+            rec_webcam_device: "Integrated Camera".to_string(),
+            rec_webcam_size: 3,
+            rec_webcam_shape: 2,
+            rec_webcam_flip: true,
+            rec_webcam_rel_x: 0.25,
+            rec_webcam_rel_y: 0.75,
+            ..AppConfig::default()
+        };
+
+        let yaml = serde_yml::to_string(&original).unwrap();
+        let loaded: AppConfig = serde_yml::from_str(&yaml).unwrap();
+
+        assert!(loaded.rec_webcam_enabled);
+        assert_eq!(loaded.rec_webcam_device, "Integrated Camera");
+        assert_eq!(loaded.rec_webcam_size, 3);
+        assert_eq!(loaded.rec_webcam_shape, 2);
+        assert!(loaded.rec_webcam_flip);
+        assert_eq!(loaded.rec_webcam_rel_x, 0.25);
+        assert_eq!(loaded.rec_webcam_rel_y, 0.75);
+    }
+
+    #[test]
+    fn a_hand_edited_webcam_layer_is_clamped_to_the_tables() {
+        let yaml = "rec_webcam_size: 9\nrec_webcam_shape: 7\nrec_webcam_rel_x: 4.0\nrec_webcam_rel_y: -2.0\n";
+        let cfg: AppConfig = serde_yml::from_str::<AppConfig>(yaml).unwrap().sanitized();
+        assert_eq!(cfg.rec_webcam_size, 3);
+        assert_eq!(cfg.rec_webcam_shape, 3);
+        assert_eq!(cfg.rec_webcam_rel_x, 1.0);
+        assert_eq!(cfg.rec_webcam_rel_y, 0.0);
+    }
+
+    #[test]
+    fn recording_overlay_settings_round_trip_through_yaml() {
+        let original = AppConfig {
+            rec_mic: true,
+            rec_speaker: true,
+            ..AppConfig::default()
+        };
+
+        let yaml = serde_yml::to_string(&original).unwrap();
+        let loaded: AppConfig = serde_yml::from_str(&yaml).unwrap();
+
+        assert_eq!(loaded.rec_mic, original.rec_mic);
+        assert_eq!(loaded.rec_speaker, original.rec_speaker);
+    }
+
+    #[test]
+    fn config_without_recording_settings_uses_defaults() {
+        let yaml = "rec_video_fps: 1\nstart_at_login: false\n";
+        let cfg: AppConfig = serde_yml::from_str(yaml).unwrap();
+        assert!(!cfg.rec_mic);
+        assert!(!cfg.rec_speaker);
+        assert!(cfg.rec_controls);
+        assert!(cfg.rec_cursor);
+        assert!(cfg.rec_hidpi);
+    }
+
+    #[test]
+    fn automatic_zoom_on_import_defaults_on_when_the_key_is_missing() {
+        let yaml = "rec_video_fps: 1\n";
+        let cfg: AppConfig = serde_yml::from_str(yaml).unwrap();
+        assert!(cfg.rec_video_auto_zoom_on_import);
+    }
+
+    #[test]
+    fn automatic_zoom_on_import_survives_a_yaml_round_trip_when_off() {
+        let original = AppConfig {
+            rec_video_auto_zoom_on_import: false,
+            ..AppConfig::default()
+        };
+
+        let yaml = serde_yml::to_string(&original).unwrap();
+        let loaded: AppConfig = serde_yml::from_str(&yaml).unwrap();
+
+        assert!(!loaded.rec_video_auto_zoom_on_import);
+    }
+
+    #[test]
+    fn capture_keystrokes_defaults_off_when_the_key_is_missing() {
+        let yaml = "rec_video_fps: 1\n";
+        let cfg: AppConfig = serde_yml::from_str(yaml).unwrap();
+        assert!(!cfg.rec_capture_keystrokes);
+    }
+
+    #[test]
+    fn capture_keystrokes_survives_a_yaml_round_trip_when_on() {
+        let original = AppConfig {
+            rec_capture_keystrokes: true,
+            ..AppConfig::default()
+        };
+
+        let yaml = serde_yml::to_string(&original).unwrap();
+        let loaded: AppConfig = serde_yml::from_str(&yaml).unwrap();
+
+        assert!(loaded.rec_capture_keystrokes);
+    }
+
+    #[test]
+    fn default_video_preset_is_unset_when_the_key_is_missing() {
+        let yaml = "rec_video_fps: 1\nrec_video_open_editor: true\n";
+        let cfg: AppConfig = serde_yml::from_str(yaml).unwrap();
+
+        assert!(cfg.rec_video_default_preset.is_none());
+    }
+
+    #[test]
+    fn default_video_preset_survives_a_sanitized_save_round_trip() {
+        let original = AppConfig {
+            rec_video_default_preset: Some("bubble_zoom-v2".to_string()),
+            ..AppConfig::default()
+        };
+
+        let yaml = serde_yml::to_string(&original.clone().sanitized()).unwrap();
+        let loaded = serde_yml::from_str::<AppConfig>(&yaml).unwrap().sanitized();
+
+        assert_eq!(
+            loaded.rec_video_default_preset.as_deref(),
+            Some("bubble_zoom-v2")
+        );
+    }
+
+    #[test]
+    fn default_video_preset_stays_unset_through_a_saved_config() {
+        let yaml = serde_yml::to_string(&AppConfig::default().sanitized()).unwrap();
+        let cfg = serde_yml::from_str::<AppConfig>(&yaml).unwrap().sanitized();
+
+        assert!(cfg.rec_video_default_preset.is_none());
+    }
+
+    #[test]
+    fn video_preset_ids_that_could_leave_the_preset_folder_are_dropped() {
+        let too_long = "a".repeat(VIDEO_PRESET_ID_MAX_BYTES + 1);
+        for invalid in [
+            "",
+            "../presets",
+            "presets/../other",
+            "preset name",
+            "preset.json",
+            "naïve",
+            too_long.as_str(),
+        ] {
+            let cfg = AppConfig {
+                rec_video_default_preset: Some(invalid.to_string()),
+                ..AppConfig::default()
+            }
+            .sanitized();
+
+            assert!(
+                cfg.rec_video_default_preset.is_none(),
+                "{invalid:?} survived sanitizing"
+            );
+        }
+    }
+
+    #[test]
+    fn video_preset_ids_keep_the_characters_a_stored_preset_uses() {
+        let longest = "a".repeat(VIDEO_PRESET_ID_MAX_BYTES);
+        for valid in ["Interview", "bubble_zoom-v2", longest.as_str()] {
+            let cfg = AppConfig {
+                rec_video_default_preset: Some(valid.to_string()),
+                ..AppConfig::default()
+            }
+            .sanitized();
+
+            assert_eq!(cfg.rec_video_default_preset.as_deref(), Some(valid));
+        }
+    }
+
+    #[test]
+    fn sanitize_quick_access_position_rejects_unsupported_values() {
+        let top = AppConfig {
+            quick_access_position: "Top".into(),
+            ..AppConfig::default()
+        }
+        .sanitized();
+        assert_eq!(top.quick_access_position, "Left");
+
+        let right = AppConfig {
+            quick_access_position: "Right".into(),
+            ..AppConfig::default()
+        }
+        .sanitized();
+        assert_eq!(right.quick_access_position, "Right");
+    }
+
+    #[test]
+    fn sanitize_preserves_smallest_quick_access_overlay_size() {
+        let cfg = AppConfig {
+            quick_access_overlay_size: 0.5,
+            ..AppConfig::default()
+        }
+        .sanitized();
+
+        assert_eq!(cfg.quick_access_overlay_size, 0.5);
+    }
+
+    #[test]
+    fn legacy_quick_access_overlay_size_migrates_only_for_old_schema() {
+        let legacy_raw = r#"
+rec_video_fps: 1
+quick_access_overlay_size: 0.5
+"#;
+        let legacy_cfg = serde_yml::from_str::<AppConfig>(legacy_raw)
+            .unwrap()
+            .sanitized();
+        assert!(should_migrate_legacy_quick_access_overlay_size(
+            legacy_raw,
+            &legacy_cfg
+        ));
+
+        let current_raw = r#"
+rec_video_fps: 1
+quick_access_position: Right
+quick_access_overlay_size: 0.5
+"#;
+        let current_cfg = serde_yml::from_str::<AppConfig>(current_raw)
+            .unwrap()
+            .sanitized();
+        assert!(!should_migrate_legacy_quick_access_overlay_size(
+            current_raw,
+            &current_cfg
+        ));
+    }
+
+    #[test]
+    fn sanitize_clamps_quick_access_overlay_size() {
+        let low = AppConfig {
+            quick_access_overlay_size: -10.0,
+            ..AppConfig::default()
+        }
+        .sanitized();
+        assert_eq!(low.quick_access_overlay_size, 0.5);
+
+        let high = AppConfig {
+            quick_access_overlay_size: 10.0,
+            ..AppConfig::default()
+        }
+        .sanitized();
+        assert_eq!(high.quick_access_overlay_size, 1.5);
+    }
+
+    #[test]
+    fn shortcut_defaults_include_crosshair_capture() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.shortcut_capture_crosshair, "Ctrl+Alt+X");
+    }
+
+    #[test]
+    fn config_yaml_round_trip_preserves_crosshair_shortcut() {
+        let original = AppConfig {
+            shortcut_capture_crosshair: "Alt+Print".into(),
+            ..AppConfig::default()
+        };
+
+        let yaml = serde_yml::to_string(&original).unwrap();
+        let loaded: AppConfig = serde_yml::from_str(&yaml).unwrap();
+
+        assert_eq!(
+            loaded.shortcut_capture_crosshair,
+            original.shortcut_capture_crosshair
+        );
+    }
+
+    #[test]
+    fn shortcut_defaults_include_quick_capture_and_recording_stop() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.shortcut_capture_menu, "Shift+Super+5");
+        assert_eq!(cfg.shortcut_capture_area, "Shift+Super+4");
+        assert_eq!(cfg.shortcut_open_recording_ui, "");
+        assert_eq!(cfg.shortcut_record_screen, "");
+        assert_eq!(cfg.shortcut_recording_stop_save, "Ctrl+Alt+Shift+S");
+    }
+
+    #[test]
+    fn legacy_area_shortcut_migrates_to_quick_capture() {
+        let mut cfg = AppConfig {
+            shortcut_capture_menu: String::new(),
+            shortcut_capture_area: "Ctrl+Alt+A".into(),
+            shortcut_open_recording_ui: "Ctrl+Alt+R".into(),
+            ..AppConfig::default()
+        };
+
+        assert!(migrate_legacy_capture_shortcuts(&mut cfg, false));
+        assert_eq!(cfg.shortcut_capture_menu, "Ctrl+Alt+A");
+        assert_eq!(cfg.shortcut_capture_area, "Ctrl+Alt+A");
+        assert!(cfg.shortcut_open_recording_ui.is_empty());
+    }
+
+    #[test]
+    fn explicitly_disabled_quick_capture_is_not_migrated() {
+        let mut cfg = AppConfig {
+            shortcut_capture_menu: String::new(),
+            shortcut_capture_area: "Ctrl+Alt+A".into(),
+            ..Default::default()
+        };
+        assert!(!migrate_legacy_capture_shortcuts(&mut cfg, true));
+        assert!(cfg.shortcut_capture_menu.is_empty());
+    }
+
+    #[test]
+    fn config_yaml_round_trip_preserves_recording_shortcuts() {
+        let original = AppConfig {
+            shortcut_capture_menu: "Alt+M".into(),
+            shortcut_open_recording_ui: "Alt+R".into(),
+            shortcut_record_screen: "Ctrl+Shift+R".into(),
+            shortcut_recording_stop_save: "Alt+S".into(),
+            ..AppConfig::default()
+        };
+
+        let yaml = serde_yml::to_string(&original).unwrap();
+        let loaded: AppConfig = serde_yml::from_str(&yaml).unwrap();
+
+        assert_eq!(loaded.shortcut_capture_menu, original.shortcut_capture_menu);
+        assert_eq!(
+            loaded.shortcut_open_recording_ui,
+            original.shortcut_open_recording_ui
+        );
+        assert_eq!(
+            loaded.shortcut_record_screen,
+            original.shortcut_record_screen
+        );
+        assert_eq!(
+            loaded.shortcut_recording_stop_save,
+            original.shortcut_recording_stop_save
+        );
+    }
+
+    #[test]
+    fn sanitize_clamps_cloud_destination_to_known_values() {
+        let unknown = AppConfig {
+            cloud_destination: "imgur".into(),
+            ..AppConfig::default()
+        }
+        .sanitized();
+        assert_eq!(unknown.cloud_destination, "apexshot");
+
+        let apexshot = AppConfig {
+            cloud_destination: "apexshot".into(),
+            ..AppConfig::default()
+        }
+        .sanitized();
+        assert_eq!(apexshot.cloud_destination, "apexshot");
+
+        let xbackbone = AppConfig {
+            cloud_destination: "xbackbone".into(),
+            ..AppConfig::default()
+        }
+        .sanitized();
+        assert_eq!(xbackbone.cloud_destination, "xbackbone");
+    }
+
+    #[test]
+    fn sanitize_trims_xbackbone_fields() {
+        let cfg = AppConfig {
+            xbackbone_url: "  https://xb.example  ".into(),
+            xbackbone_api_token: "  tok123  ".into(),
+            ..AppConfig::default()
+        }
+        .sanitized();
+
+        assert_eq!(cfg.xbackbone_url, "https://xb.example");
+        assert_eq!(cfg.xbackbone_api_token, "tok123");
+    }
+
+    #[test]
+    fn xbackbone_fields_round_trip_through_yaml() {
+        let original = AppConfig {
+            cloud_destination: "xbackbone".into(),
+            xbackbone_url: "https://xb.example".into(),
+            xbackbone_api_token: "secret-token".into(),
+            ..AppConfig::default()
+        };
+
+        let yaml = serde_yml::to_string(&original).unwrap();
+        let loaded: AppConfig = serde_yml::from_str(&yaml).unwrap();
+
+        assert_eq!(loaded.cloud_destination, original.cloud_destination);
+        assert_eq!(loaded.xbackbone_url, original.xbackbone_url);
+        assert_eq!(loaded.xbackbone_api_token, original.xbackbone_api_token);
+    }
+
+    #[test]
+    fn default_cloud_destination_is_apexshot() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.cloud_destination, "apexshot");
+        assert!(cfg.xbackbone_url.is_empty());
+        assert!(cfg.xbackbone_api_token.is_empty());
+    }
+
+    #[test]
+    fn parse_xbackbone_config_file_reads_url_and_token() {
+        let content =
+            "# XBackBone CLI config\nXBB_URL=https://files.example.com\nXBB_TOKEN=abc-123\n";
+        let (url, token) = parse_xbackbone_config_file(content).expect("parsed");
+        assert_eq!(url, "https://files.example.com");
+        assert_eq!(token, "abc-123");
+    }
+
+    #[test]
+    fn parse_xbackbone_config_file_strips_surrounding_quotes() {
+        let content = "XBB_URL=\"https://files.example.com\"\nXBB_TOKEN=\"abc-123\"\n";
+        let (url, token) = parse_xbackbone_config_file(content).expect("parsed");
+        assert_eq!(url, "https://files.example.com");
+        assert_eq!(token, "abc-123");
+    }
+
+    #[test]
+    fn parse_xbackbone_config_file_ignores_comments_and_blank_lines() {
+        let content =
+            "\n# a comment\n\nXBB_URL=https://files.example.com\n# mid comment\nXBB_TOKEN=tok\n";
+        let (url, token) = parse_xbackbone_config_file(content).expect("parsed");
+        assert_eq!(url, "https://files.example.com");
+        assert_eq!(token, "tok");
+    }
+
+    #[test]
+    fn parse_xbackbone_config_file_returns_none_when_a_value_is_missing() {
+        assert!(parse_xbackbone_config_file("XBB_URL=https://files.example.com\n").is_none());
+        assert!(parse_xbackbone_config_file("XBB_TOKEN=tok\n").is_none());
+        assert!(parse_xbackbone_config_file("").is_none());
+    }
+
+    #[test]
+    fn parse_xbackbone_config_file_ignores_empty_values() {
+        let content = "XBB_URL=\nXBB_TOKEN=\n";
+        assert!(parse_xbackbone_config_file(content).is_none());
+    }
+}

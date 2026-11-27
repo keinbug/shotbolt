@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: CC0-1.0 -->
+<component type="desktop-application">
+  <id>org.apexshot.ApexShot</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>ApexShot</name>
+  <summary>Capture and annotate your screen</summary>
+  <developer id="org.apexshot">
+    <name>codegoddy</name>
+  </developer>
+  <description>
+    <p>ApexShot captures screenshots and screen recordings on Linux with Wayland portals and PipeWire support.</p>
+    <p>Annotate captures, extract text with OCR, scan QR codes, and share results from one desktop application.</p>
+    <p>This Flatpak build uses desktop portals for capture and recording, includes its capture controls and OCR tools, and leaves telemetry off by default. Optional GNOME integration uses a separately installed host extension.</p>
+  </description>
+  <categories>
+    <category>Graphics</category>
+    <category>Photography</category>
+  </categories>
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-info">mild</content_attribute>
+  </content_rating>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/apex-shot/apexshot/ecb5aad57cff86e3bb805e5638f5774e5ed78334/media/image-editor.png</image>
+      <caption>Annotate a screenshot before you share it</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/apex-shot/apexshot/ecb5aad57cff86e3bb805e5638f5774e5ed78334/media/video-editor.png</image>
+      <caption>Trim a recording and add automatic zooms</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/apex-shot/apexshot/ecb5aad57cff86e3bb805e5638f5774e5ed78334/media/settings.png</image>
+      <caption>Configure capture and recording behaviour</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/apex-shot/apexshot/ecb5aad57cff86e3bb805e5638f5774e5ed78334/media/history.png</image>
+      <caption>Browse your screenshots, recordings and edits</caption>
+    </screenshot>
+  </screenshots>
+  <url type="homepage">https://apexshot.org/</url>
+  <url type="bugtracker">https://github.com/apex-shot/apexshot/issues</url>
+  <url type="vcs-browser">https://github.com/apex-shot/apexshot</url>
+  <url type="donation">https://apexshot.org/pricing</url>
+  <launchable type="desktop-id">org.apexshot.ApexShot.desktop</launchable>
+  <provides>
+    <binary>apexshot</binary>
+  </provides>
+  <releases>
+    <release version="0.3.2" date="2026-11-25">
+      <description>
+        <p>Mic and Speaker device menus with live levels on the recording toolbar; recording one app's sound, every app, or no system sound; faster downloads and updates from ApexShot's own download servers; and recordings started without the controls bar can be stopped from the tray or the command line.</p>
+      </description>
+    </release>
+    <release version="0.3.1" date="2026-11-23">
+      <description>
+        <p>ApexShot on X11 desktops such as Cinnamon, with scrolling capture; screen recording on Fedora with cursor, clicks and Auto Zoom on KDE Plasma; look presets and a single Hide cursor switch in the video editor; three free Studio exports and one-step Studio activation; and clearer Cloud limit messages.</p>
+      </description>
+    </release>
+    <release version="0.3.0" date="2026-11-19">
+      <description>
+        <p>ApexShot for Windows in beta; redesigned Linux image and video editors with the zoom camera, compact timelines, recording sound and keystroke captions; upload progress and automatic saving in the editors; and a standalone update window.</p>
+      </description>
+    </release>
+    <release version="0.2.36" date="2026-10-19">
+      <description>
+        <p>Offline neural enhancement for small captures in Studio exports, Motion exports that share the editor preview's framing and colour, and signed offline Studio activation with update eligibility.</p>
+      </description>
+    </release>
+    <release version="0.2.35" date="2026-09-07">
+      <description>
+        <p>Video editor redesign with crop, clips, cursor, and auto-zoom, plus in-app update notifications and UI localization.</p>
+      </description>
+    </release>
+    <release version="0.2.34" date="2026-08-03">
+      <description>
+        <p>Initial portal-only Flatpak packaging work: Flatpak feature flag, host-escape gates, Screenshot/ScreenCast portals, telemetry opt-in.</p>
+      </description>
+    </release>
+  </releases>
+</component>

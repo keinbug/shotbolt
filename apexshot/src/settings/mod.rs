@@ -1,0 +1,951 @@
+use crate::config::load_config;
+use crate::i18n::{self, t};
+use gtk4::{
+    prelude::*, Align, Application, ApplicationWindow, Box as GtkBox, Button, FileChooserAction,
+    FileChooserNative, Image, Label, Orientation, Overlay as GtkOverlay, ResponseType,
+    ScrolledWindow,
+};
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+use std::time::Duration;
+
+thread_local! {
+    /// The open Settings window's Cloud page, so a `cloud/connect` link can
+    /// present it and start the same flow as its own Connect button.
+    static CLOUD_CONNECT_TARGET: RefCell<Option<CloudConnectTarget>> = const { RefCell::new(None) };
+}
+
+#[derive(Clone)]
+struct CloudConnectTarget {
+    stack: gtk4::glib::WeakRef<gtk4::Stack>,
+    connect_btn: gtk4::glib::WeakRef<Button>,
+}
+
+mod about;
+mod account;
+mod actions;
+mod advanced;
+mod after_capture;
+mod annotate;
+mod autosave;
+pub(crate) mod cloud;
+mod general;
+mod quick_access;
+mod recording;
+mod screenshots;
+pub(crate) mod select;
+mod shortcuts;
+mod studio;
+mod theme_picker;
+pub(crate) mod ui_support;
+mod usage;
+pub(crate) mod windowing;
+
+/// Top inset for page content. The Windows surface removes the page-title row,
+/// so the first section needs only a hairline of breathing room.
+pub(crate) const PAGE_TOP_MARGIN: i32 = if cfg!(target_os = "windows") { 4 } else { 20 };
+
+use self::{
+    actions::{install_checkbox_behaviors, save_settings, SaveInputs},
+    after_capture::build_after_capture_section,
+    annotate::build_annotate_section,
+    general::build_general_section,
+    quick_access::build_quick_access_section,
+    screenshots::build_screenshots_section,
+    ui_support::{install_settings_css, traffic_light_button},
+    windowing::{
+        install_edge_resize, install_window_drag, prefers_dark_glass_theme,
+        prefers_reduced_transparency,
+    },
+};
+
+/// Short, user-facing summary of a save failure (full chain goes to stderr).
+fn format_save_error(err: &anyhow::Error) -> String {
+    const MAX_LEN: usize = 160;
+    let root = err
+        .chain()
+        .last()
+        .map(|e| e.to_string())
+        .unwrap_or_else(|| err.to_string());
+    let compact = root.split_whitespace().collect::<Vec<_>>().join(" ");
+    if compact.chars().count() <= MAX_LEN {
+        compact
+    } else {
+        let truncated: String = compact.chars().take(MAX_LEN.saturating_sub(1)).collect();
+        format!("{truncated}…")
+    }
+}
+
+/// Show the in-window settings toast.
+///
+/// The label stays mapped (`visible=true`) and is toggled via opacity so the first
+/// reveal always has a real allocation — `set_visible(false)` on a GtkOverlay child
+/// often needed a second toggle before the pill painted.
+///
+/// `auto_hide` schedules a hide only for this generation, so a later show cancels
+/// any in-flight hide from a previous save.
+fn show_settings_toast(
+    toast: &Label,
+    generation: &Rc<Cell<u32>>,
+    text: &str,
+    auto_hide: Option<Duration>,
+) {
+    toast.remove_css_class("settings-toast-success");
+    toast.add_css_class("settings-toast-success");
+    toast.set_text(text);
+    toast.set_opacity(1.0);
+    toast.queue_draw();
+
+    let gen = generation.get().wrapping_add(1);
+    generation.set(gen);
+
+    if let Some(delay) = auto_hide {
+        let toast = toast.clone();
+        let generation = Rc::clone(generation);
+        gtk4::glib::timeout_add_local_once(delay, move || {
+            if generation.get() == gen {
+                toast.set_opacity(0.0);
+                toast.remove_css_class("settings-toast-success");
+            }
+        });
+    }
+}
+
+pub fn show_settings_window() -> anyhow::Result<()> {
+    show_settings_window_with(false)
+}
+
+/// Open Settings on the Cloud page and start the connect flow.
+///
+/// A second process hands the request to the running window through the
+/// `cloud-connect` action instead of opening its own.
+pub fn show_settings_window_for_cloud_connect() -> anyhow::Result<()> {
+    show_settings_window_with(true)
+}
+
+fn show_settings_window_with(cloud_connect: bool) -> anyhow::Result<()> {
+    // Force-set GIO_LAUNCHED_DESKTOP_FILE to the main app's desktop entry
+    // so GNOME Shell shows the correct icon and name.
+    if let Some(desktop_path) = crate::app_identity::desktop_file_for_portal() {
+        std::env::set_var("GIO_LAUNCHED_DESKTOP_FILE", desktop_path);
+        std::env::set_var(
+            "GIO_LAUNCHED_DESKTOP_FILE_PID",
+            std::process::id().to_string(),
+        );
+    }
+
+    let app = Application::builder()
+        .application_id(crate::app_identity::app_id())
+        .build();
+
+    install_cloud_connect_action(&app);
+    let pending_cloud_connect = Rc::new(Cell::new(cloud_connect));
+
+    app.connect_activate(move |application| {
+        crate::capture::editor::ui_support::apply_theme_to_gtk();
+        let wants_connect = pending_cloud_connect.replace(false);
+        // Check if a window already exists (single-instance behavior)
+        // If yes, just present it instead of creating a new one
+        let windows = application.windows();
+        if let Some(existing_window) = windows.first() {
+            existing_window.present();
+            if wants_connect {
+                start_cloud_connect();
+            }
+            return;
+        }
+
+        // Start daemon if config shows tray should be visible
+        let config = load_config();
+        if config.show_menu_bar_icon {
+            let _ = crate::daemon::start_daemon_subprocess();
+        }
+
+        let page = wants_connect.then_some("6");
+        build_settings_window_at(application, page, None);
+        if wants_connect {
+            // Let the new window map first so the sign-in card has a parent.
+            gtk4::glib::idle_add_local_once(start_cloud_connect);
+        }
+    });
+
+    if cloud_connect && hand_cloud_connect_to_primary(&app) {
+        return Ok(());
+    }
+
+    crate::graceful_close::close_windows_on_sigterm(&app, || true);
+    let _ = app.run_with_args::<String>(&[]);
+    Ok(())
+}
+
+fn install_cloud_connect_action(app: &Application) {
+    let action = gtk4::gio::SimpleAction::new("cloud-connect", None);
+    let app_weak = app.downgrade();
+    action.connect_activate(move |_, _| {
+        if let Some(app) = app_weak.upgrade() {
+            open_settings_for_cloud_connect(&app);
+        }
+    });
+    app.add_action(&action);
+}
+
+fn open_settings_for_cloud_connect(app: &Application) {
+    if let Some(window) = app.windows().first() {
+        window.present();
+    } else {
+        build_settings_window_at(app, Some("6"), None);
+    }
+    gtk4::glib::idle_add_local_once(start_cloud_connect);
+}
+
+fn remember_cloud_connect_target(stack: &gtk4::Stack, connect_btn: &Button) {
+    CLOUD_CONNECT_TARGET.with(|slot| {
+        *slot.borrow_mut() = Some(CloudConnectTarget {
+            stack: stack.downgrade(),
+            connect_btn: connect_btn.downgrade(),
+        });
+    });
+}
+
+/// Present the Cloud page and start its Connect button, unless the account is
+/// already linked. An open sign-in card presents itself instead of asking for
+/// another device code.
+fn start_cloud_connect() {
+    let target = CLOUD_CONNECT_TARGET.with(|slot| slot.borrow().clone());
+    let Some(target) = target else {
+        return;
+    };
+    let Some(stack) = target.stack.upgrade() else {
+        return;
+    };
+    stack.set_visible_child_name("6");
+    if crate::config::is_cloud_logged_in(&load_config()) {
+        return;
+    }
+    if let Some(connect_btn) = target.connect_btn.upgrade() {
+        connect_btn.emit_clicked();
+    }
+}
+
+/// Hand the action to an instance that already owns the application id.
+/// Returns true when this process can exit.
+fn hand_cloud_connect_to_primary(app: &Application) -> bool {
+    if app.register(None::<&gtk4::gio::Cancellable>).is_err() {
+        return false;
+    }
+    if !app.is_remote() {
+        return false;
+    }
+    app.activate_action("cloud-connect", None);
+    if let Some(connection) = app.dbus_connection() {
+        let _ = connection.flush_sync(None::<&gtk4::gio::Cancellable>);
+    }
+    true
+}
+
+fn rebuild_settings_window(window: &ApplicationWindow, stack: &gtk4::Stack) {
+    let Some(app) = window.application() else {
+        return;
+    };
+    let page = stack.visible_child_name().map(|name| name.to_string());
+    let size = (window.width(), window.height());
+    window.close();
+    build_settings_window_at(&app, page.as_deref(), Some(size));
+}
+
+fn build_settings_window_at(
+    app: &Application,
+    initial_page: Option<&str>,
+    initial_size: Option<(i32, i32)>,
+) {
+    use std::sync::Once;
+    static INIT_ICONS: Once = Once::new();
+    INIT_ICONS.call_once(|| {
+        relm4_icons::initialize_icons(
+            crate::capture::editor::window::icon_names::GRESOURCE_BYTES,
+            crate::capture::editor::window::icon_names::RESOURCE_PREFIX,
+        );
+    });
+
+    install_settings_css();
+
+    let config = load_config().sanitized();
+    i18n::apply_gtk_direction(&config.ui_language);
+    let prefers_dark = prefers_dark_glass_theme();
+    let reduced_transparency = prefers_reduced_transparency();
+
+    let (default_width, default_height) = initial_size.unwrap_or((900, 635));
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title(t("ApexShot Settings"))
+        .icon_name(crate::app_identity::icon_name())
+        .default_width(default_width)
+        .default_height(default_height)
+        .build();
+
+    window.set_decorated(false);
+    window.add_css_class("editor-window");
+
+    let root_box = GtkBox::new(Orientation::Vertical, 0);
+    root_box.add_css_class("editor-root");
+    root_box.add_css_class("linux-settings");
+    // Shared borderless chrome (header, full-height sidebar) with History.
+    root_box.add_css_class("settings-shell");
+    if !prefers_dark {
+        root_box.add_css_class("editor-theme-light");
+    }
+    if reduced_transparency {
+        root_box.add_css_class("editor-reduced-transparency");
+    }
+
+    // --- TOOLBAR ---
+    let toolbar = GtkBox::new(Orientation::Horizontal, 0);
+    toolbar.add_css_class("settings-window-controls");
+    // Matches History's header height so the sidebar's own head sits level with it.
+    toolbar.set_size_request(-1, 46);
+
+    let drag_handle = GtkBox::new(Orientation::Horizontal, 0);
+    drag_handle.set_hexpand(true);
+    drag_handle.set_halign(Align::Fill);
+    drag_handle.set_vexpand(false);
+    toolbar.append(&drag_handle);
+
+    let close_btn = traffic_light_button("traffic-light-red", &t("Close"));
+    close_btn.remove_css_class("recent-captures-wm-btn");
+    close_btn.remove_css_class("recent-captures-wm-close");
+    close_btn.add_css_class("recording-editor-traffic-btn");
+    let win_clone = window.clone();
+    close_btn.connect_clicked(move |_| win_clone.close());
+
+    let min_btn = traffic_light_button("traffic-light-yellow", &t("Minimize"));
+    min_btn.remove_css_class("recent-captures-wm-btn");
+    min_btn.add_css_class("recording-editor-traffic-btn");
+    let win_clone = window.clone();
+    min_btn.connect_clicked(move |_| win_clone.minimize());
+
+    for button in [&close_btn, &min_btn] {
+        button.set_size_request(28, 28);
+        button.set_valign(Align::Center);
+    }
+
+    let usage_refresh = Button::from_icon_name("view-refresh-symbolic");
+    usage_refresh.add_css_class("history-header-refresh");
+    usage_refresh.set_tooltip_text(Some(&t("Refresh")));
+    usage_refresh.set_valign(Align::Center);
+    usage_refresh.set_visible(false);
+    toolbar.append(&usage_refresh);
+
+    let right_box = GtkBox::new(Orientation::Horizontal, 6);
+    right_box.set_halign(Align::End);
+    right_box.append(&min_btn);
+    right_box.append(&close_btn);
+    toolbar.append(&right_box);
+
+    // Keep mapped at opacity 0 so the first "Settings saved" reveal allocates correctly.
+    let toast = Label::new(Some(&t("")));
+    toast.add_css_class("settings-toast");
+    toast.set_halign(Align::Center);
+    toast.set_valign(Align::Start);
+    toast.set_margin_top(18);
+    toast.set_opacity(0.0);
+    toast.set_visible(true);
+    toast.set_can_target(false);
+    let toast_generation = Rc::new(Cell::new(0u32));
+
+    let save_error_bar = GtkBox::new(Orientation::Horizontal, 10);
+    save_error_bar.add_css_class("settings-toast");
+    save_error_bar.add_css_class("settings-toast-error");
+    save_error_bar.add_css_class("settings-save-error");
+    save_error_bar.set_halign(Align::Center);
+    save_error_bar.set_valign(Align::End);
+    save_error_bar.set_margin_bottom(16);
+    save_error_bar.set_visible(false);
+    let save_error_label = Label::new(None);
+    save_error_label.set_valign(Align::Center);
+    save_error_label.set_wrap(true);
+    save_error_label.set_max_width_chars(52);
+    let save_error_retry = Button::with_label(&t("Retry"));
+    save_error_retry.add_css_class("settings-save-error-retry");
+    save_error_retry.set_valign(Align::Center);
+    save_error_bar.append(&save_error_label);
+    save_error_bar.append(&save_error_retry);
+
+    let window_overlay = GtkOverlay::new();
+    if !prefers_dark {
+        window_overlay.add_css_class("editor-theme-light");
+    }
+    if reduced_transparency {
+        window_overlay.add_css_class("editor-reduced-transparency");
+    }
+    window_overlay.set_child(Some(&root_box));
+    window_overlay.add_overlay(&toast);
+    window_overlay.add_overlay(&save_error_bar);
+
+    // The toolbar is appended to the right column, not the root: the sidebar
+    // beside it runs the full window height.
+
+    // --- WINDOW GESTURES ---
+    install_window_drag(&drag_handle, &window);
+    install_edge_resize(&root_box, &window);
+
+    // --- LAYOUT SPLIT ---
+    let content_split = GtkBox::new(Orientation::Horizontal, 0);
+    content_split.set_vexpand(true);
+    content_split.set_hexpand(true);
+
+    // --- NAVIGATION (SIDEBAR) ---
+    let sidebar_scroller = ScrolledWindow::new();
+    sidebar_scroller.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
+
+    let nav_strip = GtkBox::new(Orientation::Vertical, 4);
+    nav_strip.add_css_class("settings-sidebar");
+    nav_strip.set_halign(Align::Fill);
+    nav_strip.set_valign(Align::Fill);
+    nav_strip.set_hexpand(false);
+    nav_strip.set_vexpand(true);
+
+    sidebar_scroller.set_child(Some(&nav_strip));
+
+    // The sidebar runs the full window height (GNOME Files-style): its own
+    // header zone sits level with the content header bar and holds the title.
+    let sidebar_wrapper = GtkBox::new(Orientation::Vertical, 0);
+    sidebar_wrapper.add_css_class("settings-sidebar-wrapper");
+    sidebar_wrapper.set_vexpand(true);
+    // Stated explicitly: the Save button below sets hexpand, and GTK propagates
+    // that up through every parent that has no value of its own. That is what
+    // used to stretch this sidebar past its CSS width and made it disagree with
+    // History's.
+    sidebar_wrapper.set_hexpand(false);
+
+    let sidebar_head = GtkBox::new(Orientation::Horizontal, 0);
+    sidebar_head.set_size_request(-1, 46);
+
+    let sidebar_title = Label::new(Some(&t("Settings")));
+    sidebar_title.add_css_class("settings-sidebar-title");
+    sidebar_title.set_halign(Align::Start);
+    sidebar_title.set_valign(Align::Center);
+    sidebar_title.set_hexpand(true);
+    sidebar_head.append(&sidebar_title);
+
+    sidebar_wrapper.append(&sidebar_head);
+    sidebar_wrapper.append(&sidebar_scroller);
+    install_window_drag(&sidebar_head, &window);
+
+    let stack = gtk4::Stack::new();
+    stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
+    stack.set_vexpand(true);
+
+    sidebar_wrapper.append(&account::build_account_footer({
+        let stack = stack.downgrade();
+        move |page| {
+            if let Some(stack) = stack.upgrade() {
+                stack.set_visible_child_name(page);
+            }
+        }
+    }));
+
+    use crate::capture::editor::window::icon_names::custom;
+    let usage_icon = if prefers_dark {
+        custom::USAGE
+    } else {
+        custom::USAGE_LIGHT
+    };
+    let labels = [
+        ("General", custom::SETTINGS_SYMBOLIC),
+        ("Shortcuts", custom::KEYBOARD_SHORTCUTS_SYMBOLIC),
+        ("Quick Access", custom::OVERLAPPING_WINDOWS_SYMBOLIC),
+        ("Recording", custom::RECORD_SCREEN_SYMBOLIC),
+        ("Screenshots", custom::SCREENSHOOTER_SYMBOLIC),
+        ("Annotate", custom::APP_ICON_DESIGN_SYMBOLIC),
+        ("Cloud", custom::CLOUD_OUTLINE_THIN_SYMBOLIC),
+        ("Usage", usage_icon),
+        ("Advanced", custom::SETTINGS_SYMBOLIC),
+        ("Studio", custom::CLAPPERBOARD_SYMBOLIC),
+        ("About", custom::INFO_SYMBOLIC),
+    ];
+
+    let mut nav_items = Vec::new();
+
+    for (i, (label_text, icon_name)) in labels.iter().enumerate() {
+        let item = GtkBox::new(Orientation::Horizontal, 8);
+        item.add_css_class("settings-nav-item");
+        item.set_halign(Align::Fill);
+        item.set_valign(Align::Center);
+
+        let icon = Image::from_icon_name(icon_name);
+        icon.add_css_class("settings-nav-icon");
+        icon.set_pixel_size(16);
+        icon.set_halign(Align::Start);
+
+        let label = Label::new(Some(&t(label_text)));
+        label.add_css_class("settings-nav-label");
+        label.set_halign(Align::Start);
+
+        item.append(&icon);
+        item.append(&label);
+
+        if i == 0 {
+            item.add_css_class("settings-nav-item-selected");
+            icon.add_css_class("settings-nav-icon-selected");
+            label.add_css_class("settings-nav-label-selected");
+        }
+
+        let motion = gtk4::EventControllerMotion::new();
+        {
+            let item = item.clone();
+            let icon = icon.clone();
+            let label = label.clone();
+            motion.connect_enter(move |_, _, _| {
+                item.add_css_class("settings-nav-item-hover");
+                icon.add_css_class("settings-nav-icon-hover");
+                label.add_css_class("settings-nav-label-hover");
+            });
+        }
+        {
+            let item = item.clone();
+            let icon = icon.clone();
+            let label = label.clone();
+            motion.connect_leave(move |_| {
+                item.remove_css_class("settings-nav-item-hover");
+                icon.remove_css_class("settings-nav-icon-hover");
+                label.remove_css_class("settings-nav-label-hover");
+            });
+        }
+        item.add_controller(motion);
+
+        let s_clone = stack.clone();
+        let idx_str = i.to_string();
+        let click = gtk4::GestureClick::new();
+        click.connect_released(move |_, _, _, _| {
+            s_clone.set_visible_child_name(&idx_str);
+        });
+        item.add_controller(click);
+
+        nav_strip.append(&item);
+        nav_items.push((item, icon, label));
+    }
+
+    content_split.append(&sidebar_wrapper);
+
+    // --- BODY (STACK) ---
+    let body_frame = GtkBox::new(Orientation::Vertical, 0);
+    body_frame.set_vexpand(true);
+    body_frame.set_hexpand(true);
+
+    // Build all sections
+    let general = build_general_section(&config);
+    let after_capture = build_after_capture_section(&config);
+    let recordings = recording::build_recording_section(&config);
+    let screenshots = build_screenshots_section(&config);
+    let cloud = cloud::build_cloud_section(&config);
+    remember_cloud_connect_target(&stack, &cloud.connect_btn);
+    let advanced = advanced::build_advanced_section(&config);
+    let about = about::build_about_section();
+    let annotate = build_annotate_section(&config);
+    let shortcuts = shortcuts::build_shortcuts_section(&config);
+    shortcuts::install_shortcut_editors(&shortcuts, &window);
+    let quick_access = build_quick_access_section(&config);
+    let studio = studio::build_studio_section();
+    let usage = usage::build(
+        {
+            let stack = stack.downgrade();
+            move || {
+                if let Some(stack) = stack.upgrade() {
+                    stack.set_visible_child_name("6");
+                }
+            }
+        },
+        &usage_refresh,
+    );
+
+    let screenshot_export_location_entry_pick = screenshots.export_location_entry.clone();
+    let window_weak_picker = window.downgrade();
+    screenshots
+        .export_location_browse
+        .connect_clicked(move |_| {
+            let chooser = FileChooserNative::new(
+                Some(&t("Select screenshot save location")),
+                window_weak_picker.upgrade().as_ref(),
+                FileChooserAction::SelectFolder,
+                Some(&t("Select")),
+                Some(&t("Cancel")),
+            );
+            let export_location_entry_pick = screenshot_export_location_entry_pick.clone();
+            chooser.connect_response(move |dialog, response| {
+                if response == ResponseType::Accept {
+                    if let Some(file) = dialog.file() {
+                        if let Some(path) = file.path() {
+                            export_location_entry_pick.set_text(&path.to_string_lossy());
+                        }
+                    }
+                }
+                dialog.hide();
+            });
+            chooser.show();
+        });
+
+    let video_export_location_entry_pick = recordings.video_export_location_entry.clone();
+    let window_weak_picker = window.downgrade();
+    recordings
+        .video_export_location_browse
+        .connect_clicked(move |_| {
+            let chooser = FileChooserNative::new(
+                Some(&t("Select video save location")),
+                window_weak_picker.upgrade().as_ref(),
+                FileChooserAction::SelectFolder,
+                Some(&t("Select")),
+                Some(&t("Cancel")),
+            );
+            let export_location_entry_pick = video_export_location_entry_pick.clone();
+            chooser.connect_response(move |dialog, response| {
+                if response == ResponseType::Accept {
+                    if let Some(file) = dialog.file() {
+                        if let Some(path) = file.path() {
+                            export_location_entry_pick.set_text(&path.to_string_lossy());
+                        }
+                    }
+                }
+                dialog.hide();
+            });
+            chooser.show();
+        });
+
+    let general_tab_section = GtkBox::new(Orientation::Vertical, 0);
+    general_tab_section.append(&general.section);
+    general_tab_section.append(&after_capture.wrapper);
+
+    // Add them to stack
+    fn add_section(
+        stack: &gtk4::Stack,
+        widget: &impl IsA<gtk4::Widget>,
+        name: &str,
+        title: &str,
+        header_action: Option<&Button>,
+    ) {
+        let scroller = ScrolledWindow::new();
+        scroller.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
+        let vbox = GtkBox::new(Orientation::Vertical, 0);
+        vbox.set_margin_top(20);
+        vbox.set_margin_bottom(32);
+        vbox.set_margin_start(28);
+        vbox.set_margin_end(28);
+
+        let header = GtkBox::new(Orientation::Horizontal, 8);
+        header.set_margin_bottom(16);
+
+        let title_lbl = Label::new(Some(title));
+        title_lbl.add_css_class("settings-page-title");
+        title_lbl.set_halign(Align::Start);
+        title_lbl.set_valign(Align::Center);
+        title_lbl.set_hexpand(true);
+        header.append(&title_lbl);
+        if let Some(action) = header_action {
+            action.set_valign(Align::Center);
+            header.append(action);
+        }
+        vbox.append(&header);
+
+        vbox.append(widget);
+        scroller.set_child(Some(&vbox));
+        stack.add_titled(&scroller, Some(name), title);
+    }
+
+    add_section(&stack, &general_tab_section, "0", &t("General"), None);
+    add_section(&stack, &shortcuts.section, "1", &t("Shortcuts"), None);
+    add_section(&stack, &quick_access.section, "2", &t("Quick Access"), None);
+    add_section(&stack, &recordings.section, "3", &t("Recording"), None);
+    add_section(&stack, &screenshots.section, "4", &t("Screenshots"), None);
+    add_section(&stack, &annotate.section, "5", &t("Annotate"), None);
+    add_section(&stack, &cloud.section, "6", &t("Cloud"), None);
+    add_section(
+        &stack,
+        &usage.section,
+        "7",
+        &t("Usage"),
+        Some(&usage.billing_button),
+    );
+    add_section(&stack, &advanced.section, "8", &t("Advanced"), None);
+    add_section(&stack, &studio, "9", &t("Studio"), None);
+    add_section(&stack, &about.section, "10", &t("About"), None);
+
+    body_frame.append(&stack);
+
+    // Update nav selection on stack change
+    let nav_items_clone = nav_items.clone();
+    let usage_refresh_notify = usage_refresh.clone();
+    stack.connect_visible_child_name_notify(move |s| {
+        usage_refresh_notify.set_visible(s.visible_child_name().as_deref() == Some("7"));
+        if let Some(name) = s.visible_child_name() {
+            if let Ok(idx) = name.parse::<usize>() {
+                for (i, (item, icon, label)) in nav_items_clone.iter().enumerate() {
+                    if i == idx {
+                        item.add_css_class("settings-nav-item-selected");
+                        icon.add_css_class("settings-nav-icon-selected");
+                        label.add_css_class("settings-nav-label-selected");
+                    } else {
+                        item.remove_css_class("settings-nav-item-selected");
+                        icon.remove_css_class("settings-nav-icon-selected");
+                        label.remove_css_class("settings-nav-label-selected");
+                    }
+                }
+            }
+        }
+    });
+    stack.set_visible_child_name(initial_page.unwrap_or("0"));
+    usage_refresh.set_visible(stack.visible_child_name().as_deref() == Some("7"));
+
+    // Right column: the header bar sits above the page body so the sidebar
+    // beside it can run the full window height.
+    let right_col = GtkBox::new(Orientation::Vertical, 0);
+    right_col.set_vexpand(true);
+    right_col.set_hexpand(true);
+    right_col.append(&toolbar);
+    right_col.append(&body_frame);
+    content_split.append(&right_col);
+    root_box.append(&content_split);
+    window.set_child(Some(&window_overlay));
+
+    let save_inputs = Rc::new(SaveInputs {
+        start_at_login: general.start_at_login_check.clone(),
+        play_sounds: general.play_sounds_check.clone(),
+        shutter_sound: general.shutter_sound_input.clone(),
+        show_menu_bar_icon: general.show_icon_check.clone(),
+        screenshot_export_location: screenshots.export_location_entry.clone(),
+        screenshot_format: screenshots.format_input.clone(),
+        video_export_location: recordings.video_export_location_entry.clone(),
+        rec_filename_pattern: recordings.rec_filename_pattern_entry.clone(),
+        rec_remember_export_folder: recordings.rec_remember_export_folder.clone(),
+        rec_controls: recordings.rec_controls.clone(),
+        rec_hidpi: recordings.rec_hidpi.clone(),
+        rec_notifications: recordings.rec_notifications.clone(),
+        rec_countdown: recordings.rec_countdown.clone(),
+        rec_video_max_res: recordings.rec_video_max_res.clone(),
+        rec_video_fps: recordings.rec_video_fps.clone(),
+        rec_video_quality: recordings.rec_video_quality.clone(),
+        rec_video_mono: recordings.rec_video_mono.clone(),
+        screenshot_quick_access: after_capture.screenshot_after_capture_checks[0].clone(),
+        screenshot_copy_to_clipboard: after_capture.screenshot_after_capture_checks[1].clone(),
+        screenshot_save: after_capture.screenshot_after_capture_checks[2].clone(),
+        screenshot_open_annotate: after_capture.screenshot_after_capture_checks[3].clone(),
+        rec_copy_to_clipboard: after_capture.rec_copy_to_clipboard.clone(),
+        rec_save: after_capture.rec_save.clone(),
+        rec_open_video_editor: after_capture.rec_open_video_editor.clone(),
+        rec_auto_zoom_on_import: after_capture.rec_auto_zoom_on_import.clone(),
+        quick_access_position: quick_access.position_input.clone(),
+        quick_access_overlay_size: quick_access.overlay_size_input.clone(),
+        quick_access_auto_close_enabled: quick_access.auto_close_enabled_check.clone(),
+        quick_access_auto_close_action: quick_access.auto_close_action_input.clone(),
+        quick_access_auto_close_interval: quick_access.auto_close_interval_input.clone(),
+        quick_access_close_after_dragging: quick_access.close_after_dragging_check.clone(),
+        quick_access_close_after_uploading: quick_access.close_after_uploading_check.clone(),
+        screenshot_timer_interval: screenshots.timer_interval_input.clone(),
+        screenshot_capture_cursor: screenshots.show_cursor_check.clone(),
+        annotate_inverse_arrow: annotate.inverse_arrow_check.clone(),
+        annotate_smooth_drawing: annotate.smooth_drawing_check.clone(),
+        annotate_draw_shadow: annotate.draw_shadow_check.clone(),
+        annotate_auto_expand: annotate.auto_expand_check.clone(),
+        annotate_show_color_names: annotate.show_color_names_check.clone(),
+        annotate_always_on_top: annotate.always_on_top_check.clone(),
+        annotate_close_after_export: annotate.close_after_export_check.clone(),
+        annotate_overwrite_original_image: annotate.overwrite_original_image_check.clone(),
+        shortcut_open_file: shortcuts.open_file_btn.clone(),
+        shortcut_open_from_clipboard: shortcuts.open_clipboard_btn.clone(),
+        shortcut_restore_recently_closed: shortcuts.restore_file_btn.clone(),
+        shortcut_toggle_overlays: shortcuts.toggle_overlays_btn.clone(),
+        shortcut_capture_menu: shortcuts.quick_capture_btn.clone(),
+        shortcut_capture_area: shortcuts.capture_area_btn.clone(),
+        shortcut_capture_crosshair: shortcuts.capture_crosshair_btn.clone(),
+        shortcut_capture_previous_area: shortcuts.capture_prev_btn.clone(),
+        shortcut_capture_fullscreen: shortcuts.capture_fullscreen_btn.clone(),
+        shortcut_show_last_preview: shortcuts.show_last_preview_btn.clone(),
+        shortcut_save_last_capture: shortcuts.save_last_capture_btn.clone(),
+        shortcut_record_screen: shortcuts.record_screen_btn.clone(),
+        shortcut_recording_stop_save: shortcuts.recording_stop_save_btn.clone(),
+        adv_retina_suffix: advanced.retina_suffix_check.clone(),
+        adv_clipboard_mode: screenshots.clipboard_mode_input.clone(),
+        adv_ocr_language: advanced.ocr_lang_input.clone(),
+        adv_ocr_keep_line_breaks: advanced.ocr_line_breaks_check.clone(),
+        telemetry_enabled: advanced.telemetry_enabled_check.clone(),
+        cloud_apexshot: cloud.apexshot_check.clone(),
+        cloud_xbackbone: cloud.xbackbone_check.clone(),
+        cloud_auto_upload: cloud.auto_upload_check.clone(),
+        cloud_nudge: cloud.cloud_nudge_check.clone(),
+        cloud_auto_upload_sync: cloud.auto_upload_sync.clone(),
+        xbackbone_url: cloud.xb_url_entry.clone(),
+        xbackbone_api_token: cloud.xb_token_entry.clone(),
+        ui_theme: general.theme_input.clone(),
+        ui_language: general.ui_language_input.clone(),
+    });
+
+    install_checkbox_behaviors(
+        &general.play_sounds_check,
+        &general.shutter_sound_input,
+        &after_capture.screenshot_after_capture_checks[0],
+        &after_capture.screenshot_after_capture_checks[1],
+        &after_capture.screenshot_after_capture_checks[2],
+        &after_capture.screenshot_after_capture_checks[3],
+        &quick_access.auto_close_enabled_check,
+        &quick_access.auto_close_action_input,
+        &quick_access.auto_close_interval_input,
+    );
+
+    let save_state = Rc::new(std::cell::RefCell::new(actions::SaveState::new(
+        config.clone(),
+    )));
+    let saver = autosave::AutoSaver::new(
+        &window,
+        toast.clone(),
+        Rc::clone(&toast_generation),
+        save_error_bar.clone(),
+        save_error_label.clone(),
+        {
+            let save_inputs = Rc::clone(&save_inputs);
+            let save_state = Rc::clone(&save_state);
+            Rc::new(
+                move || match save_settings(&save_inputs, &mut save_state.borrow_mut()) {
+                    Ok(outcome) => autosave::AutoSaveResult::Saved {
+                        language_changed: outcome.language_changed,
+                        theme_changed: outcome.theme_changed,
+                    },
+                    Err(error) => autosave::AutoSaveResult::Failed(error),
+                },
+            )
+        },
+        {
+            let save_state = Rc::clone(&save_state);
+            Rc::new(move || save_state.borrow_mut().finish_runtime_updates())
+        },
+        {
+            let stack = stack.downgrade();
+            Rc::new(move |window: &ApplicationWindow| {
+                if let Some(stack) = stack.upgrade() {
+                    rebuild_settings_window(window, &stack);
+                }
+            })
+        },
+    );
+    install_save_dirty_tracking(&save_inputs, saver.mark_dirty());
+    save_error_retry.connect_clicked({
+        let saver = Rc::downgrade(&saver);
+        move |_| {
+            if let Some(saver) = saver.upgrade() {
+                saver.retry();
+            }
+        }
+    });
+    window.connect_close_request(move |_| {
+        if saver.flush().is_ok() {
+            gtk4::glib::Propagation::Proceed
+        } else {
+            gtk4::glib::Propagation::Stop
+        }
+    });
+
+    window.present();
+    crate::update_ui::present_if_needed(&window_overlay);
+}
+
+fn install_save_dirty_tracking(inputs: &Rc<SaveInputs>, mark_dirty: Rc<dyn Fn()>) {
+    let wire_check = |check: &gtk4::CheckButton| {
+        let mark_dirty = Rc::clone(&mark_dirty);
+        check.connect_toggled(move |_| mark_dirty());
+    };
+    let wire_combo = |combo: &select::SettingsSelect| {
+        let mark_dirty = Rc::clone(&mark_dirty);
+        combo.connect_changed(move || mark_dirty());
+    };
+    let wire_entry = |entry: &gtk4::Entry| {
+        let mark_dirty = Rc::clone(&mark_dirty);
+        entry.connect_changed(move |_| mark_dirty());
+    };
+    let wire_scale = |scale: &gtk4::Scale| {
+        let mark_dirty = Rc::clone(&mark_dirty);
+        scale.connect_value_changed(move |_| mark_dirty());
+    };
+    // Shortcut rows store the binding on the button label.
+    let wire_shortcut_btn = |button: &Button| {
+        let mark_dirty = Rc::clone(&mark_dirty);
+        button.connect_notify_local(Some("label"), move |_, _| mark_dirty());
+    };
+    let wire_theme = |picker: &theme_picker::ThemePicker| {
+        let mark_dirty = Rc::clone(&mark_dirty);
+        picker.connect_changed(move || mark_dirty());
+    };
+
+    wire_check(&inputs.start_at_login);
+    wire_check(&inputs.play_sounds);
+    wire_combo(&inputs.shutter_sound);
+    wire_combo(&inputs.ui_language);
+    wire_check(&inputs.show_menu_bar_icon);
+    wire_entry(&inputs.screenshot_export_location);
+    wire_combo(&inputs.screenshot_format);
+    wire_entry(&inputs.video_export_location);
+    wire_entry(&inputs.rec_filename_pattern);
+    wire_check(&inputs.rec_remember_export_folder);
+    wire_check(&inputs.rec_controls);
+    wire_check(&inputs.rec_hidpi);
+    wire_check(&inputs.rec_notifications);
+    wire_check(&inputs.rec_countdown);
+    wire_combo(&inputs.rec_video_max_res);
+    wire_combo(&inputs.rec_video_fps);
+    wire_combo(&inputs.rec_video_quality);
+    wire_check(&inputs.rec_video_mono);
+    wire_check(&inputs.screenshot_quick_access);
+    wire_check(&inputs.screenshot_copy_to_clipboard);
+    wire_check(&inputs.screenshot_save);
+    wire_check(&inputs.screenshot_open_annotate);
+    wire_check(&inputs.rec_copy_to_clipboard);
+    wire_check(&inputs.rec_save);
+    wire_check(&inputs.rec_open_video_editor);
+    wire_check(&inputs.rec_auto_zoom_on_import);
+    wire_combo(&inputs.quick_access_position);
+    wire_scale(&inputs.quick_access_overlay_size);
+    wire_check(&inputs.quick_access_auto_close_enabled);
+    wire_combo(&inputs.quick_access_auto_close_action);
+    wire_combo(&inputs.quick_access_auto_close_interval);
+    wire_check(&inputs.quick_access_close_after_dragging);
+    wire_check(&inputs.quick_access_close_after_uploading);
+    wire_combo(&inputs.screenshot_timer_interval);
+    wire_check(&inputs.screenshot_capture_cursor);
+    wire_check(&inputs.annotate_inverse_arrow);
+    wire_check(&inputs.annotate_smooth_drawing);
+    wire_check(&inputs.annotate_draw_shadow);
+    wire_check(&inputs.annotate_auto_expand);
+    wire_check(&inputs.annotate_show_color_names);
+    wire_check(&inputs.annotate_always_on_top);
+    wire_check(&inputs.annotate_close_after_export);
+    wire_check(&inputs.annotate_overwrite_original_image);
+    wire_shortcut_btn(&inputs.shortcut_open_file);
+    wire_shortcut_btn(&inputs.shortcut_open_from_clipboard);
+    wire_shortcut_btn(&inputs.shortcut_restore_recently_closed);
+    wire_shortcut_btn(&inputs.shortcut_toggle_overlays);
+    wire_shortcut_btn(&inputs.shortcut_capture_menu);
+    wire_shortcut_btn(&inputs.shortcut_capture_area);
+    wire_shortcut_btn(&inputs.shortcut_capture_crosshair);
+    wire_shortcut_btn(&inputs.shortcut_capture_previous_area);
+    wire_shortcut_btn(&inputs.shortcut_capture_fullscreen);
+    wire_shortcut_btn(&inputs.shortcut_show_last_preview);
+    wire_shortcut_btn(&inputs.shortcut_save_last_capture);
+    wire_shortcut_btn(&inputs.shortcut_record_screen);
+    wire_shortcut_btn(&inputs.shortcut_recording_stop_save);
+    wire_check(&inputs.adv_retina_suffix);
+    wire_combo(&inputs.adv_clipboard_mode);
+    wire_combo(&inputs.adv_ocr_language);
+    wire_check(&inputs.adv_ocr_keep_line_breaks);
+    wire_check(&inputs.telemetry_enabled);
+    wire_check(&inputs.cloud_apexshot);
+    wire_check(&inputs.cloud_xbackbone);
+    wire_check(&inputs.cloud_nudge);
+    {
+        let mark_dirty = Rc::clone(&mark_dirty);
+        let syncer = Rc::clone(&inputs.cloud_auto_upload_sync);
+        inputs.cloud_auto_upload.connect_toggled(move |_| {
+            if !syncer.is_syncing() {
+                mark_dirty();
+            }
+        });
+    }
+    wire_entry(&inputs.xbackbone_url);
+    wire_entry(&inputs.xbackbone_api_token);
+    wire_theme(&inputs.ui_theme);
+}

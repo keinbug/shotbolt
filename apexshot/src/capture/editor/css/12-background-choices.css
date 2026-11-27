@@ -1,0 +1,370 @@
+            button.editor-background-option-button {
+                min-height: 32px;
+                border-radius: 6px;
+                padding: 0 12px;
+                background: alpha(white, 0.04);
+                border: 1px solid alpha(white, 0.06);
+                color: rgba(255, 255, 255, 0.82);
+                box-shadow: none;
+                transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+            }
+
+            button.editor-background-option-button:hover {
+                background: alpha(white, 0.08);
+                border-color: alpha(white, 0.10);
+                color: #ffffff;
+            }
+
+            button.editor-background-option-button:active {
+                background: alpha(white, 0.12);
+                border-color: alpha(white, 0.14);
+            }
+
+            button.editor-background-option-button.active-background-option {
+                background: alpha(white, 0.10);
+                border: 1px solid transparent;
+                color: #ffffff;
+                box-shadow: inset 0 0 0 1px #ff670d;
+            }
+
+            /* Motion keeps its background choices in one expanding card.
+             * A choice reveals its controls below the list, preserving the
+             * selection context instead of navigating to a separate page. */
+            .editor-motion-background-picker {
+                background: alpha(white, 0.08);
+                border: 1px solid alpha(white, 0.06);
+                border-radius: 10px;
+            }
+
+            .editor-motion-background-picker > button.editor-background-option-button {
+                min-height: 40px;
+                border: none;
+                border-radius: 0;
+                padding: 0 12px;
+                background: transparent;
+                color: rgba(255, 255, 255, 0.86);
+                box-shadow: inset 0 -1px 0 alpha(white, 0.08);
+            }
+
+            .editor-motion-background-picker > button.editor-background-option-button:hover {
+                background: alpha(white, 0.06);
+            }
+
+            .editor-motion-background-picker > button.editor-background-option-button.active-background-option {
+                background: alpha(#d68155, 0.16);
+                color: #ffad7c;
+                box-shadow: inset 0 -1px 0 alpha(white, 0.08);
+            }
+
+            .editor-motion-background-picker > stack {
+                padding: 10px 12px 12px;
+                background: alpha(black, 0.10);
+            }
+
+            .editor-motion-wallpaper-stack-glyph {
+                padding: 0;
+                background: transparent;
+                color: #ffffff;
+                font-size: 26px;
+                font-weight: 700;
+            }
+
+            button.editor-background-gradient-button {
+                padding: 0;
+                background-color: alpha(white, 0.04);
+                border: 1px solid alpha(white, 0.06);
+                box-shadow: none;
+                transition: box-shadow 120ms ease, border-color 120ms ease;
+            }
+
+            button.editor-background-gradient-button.active-background-option {
+                border: 1px solid transparent;
+                background-color: alpha(white, 0.06);
+                box-shadow: inset 0 0 0 2px #ff670d;
+            }
+
+            button.editor-background-gradient-button.editor-background-preview-size-regular {
+                min-width: 56px;
+                min-height: 56px;
+                border-radius: 12px;
+            }
+
+            /* Frame style tiles are chromeless: the preview itself is the
+             * tile, with no surrounding box. Only the active ring remains. */
+            button.editor-frame-style-tile {
+                padding: 0;
+                background: transparent;
+                background-color: transparent;
+                border: 1px solid transparent;
+                border-radius: 12px;
+                box-shadow: none;
+            }
+
+            button.editor-frame-style-tile:hover {
+                border-color: alpha(white, 0.16);
+                box-shadow: none;
+            }
+
+            button.editor-frame-style-tile.active-background-option {
+                border: 1px solid transparent;
+                background: transparent;
+                background-color: transparent;
+                box-shadow: inset 0 0 0 2px #ff670d;
+            }
+
+            button.editor-background-gradient-button:hover {
+                border-color: alpha(white, 0.16);
+                box-shadow: none;
+            }
+
+            button.editor-background-gradient-button:active {
+                border-color: alpha(white, 0.22);
+                box-shadow: none;
+            }
+
+            /* Keep the active Motion wallpaper visible above the generic
+             * thumbnail hover/active rules. */
+            button.editor-motion-wallpaper-thumbnail.active-background-option,
+            button.editor-motion-wallpaper-thumbnail.active-background-option:hover,
+            button.editor-motion-wallpaper-thumbnail.active-background-option:active {
+                border: 2px solid #ff7c2f;
+                box-shadow: 0 0 0 1px #ff7c2f;
+            }
+
+            .editor-canvas {
+                border-radius: 0;
+                background-color: transparent;
+                border: none;
+            }
+
+            /* Frame picker: collapsed W/H plus expandable ratio grid.
+             * Borderless filled controls mirror the hex-entry/slider style:
+             * filled troughs, no outer borders, subtle inset focus ring.
+             * Selection paints on the diagram draw itself, never on the
+             * button chrome. Grids stay 3-column homogeneous with capped
+             * tiles so expanding never widens the fixed sidebar. */
+            .editor-frame-dim-row {
+                min-width: 0;
+            }
+
+            .editor-frame-dim-pill {
+                min-width: 0;
+                min-height: 32px;
+                padding: 0 10px;
+                border-radius: 8px;
+                background: alpha(white, 0.08);
+                border: none;
+                box-shadow: none;
+                outline: none;
+            }
+
+            .editor-frame-dim-pill:focus-within {
+                background: alpha(white, 0.11);
+                box-shadow: inset 0 0 0 1px #ff7c2f;
+            }
+
+            .editor-frame-dim-unit {
+                min-width: 0;
+                color: rgba(255, 255, 255, 0.52);
+                font-size: 11px;
+                font-weight: 700;
+            }
+
+            entry.editor-frame-dim-entry,
+            entry.editor-frame-dim-entry:focus,
+            entry.editor-frame-dim-entry:hover,
+            entry.editor-frame-dim-entry:active,
+            entry.editor-frame-dim-entry:focus-visible {
+                min-width: 0;
+                min-height: 0;
+                padding: 0;
+                background: transparent;
+                background-image: none;
+                border: none;
+                box-shadow: none;
+                outline: none;
+                outline-offset: 0;
+                color: rgba(255, 255, 255, 0.9);
+                font-size: 12px;
+            }
+
+            entry.editor-frame-dim-entry:focus {
+                color: #ffffff;
+            }
+
+            entry.editor-frame-dim-entry selection {
+                background: alpha(#ff7c2f, 0.55);
+                color: #ffffff;
+            }
+
+            button.editor-frame-expand-button,
+            button.editor-frame-expand-button:focus,
+            button.editor-frame-expand-button:focus-visible {
+                min-width: 28px;
+                min-height: 28px;
+                padding: 0;
+                border-radius: 8px;
+                background: alpha(white, 0.08);
+                background-image: none;
+                border: none;
+                box-shadow: none;
+                outline: none;
+                outline-offset: 0;
+                color: rgba(255, 255, 255, 0.8);
+                font-size: 14px;
+            }
+
+            button.editor-frame-expand-button:hover {
+                background: alpha(white, 0.11);
+                color: #ffffff;
+                border: none;
+                box-shadow: none;
+                outline: none;
+            }
+
+            .editor-frame-expanded {
+                min-width: 0;
+            }
+
+            .editor-frame-grid {
+                min-width: 0;
+            }
+
+            button.editor-frame-tile,
+            button.editor-frame-tile:focus,
+            button.editor-frame-tile:focus-visible,
+            button.editor-frame-tile:hover,
+            button.editor-frame-tile:active,
+            button.editor-frame-tile.active-background-option,
+            button.editor-frame-tile.active-background-option:hover {
+                min-width: 0;
+                min-height: 0;
+                padding: 4px 2px;
+                background: transparent;
+                background-image: none;
+                border: none;
+                border-radius: 10px;
+                box-shadow: none;
+                outline: none;
+                outline-offset: 0;
+            }
+
+            button.editor-frame-tile:hover {
+                background: alpha(white, 0.05);
+            }
+
+            .editor-frame-tile-cell {
+                min-width: 0;
+                outline: none;
+            }
+
+            .editor-frame-tile-shape {
+                min-width: 0;
+                outline: none;
+            }
+
+            .editor-frame-tile-label {
+                min-width: 0;
+                color: rgba(255, 255, 255, 0.78);
+                font-size: 10px;
+                font-weight: 600;
+            }
+
+            .editor-frame-tile-sublabel {
+                min-width: 0;
+                color: rgba(255, 255, 255, 0.48);
+                font-size: 10px;
+            }
+
+            .editor-frame-subheader {
+                min-width: 0;
+                color: rgba(255, 255, 255, 0.86);
+                font-size: 13px;
+                font-weight: 700;
+            }
+
+            .editor-frame-separator {
+                min-width: 0;
+                background: alpha(white, 0.10);
+                min-height: 1px;
+            }
+
+            /* Fill-source tabs reuse the video editor's Background tab tray
+             * classes. This inspector is narrower than that sidebar, so the
+             * tray keeps its own compact sizing here: a 26px pill in an 8px
+             * tray, with the lighter 11px label. */
+            .editor-motion-inspector .recording-editor-bg-tabs {
+                margin: 0 0 12px 0;
+                padding: 3px;
+                border-radius: 8px;
+                background: rgba(255, 255, 255, 0.06);
+            }
+
+            .editor-motion-inspector .recording-editor-bg-tab {
+                min-height: 26px;
+                padding: 0 6px;
+                border-radius: 6px;
+                color: rgba(255, 255, 255, 0.52);
+                font-size: 11px;
+                font-weight: 500;
+            }
+
+            .editor-motion-inspector .recording-editor-bg-tab:hover {
+                background: transparent;
+                color: rgba(255, 255, 255, 0.92);
+            }
+
+            .editor-motion-inspector .recording-editor-bg-tab:checked,
+            .editor-motion-inspector .recording-editor-bg-tab:checked:hover {
+                background: rgba(255, 255, 255, 0.10);
+                color: rgba(255, 255, 255, 0.96);
+            }
+
+            .editor-motion-inspector .recording-editor-bg-tab label {
+                font-size: 11px;
+            }
+
+            .editor-root.editor-theme-light .editor-motion-inspector .recording-editor-bg-tabs {
+                background: rgba(17, 24, 39, 0.06);
+            }
+
+            .editor-root.editor-theme-light .editor-motion-inspector .recording-editor-bg-tab {
+                color: rgba(29, 33, 41, 0.52);
+            }
+
+            .editor-root.editor-theme-light .editor-motion-inspector .recording-editor-bg-tab:hover {
+                background: transparent;
+                color: rgba(29, 33, 41, 0.88);
+            }
+
+            .editor-root.editor-theme-light .editor-motion-inspector .recording-editor-bg-tab:checked,
+            .editor-root.editor-theme-light .editor-motion-inspector .recording-editor-bg-tab:checked:hover {
+                background: rgba(17, 24, 39, 0.08);
+                color: rgba(29, 33, 41, 0.92);
+            }
+
+            /* Tool groups below the fill tabs: a clickable header row over a
+             * revealer. Collapsed by default so the sidebar is tabs + one
+             * open group, never a single long scroll. */
+            button.editor-disclosure-header {
+                min-height: 24px;
+                padding: 0;
+                border: none;
+                background: transparent;
+                box-shadow: none;
+            }
+
+            button.editor-disclosure-header:hover {
+                background: transparent;
+            }
+
+            button.editor-disclosure-header:hover .editor-background-section-title {
+                color: rgba(255, 255, 255, 0.72);
+            }
+
+            .editor-disclosure-chevron {
+                min-width: 12px;
+                color: rgba(255, 255, 255, 0.5);
+                font-size: 14px;
+                font-weight: 600;
+            }

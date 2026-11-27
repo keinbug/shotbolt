@@ -1,0 +1,1247 @@
+use gtk4::{
+    gdk, glib, prelude::*, DrawingArea, EventControllerMotion, GestureClick, GestureDrag, Overlay,
+};
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+
+use super::super::{MotionHoverTrack, MotionModeParts, MotionRuntime, MotionSession};
+use super::clip_menu::{show_clip_menu, ClipMenuTarget};
+use super::{Redraw, RequestTextTransitionPreview, RequestTransitionPreview};
+
+/// Whether a board-relative pointer height falls inside `lane`.
+/// The lane allocation is parent-relative, so it must be translated into
+/// board coordinates first: comparing it raw drops hover mid-lane whenever
+/// the tracks box sits below other card chrome, which snaps the hover preview
+/// back to the playhead frame and reads as a reset/flicker while scrubbing
+/// (forwards or backwards).
+fn pointer_in_lane(lane: &DrawingArea, board: &gtk4::Widget, pointer_y: f64) -> bool {
+    let height = lane.allocated_height() as f64;
+    let top = lane
+        .translate_coordinates(board, 0.0, 0.0)
+        .map(|(_, top)| top)
+        .unwrap_or_else(|| lane.allocation().y() as f64);
+    pointer_y >= top && pointer_y <= top + height
+}
+
+#[derive(Clone, Copy)]
+enum DragKind {
+    Start(usize),
+    End(usize),
+    Body { index: usize, origin: f64 },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ClipPreviewRequest {
+    Motion { start: f64 },
+    Text { start: f64, entrance_seconds: f64 },
+}
+
+fn drag_kind_index(kind: DragKind) -> usize {
+    match kind {
+        DragKind::Start(index) | DragKind::End(index) | DragKind::Body { index, .. } => index,
+    }
+}
+
+fn drag_preview_request(
+    runtime: &MotionRuntime,
+    kind: DragKind,
+    text_track: bool,
+    resize_changed: bool,
+) -> Option<ClipPreviewRequest> {
+    if !resize_changed || !matches!(kind, DragKind::Start(_) | DragKind::End(_)) {
+        return None;
+    }
+    if text_track {
+        runtime
+            .motion
+            .selected_text_segment()
+            .map(|segment| ClipPreviewRequest::Text {
+                start: segment.start,
+                entrance_seconds: segment.entrance_seconds(),
+            })
+    } else {
+        runtime
+            .motion
+            .selected_segment()
+            .map(|segment| ClipPreviewRequest::Motion {
+                start: segment.start,
+            })
+    }
+}
+
+fn update_clip_drag(
+    runtime: &mut MotionRuntime,
+    kind: &mut DragKind,
+    raw_time: f64,
+    body_delta: f64,
+    tolerance: f64,
+    text_track: bool,
+    checkpointed: &mut bool,
+) -> bool {
+    let previous_kind = *kind;
+    let index = drag_kind_index(previous_kind);
+    let changed = runtime.update_motion_drag(checkpointed, |motion| {
+        let range = if text_track {
+            motion
+                .text_segments
+                .get(index)
+                .map(|segment| (segment.start, segment.end))
+        } else {
+            motion
+                .segments
+                .get(index)
+                .map(|segment| (segment.start, segment.end))
+        };
+        let Some((start, end)) = range else {
+            return;
+        };
+        let time = if text_track {
+            motion.snap_text_time(raw_time, tolerance, Some(index))
+        } else {
+            motion.snap_effect_time(raw_time, tolerance, Some(index))
+        };
+        match (text_track, previous_kind) {
+            (false, DragKind::Start(_)) => motion.resize_segment_range(index, time, end),
+            (false, DragKind::End(_)) => motion.resize_segment_range(index, start, time),
+            (false, DragKind::Body { origin, .. }) => {
+                let start = motion.snap_effect_time(origin + body_delta, tolerance, Some(index));
+                motion.move_segment(index, start);
+            }
+            (true, DragKind::Start(_)) => motion.resize_text_range(index, time, end),
+            (true, DragKind::End(_)) => motion.resize_text_range(index, start, time),
+            (true, DragKind::Body { origin, .. }) => {
+                let start = motion.snap_text_time(origin + body_delta, tolerance, Some(index));
+                motion.move_text(index, start);
+            }
+        }
+    });
+    if changed {
+        let next_index = if text_track {
+            runtime.motion.selected_text
+        } else {
+            runtime.motion.selected
+        };
+        if let Some(next_index) = next_index {
+            *kind = match previous_kind {
+                DragKind::Start(_) => DragKind::Start(next_index),
+                DragKind::End(_) => DragKind::End(next_index),
+                DragKind::Body { origin, .. } => DragKind::Body {
+                    index: next_index,
+                    origin,
+                },
+            };
+        }
+    }
+    changed
+}
+
+/// A click on a resting lane opens it and selects the clip under the pointer
+/// instead of adding one blind. Returns whether the lane was resting.
+fn open_resting_lane(runtime: &mut MotionRuntime, text: bool, raw_time: f64) -> bool {
+    if runtime.lanes.is_open(text) {
+        return false;
+    }
+    let index = if text {
+        runtime.motion.text_index_at(raw_time)
+    } else {
+        runtime.motion.segment_index_at(raw_time)
+    };
+    if let Some(index) = index {
+        runtime.motion.selected = (!text).then_some(index);
+        runtime.motion.selected_text = text.then_some(index);
+        runtime.source_selected = false;
+    }
+    runtime.lanes.open(text);
+    true
+}
+
+pub(super) fn install(
+    parts: &MotionModeParts,
+    session: &MotionSession,
+    redraw: Redraw,
+    redraw_playhead: Redraw,
+    redraw_motion_track: Redraw,
+    redraw_text_track: Redraw,
+    request_transition_preview: RequestTransitionPreview,
+    request_text_transition_preview: RequestTextTransitionPreview,
+) {
+    let ruler_click = GestureClick::new();
+    ruler_click.set_button(1);
+    ruler_click.connect_pressed({
+        let session = session.runtime.clone();
+        let redraw_playhead = redraw_playhead.clone();
+        let preview = parts.shell.preview.clone();
+        move |gesture, _, x, _| {
+            let width = gesture
+                .widget()
+                .map(|widget| widget.allocated_width().max(1) as f64)
+                .unwrap_or(1.0);
+            let mut runtime = session.borrow_mut();
+            runtime.cancel_auto_preview();
+            let duration = runtime.motion.duration.max(0.001);
+            runtime.motion.playhead = ((x / width) * duration).clamp(0.0, duration);
+            drop(runtime);
+            redraw_playhead();
+            preview.queue_draw();
+        }
+    });
+    parts.timeline.ruler.add_controller(ruler_click);
+
+    // The ruler is the scrub surface: pressing it jumps the playhead and
+    // dragging keeps it under the pointer, exactly like the video editor
+    // card. The playhead itself is paint-only, so no widget follows the drag.
+    let ruler_drag = GestureDrag::new();
+    ruler_drag.set_button(1);
+    ruler_drag.connect_drag_begin({
+        let session = session.runtime.clone();
+        let hover_playhead = parts.timeline.hover_playhead.clone();
+        let motion_track = parts.timeline.motion_track.clone();
+        let text_track = parts.timeline.text_track.clone();
+        let preview = parts.shell.preview.clone();
+        let redraw_playhead = redraw_playhead.clone();
+        move |_, _, _| {
+            // A scrub owns the playhead: holding it pauses playback, and the
+            // parked hover read-out is dropped so it cannot keep driving the
+            // preview while the drag is in flight.
+            let had_hover = {
+                let mut runtime = session.borrow_mut();
+                runtime.cancel_auto_preview();
+                runtime.playing = false;
+                runtime.last_tick = None;
+                runtime.preview_end = None;
+                // Scrub compositing stays inline (live) so the card tracks
+                // the pointer: the paused worker path would keep blitting
+                // the pre-drag frame while the playhead moves.
+                runtime.live_preview = true;
+                let had = runtime.hover_time.is_some() || runtime.hover_track.is_some();
+                runtime.hover_time = None;
+                runtime.hover_track = None;
+                had
+            };
+            if had_hover {
+                hover_playhead.queue_draw();
+                motion_track.queue_draw();
+                text_track.queue_draw();
+                preview.queue_draw();
+            }
+            redraw_playhead();
+        }
+    });
+    ruler_drag.connect_drag_update({
+        let session = session.runtime.clone();
+        let redraw_playhead = redraw_playhead.clone();
+        let preview = parts.shell.preview.clone();
+        move |gesture, offset_x, _| {
+            let Some((start_x, _)) = gesture.start_point() else {
+                return;
+            };
+            let width = gesture
+                .widget()
+                .map(|widget| widget.allocated_width().max(1) as f64)
+                .unwrap_or(1.0);
+            let mut runtime = session.borrow_mut();
+            let duration = runtime.motion.duration.max(0.001);
+            let next = (((start_x + offset_x) / width) * duration).clamp(0.0, duration);
+            if (next - runtime.motion.playhead).abs() < f64::EPSILON {
+                return;
+            }
+            runtime.motion.playhead = next;
+            runtime.live_preview = true;
+            drop(runtime);
+            redraw_playhead();
+            preview.queue_draw();
+        }
+    });
+    ruler_drag.connect_drag_end({
+        let session = session.runtime.clone();
+        let hovered = parts.timeline.playhead_hovered.clone();
+        let preview = parts.shell.preview.clone();
+        let redraw_playhead = redraw_playhead.clone();
+        move |_, _, _| {
+            hovered.set(false);
+            // Drop back to paused quality: the next paint schedules the
+            // sharp (Good-filter) worker for the landed frame.
+            session.borrow_mut().live_preview = false;
+            redraw_playhead();
+            // Release always lands the exact frame.
+            preview.queue_draw();
+        }
+    });
+    parts.timeline.ruler.add_controller(ruler_drag);
+
+    // The source thumbnail lane is selectable chrome, not a scrub surface:
+    // scrubbing belongs to the ruler and the playhead handle. Clicking it
+    // selects the source clip and clears any effect-clip selection.
+    let source_click = GestureClick::new();
+    source_click.set_button(1);
+    source_click.connect_pressed({
+        let session = session.runtime.clone();
+        let redraw = redraw.clone();
+        move |_, _, _, _| {
+            let mut runtime = session.borrow_mut();
+            runtime.cancel_auto_preview();
+            runtime.source_selected = true;
+            runtime.motion.selected = None;
+            runtime.motion.selected_text = None;
+            drop(runtime);
+            redraw();
+        }
+    });
+    parts.timeline.source_track.add_controller(source_click);
+
+    // A press on a clip may become a drag. Defer the expensive inspector
+    // refresh until release so the first pointer move is never blocked by a
+    // full preview render. Clicking empty track space only changes selection;
+    // the playhead is moved by dragging the playhead handle.
+    let motion_track_dragged = Rc::new(Cell::new(false));
+    let track_click = GestureClick::new();
+    track_click.set_button(1);
+    track_click.connect_released({
+        let session = session.runtime.clone();
+        let redraw = redraw.clone();
+        let request_transition_preview = request_transition_preview.clone();
+        let motion_track_dragged = motion_track_dragged.clone();
+        move |gesture, _n_press, x, _| {
+            if motion_track_dragged.replace(false) {
+                return;
+            }
+            let width = gesture
+                .widget()
+                .map(|widget| widget.allocated_width().max(1) as f64)
+                .unwrap_or(1.0);
+            let new_clip_start = {
+                let mut runtime = session.borrow_mut();
+                let duration = runtime.motion.duration.max(0.001);
+                let raw_time = ((x / width) * duration).clamp(0.0, duration);
+                if open_resting_lane(&mut runtime, false, raw_time) {
+                    drop(runtime);
+                    redraw();
+                    return;
+                }
+                runtime.source_selected = false;
+                // Selection tests the real pointer position: snapping it first
+                // could land on the next clip's edge and select it while the user
+                // clicked in the empty gap before it.
+                if let Some(index) = runtime.motion.segment_index_at(raw_time) {
+                    runtime.motion.selected = Some(index);
+                    runtime.motion.selected_text = None;
+                    None
+                } else {
+                    let time =
+                        runtime
+                            .motion
+                            .snap_effect_time(raw_time, (10.0 / width) * duration, None);
+                    runtime.begin_motion_edit();
+                    let added = runtime.motion.add_segment_at(time);
+                    runtime.motion.selected_text = None;
+                    added.and_then(|index| runtime.motion.segments.get(index).map(|s| s.start))
+                }
+            };
+            // A new clip starts on its identity frame, so leaving the playhead
+            // where it was would keep the preview static. Replay the new move
+            // immediately (same as editing a transform) so the motion is visible.
+            redraw();
+            if let Some(start) = new_clip_start {
+                request_transition_preview(start);
+            }
+        }
+    });
+    parts.timeline.motion_track.add_controller(track_click);
+
+    let motion_menu = GestureClick::new();
+    motion_menu.set_button(3);
+    motion_menu.connect_pressed({
+        let session = session.runtime.clone();
+        let redraw = redraw.clone();
+        move |gesture, _, x, y| {
+            let Some(area) = gesture
+                .widget()
+                .and_then(|widget| widget.downcast::<DrawingArea>().ok())
+            else {
+                return;
+            };
+            let width = area.allocated_width().max(1) as f64;
+            let height = area.allocated_height() as f64;
+            // A resting lane takes no clip menu; a click opens it first.
+            if y < 7.0 || y > height - 7.0 || !session.borrow().lanes.is_open(false) {
+                return;
+            }
+            let index = {
+                let mut runtime = session.borrow_mut();
+                let duration = runtime.motion.duration.max(0.001);
+                let Some(index) =
+                    runtime
+                        .motion
+                        .segments
+                        .iter()
+                        .enumerate()
+                        .find_map(|(index, segment)| {
+                            let x0 = (segment.start / duration).clamp(0.0, 1.0) * width;
+                            let x1 = (segment.end / duration).clamp(0.0, 1.0) * width;
+                            (x >= x0 && x <= x0 + (x1 - x0).max(22.0)).then_some(index)
+                        })
+                else {
+                    return;
+                };
+                runtime.motion.selected = Some(index);
+                runtime.motion.selected_text = None;
+                runtime.source_selected = false;
+                index
+            };
+            redraw();
+            show_clip_menu(
+                &area,
+                ClipMenuTarget::Motion(index),
+                x,
+                y,
+                session.clone(),
+                redraw.clone(),
+            );
+        }
+    });
+    parts.timeline.motion_track.add_controller(motion_menu);
+
+    let drag_kind = Rc::new(Cell::new(None::<DragKind>));
+    let drag_checkpointed = Rc::new(Cell::new(false));
+    let drag_resized = Rc::new(Cell::new(false));
+    let drag = GestureDrag::new();
+    drag.set_button(1);
+    drag.connect_drag_begin({
+        let session = session.runtime.clone();
+        let drag_kind = drag_kind.clone();
+        let drag_checkpointed = drag_checkpointed.clone();
+        let drag_resized = drag_resized.clone();
+        let motion_track_dragged = motion_track_dragged.clone();
+        let redraw_motion_track = redraw_motion_track.clone();
+        move |gesture, x, _| {
+            let width = gesture
+                .widget()
+                .map(|widget| widget.allocated_width().max(1) as f64)
+                .unwrap_or(1.0);
+            let mut runtime = session.borrow_mut();
+            let duration = runtime.motion.duration.max(0.001);
+            let time = ((x / width) * duration).clamp(0.0, duration);
+            let edge_seconds = (8.0 / width) * duration;
+            // A resting lane takes no drags or trims.
+            let open = runtime.lanes.is_open(false);
+            let kind = runtime
+                .motion
+                .segments
+                .iter()
+                .filter(|_| open)
+                .enumerate()
+                .find_map(|(index, segment)| {
+                    if (segment.start - time).abs() <= edge_seconds {
+                        Some(DragKind::Start(index))
+                    } else if (segment.end - time).abs() <= edge_seconds {
+                        Some(DragKind::End(index))
+                    } else if time >= segment.start && time <= segment.end {
+                        Some(DragKind::Body {
+                            index,
+                            origin: segment.start,
+                        })
+                    } else {
+                        None
+                    }
+                });
+            if let Some(index) = kind.map(drag_kind_index) {
+                runtime.motion.selected = Some(index);
+                runtime.motion.selected_text = None;
+                runtime.source_selected = false;
+            }
+            drop(runtime);
+            drag_checkpointed.set(false);
+            drag_resized.set(false);
+            drag_kind.set(kind);
+            motion_track_dragged.set(kind.is_some());
+            if kind.is_some() {
+                redraw_motion_track();
+            }
+        }
+    });
+    drag.connect_drag_update({
+        let session = session.runtime.clone();
+        let drag_kind = drag_kind.clone();
+        let drag_checkpointed = drag_checkpointed.clone();
+        let drag_resized = drag_resized.clone();
+        let redraw_motion_track = redraw_motion_track.clone();
+        move |gesture, offset_x, _| {
+            let Some(kind) = drag_kind.get() else {
+                return;
+            };
+            let Some((start_x, _)) = gesture.start_point() else {
+                return;
+            };
+            let width = gesture
+                .widget()
+                .map(|widget| widget.allocated_width().max(1) as f64)
+                .unwrap_or(1.0);
+            let mut runtime = session.borrow_mut();
+            let duration = runtime.motion.duration.max(0.001);
+            let raw_time = (((start_x + offset_x) / width) * duration).clamp(0.0, duration);
+            let tolerance = (10.0 / width) * duration;
+            let mut checkpointed = drag_checkpointed.get();
+            let mut kind = kind;
+            let changed = update_clip_drag(
+                &mut runtime,
+                &mut kind,
+                raw_time,
+                (offset_x / width) * duration,
+                tolerance,
+                false,
+                &mut checkpointed,
+            );
+            drop(runtime);
+            drag_kind.set(Some(kind));
+            drag_checkpointed.set(checkpointed);
+            if changed {
+                if matches!(kind, DragKind::Start(_) | DragKind::End(_)) {
+                    drag_resized.set(true);
+                }
+                redraw_motion_track();
+            }
+        }
+    });
+    drag.connect_drag_end({
+        let session = session.runtime.clone();
+        let drag_kind = drag_kind.clone();
+        let drag_checkpointed = drag_checkpointed.clone();
+        let drag_resized = drag_resized.clone();
+        let redraw = redraw.clone();
+        let request_transition_preview = request_transition_preview.clone();
+        let motion_track_dragged = motion_track_dragged.clone();
+        move |_, _, _| {
+            let preview_request = if drag_resized.replace(false) {
+                let runtime = session.borrow();
+                drag_kind
+                    .get()
+                    .and_then(|kind| drag_preview_request(&runtime, kind, false, true))
+            } else {
+                None
+            };
+            drag_kind.set(None);
+            drag_checkpointed.set(false);
+            redraw();
+            if let Some(ClipPreviewRequest::Motion { start }) = preview_request {
+                request_transition_preview(start);
+            }
+            // GestureClick's release can arrive before or after GestureDrag's
+            // end callback. Keep this suppression through the release phase,
+            // then clear it even on toolkits that do not emit that click.
+            let reset_dragged = motion_track_dragged.clone();
+            glib::idle_add_local_once(move || reset_dragged.set(false));
+        }
+    });
+    parts.timeline.motion_track.add_controller(drag);
+    install_track_end_cursor(&parts.timeline.motion_track, session.runtime.clone(), false);
+
+    let text_track_dragged = Rc::new(Cell::new(false));
+    let text_click = GestureClick::new();
+    text_click.set_button(1);
+    text_click.connect_released({
+        let session = session.runtime.clone();
+        let redraw = redraw.clone();
+        let request_text_transition_preview = request_text_transition_preview.clone();
+        let text_track_dragged = text_track_dragged.clone();
+        move |gesture, _n_press, x, _| {
+            if text_track_dragged.replace(false) {
+                return;
+            }
+            let width = gesture
+                .widget()
+                .map(|widget| widget.allocated_width().max(1) as f64)
+                .unwrap_or(1.0);
+            let new_text = {
+                let mut runtime = session.borrow_mut();
+                let duration = runtime.motion.duration.max(0.001);
+                let raw_time = ((x / width) * duration).clamp(0.0, duration);
+                if open_resting_lane(&mut runtime, true, raw_time) {
+                    drop(runtime);
+                    redraw();
+                    return;
+                }
+                runtime.source_selected = false;
+                // Same single-click rule as the motion lane.
+                if let Some(index) = runtime.motion.text_index_at(raw_time) {
+                    runtime.motion.selected_text = Some(index);
+                    runtime.motion.selected = None;
+                    None
+                } else {
+                    let time =
+                        runtime
+                            .motion
+                            .snap_text_time(raw_time, (10.0 / width) * duration, None);
+                    runtime.begin_motion_edit();
+                    let added = runtime.motion.add_text_at(time);
+                    runtime.motion.selected = None;
+                    added.and_then(|index| {
+                        runtime
+                            .motion
+                            .text_segments
+                            .get(index)
+                            .map(|s| (s.start, s.entrance_seconds()))
+                    })
+                }
+            };
+            redraw();
+            if let Some((start, entrance_seconds)) = new_text {
+                request_text_transition_preview(start, entrance_seconds);
+            }
+        }
+    });
+    parts.timeline.text_track.add_controller(text_click);
+
+    let text_menu = GestureClick::new();
+    text_menu.set_button(3);
+    text_menu.connect_pressed({
+        let session = session.runtime.clone();
+        let redraw = redraw.clone();
+        move |gesture, _, x, y| {
+            let Some(area) = gesture
+                .widget()
+                .and_then(|widget| widget.downcast::<DrawingArea>().ok())
+            else {
+                return;
+            };
+            let width = area.allocated_width().max(1) as f64;
+            let height = area.allocated_height() as f64;
+            if y < 6.0 || y > height - 6.0 || !session.borrow().lanes.is_open(true) {
+                return;
+            }
+            let index =
+                {
+                    let mut runtime = session.borrow_mut();
+                    let duration = runtime.motion.duration.max(0.001);
+                    let Some(index) = runtime.motion.text_segments.iter().enumerate().find_map(
+                        |(index, segment)| {
+                            let x0 = (segment.start / duration).clamp(0.0, 1.0) * width;
+                            let x1 = (segment.end / duration).clamp(0.0, 1.0) * width;
+                            (x >= x0 && x <= x0 + (x1 - x0).max(22.0)).then_some(index)
+                        },
+                    ) else {
+                        return;
+                    };
+                    runtime.motion.selected_text = Some(index);
+                    runtime.motion.selected = None;
+                    runtime.source_selected = false;
+                    index
+                };
+            redraw();
+            show_clip_menu(
+                &area,
+                ClipMenuTarget::Text(index),
+                x,
+                y,
+                session.clone(),
+                redraw.clone(),
+            );
+        }
+    });
+    parts.timeline.text_track.add_controller(text_menu);
+
+    let text_drag_kind = Rc::new(Cell::new(None::<DragKind>));
+    let text_drag_checkpointed = Rc::new(Cell::new(false));
+    let text_drag_resized = Rc::new(Cell::new(false));
+    let text_drag = GestureDrag::new();
+    text_drag.set_button(1);
+    text_drag.connect_drag_begin({
+        let session = session.runtime.clone();
+        let text_drag_kind = text_drag_kind.clone();
+        let text_drag_checkpointed = text_drag_checkpointed.clone();
+        let text_drag_resized = text_drag_resized.clone();
+        let text_track_dragged = text_track_dragged.clone();
+        let redraw_text_track = redraw_text_track.clone();
+        move |gesture, x, _| {
+            let width = gesture
+                .widget()
+                .map(|widget| widget.allocated_width().max(1) as f64)
+                .unwrap_or(1.0);
+            let mut runtime = session.borrow_mut();
+            let duration = runtime.motion.duration.max(0.001);
+            let time = ((x / width) * duration).clamp(0.0, duration);
+            let edge_seconds = (8.0 / width) * duration;
+            let open = runtime.lanes.is_open(true);
+            let kind = runtime
+                .motion
+                .text_segments
+                .iter()
+                .filter(|_| open)
+                .enumerate()
+                .find_map(|(index, segment)| {
+                    if (segment.start - time).abs() <= edge_seconds {
+                        Some(DragKind::Start(index))
+                    } else if (segment.end - time).abs() <= edge_seconds {
+                        Some(DragKind::End(index))
+                    } else if time >= segment.start && time <= segment.end {
+                        Some(DragKind::Body {
+                            index,
+                            origin: segment.start,
+                        })
+                    } else {
+                        None
+                    }
+                });
+            if let Some(index) = kind.map(drag_kind_index) {
+                runtime.motion.selected_text = Some(index);
+                runtime.motion.selected = None;
+                runtime.source_selected = false;
+            }
+            drop(runtime);
+            text_drag_checkpointed.set(false);
+            text_drag_resized.set(false);
+            text_drag_kind.set(kind);
+            text_track_dragged.set(kind.is_some());
+            if kind.is_some() {
+                redraw_text_track();
+            }
+        }
+    });
+    text_drag.connect_drag_update({
+        let session = session.runtime.clone();
+        let text_drag_kind = text_drag_kind.clone();
+        let text_drag_checkpointed = text_drag_checkpointed.clone();
+        let text_drag_resized = text_drag_resized.clone();
+        let redraw_text_track = redraw_text_track.clone();
+        move |gesture, offset_x, _| {
+            let Some(kind) = text_drag_kind.get() else {
+                return;
+            };
+            let Some((start_x, _)) = gesture.start_point() else {
+                return;
+            };
+            let width = gesture
+                .widget()
+                .map(|widget| widget.allocated_width().max(1) as f64)
+                .unwrap_or(1.0);
+            let mut runtime = session.borrow_mut();
+            let duration = runtime.motion.duration.max(0.001);
+            let raw_time = (((start_x + offset_x) / width) * duration).clamp(0.0, duration);
+            let tolerance = (10.0 / width) * duration;
+            let mut checkpointed = text_drag_checkpointed.get();
+            let mut kind = kind;
+            let changed = update_clip_drag(
+                &mut runtime,
+                &mut kind,
+                raw_time,
+                (offset_x / width) * duration,
+                tolerance,
+                true,
+                &mut checkpointed,
+            );
+            drop(runtime);
+            text_drag_kind.set(Some(kind));
+            text_drag_checkpointed.set(checkpointed);
+            if changed {
+                if matches!(kind, DragKind::Start(_) | DragKind::End(_)) {
+                    text_drag_resized.set(true);
+                }
+                redraw_text_track();
+            }
+        }
+    });
+    text_drag.connect_drag_end({
+        let session = session.runtime.clone();
+        let text_drag_kind = text_drag_kind.clone();
+        let text_drag_checkpointed = text_drag_checkpointed.clone();
+        let text_drag_resized = text_drag_resized.clone();
+        let redraw = redraw.clone();
+        let request_text_transition_preview = request_text_transition_preview.clone();
+        let text_track_dragged = text_track_dragged.clone();
+        move |_, _, _| {
+            let preview_request = if text_drag_resized.replace(false) {
+                let runtime = session.borrow();
+                text_drag_kind
+                    .get()
+                    .and_then(|kind| drag_preview_request(&runtime, kind, true, true))
+            } else {
+                None
+            };
+            text_drag_kind.set(None);
+            text_drag_checkpointed.set(false);
+            redraw();
+            if let Some(ClipPreviewRequest::Text {
+                start,
+                entrance_seconds,
+            }) = preview_request
+            {
+                request_text_transition_preview(start, entrance_seconds);
+            }
+            let reset_dragged = text_track_dragged.clone();
+            glib::idle_add_local_once(move || reset_dragged.set(false));
+        }
+    });
+    parts.timeline.text_track.add_controller(text_drag);
+    install_track_end_cursor(&parts.timeline.text_track, session.runtime.clone(), true);
+
+    // Hover is tracked on the whole board: only the capsule head expands into
+    // the clock pill, so the stem and lanes below it stay inert. Hit-testing
+    // uses the drawn head's model-space x, never a widget allocation.
+    if let Some(board) = parts
+        .timeline
+        .playhead_overlay
+        .ancestor(Overlay::static_type())
+    {
+        let hover = EventControllerMotion::new();
+        hover.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        hover.connect_motion({
+            let session = session.runtime.clone();
+            let hovered = parts.timeline.playhead_hovered.clone();
+            let hover_playhead = parts.timeline.hover_playhead.clone();
+            let motion_track = parts.timeline.motion_track.clone();
+            let text_track = parts.timeline.text_track.clone();
+            let drag_kind = drag_kind.clone();
+            let text_drag_kind = text_drag_kind.clone();
+            move |controller, x, y| {
+                if drag_kind.get().is_some() || text_drag_kind.get().is_some() {
+                    let (had_hover, was_previewing) = {
+                        let mut runtime = session.borrow_mut();
+                        let was = super::super::preview::hover_preview_frame(
+                            &runtime.motion,
+                            runtime.hover_time,
+                            runtime.hover_track,
+                            runtime.playing,
+                        )
+                        .is_some();
+                        let had = runtime.hover_time.is_some() || runtime.hover_track.is_some();
+                        runtime.hover_time = None;
+                        runtime.hover_track = None;
+                        (had, was)
+                    };
+                    if had_hover {
+                        hover_playhead.queue_draw();
+                        motion_track.queue_draw();
+                        text_track.queue_draw();
+                        if was_previewing {
+                            session.borrow_mut().preview_dirty = true;
+                        }
+                    }
+                    return;
+                }
+                let board = controller.widget();
+                let width = board
+                    .as_ref()
+                    .map(|widget| widget.allocated_width().max(1) as f64)
+                    .unwrap_or(1.0);
+                // Hover time is directionless: scrubbing right-to-left drives
+                // the same hover frame as left-to-right, so clips also play
+                // backwards under the red line.
+                let (near, was_previewing, is_previewing, prev_track, next_track) = {
+                    let mut runtime = session.borrow_mut();
+                    let was = super::super::preview::hover_preview_frame(
+                        &runtime.motion,
+                        runtime.hover_time,
+                        runtime.hover_track,
+                        runtime.playing,
+                    )
+                    .is_some();
+                    let prev_track = runtime.hover_track;
+                    let duration = runtime.motion.duration.max(0.001);
+                    runtime.hover_time = Some((x / width).clamp(0.0, 1.0) * duration);
+                    let line_x = (runtime.motion.playhead / duration).clamp(0.0, 1.0) * width;
+                    runtime.hover_track = match board.as_ref() {
+                        Some(board) if pointer_in_lane(&motion_track, board, y) => {
+                            Some(MotionHoverTrack::Motion)
+                        }
+                        Some(board) if pointer_in_lane(&text_track, board, y) => {
+                            Some(MotionHoverTrack::Text)
+                        }
+                        _ => None,
+                    };
+                    let next_track = runtime.hover_track;
+                    let is = super::super::preview::hover_preview_frame(
+                        &runtime.motion,
+                        runtime.hover_time,
+                        runtime.hover_track,
+                        runtime.playing,
+                    )
+                    .is_some();
+                    (
+                        super::super::super::motion_timeline::playhead_head_hit(x, y, line_x),
+                        was,
+                        is,
+                        prev_track,
+                        next_track,
+                    )
+                };
+                // Like the video editor card: the hover line repaints every
+                // motion, but each lane only repaints while the pointer is
+                // over it (the add ghost follows the line) or on the change
+                // that shows/clears it. Hovering the ruler repaints one
+                // overlay instead of the whole timeline.
+                hover_playhead.queue_draw();
+                if prev_track != next_track {
+                    if prev_track == Some(MotionHoverTrack::Motion)
+                        || next_track == Some(MotionHoverTrack::Motion)
+                    {
+                        motion_track.queue_draw();
+                    }
+                    if prev_track == Some(MotionHoverTrack::Text)
+                        || next_track == Some(MotionHoverTrack::Text)
+                    {
+                        text_track.queue_draw();
+                    }
+                } else if next_track == Some(MotionHoverTrack::Motion) {
+                    motion_track.queue_draw();
+                } else if next_track == Some(MotionHoverTrack::Text) {
+                    text_track.queue_draw();
+                }
+                if was_previewing || is_previewing {
+                    session.borrow_mut().preview_dirty = true;
+                }
+                if hovered.replace(near) != near {
+                    // The cursor follows the drawn head, so grabbing it works
+                    // from the ruler without a positioned handle widget.
+                    if let Some(widget) = controller.widget() {
+                        let cursor = near
+                            .then(|| gdk::Cursor::from_name("ew-resize", None))
+                            .flatten();
+                        widget.set_cursor(cursor.as_ref());
+                    }
+                }
+            }
+        });
+        hover.connect_leave({
+            let session = session.runtime.clone();
+            let hovered = parts.timeline.playhead_hovered.clone();
+            let hover_playhead = parts.timeline.hover_playhead.clone();
+            let motion_track = parts.timeline.motion_track.clone();
+            let text_track = parts.timeline.text_track.clone();
+            move |controller| {
+                let (lane_changed, was_previewing) = {
+                    let mut runtime = session.borrow_mut();
+                    let was = super::super::preview::hover_preview_frame(
+                        &runtime.motion,
+                        runtime.hover_time,
+                        runtime.hover_track,
+                        runtime.playing,
+                    )
+                    .is_some();
+                    runtime.hover_time = None;
+                    let changed = runtime.hover_track.is_some();
+                    runtime.hover_track = None;
+                    (changed, was)
+                };
+                hover_playhead.queue_draw();
+                if lane_changed {
+                    motion_track.queue_draw();
+                    text_track.queue_draw();
+                }
+                // Snap the preview back from the hover frame to the
+                // playhead frame, but only if it was showing a hover frame:
+                // leaving empty lane space changes nothing.
+                if was_previewing {
+                    session.borrow_mut().preview_dirty = true;
+                }
+                if let Some(widget) = controller.widget() {
+                    widget.set_cursor(None);
+                }
+                hovered.set(false);
+            }
+        });
+        board.add_controller(hover);
+    }
+
+    parts.timeline.add_btn.connect_clicked({
+        let session = session.runtime.clone();
+        let redraw = redraw.clone();
+        let request_transition_preview = request_transition_preview.clone();
+        move |_| {
+            let new_clip_start = {
+                let mut runtime = session.borrow_mut();
+                let playhead = runtime.motion.playhead;
+                runtime.source_selected = false;
+                runtime.lanes.open(false);
+                runtime.begin_motion_edit();
+                runtime
+                    .motion
+                    .add_segment_at(playhead)
+                    .and_then(|index| runtime.motion.segments.get(index).map(|s| s.start))
+            };
+            redraw();
+            if let Some(start) = new_clip_start {
+                request_transition_preview(start);
+            }
+        }
+    });
+
+    parts.timeline.add_text_btn.connect_clicked({
+        let session = session.runtime.clone();
+        let redraw = redraw.clone();
+        let request_text_transition_preview = request_text_transition_preview.clone();
+        move |_| {
+            let new_text = {
+                let mut runtime = session.borrow_mut();
+                let playhead = runtime.motion.playhead;
+                runtime.source_selected = false;
+                runtime.lanes.open(true);
+                runtime.begin_motion_edit();
+                runtime.motion.add_text_at(playhead).and_then(|index| {
+                    runtime
+                        .motion
+                        .text_segments
+                        .get(index)
+                        .map(|s| (s.start, s.entrance_seconds()))
+                })
+            };
+            redraw();
+            if let Some((start, entrance_seconds)) = new_text {
+                request_text_transition_preview(start, entrance_seconds);
+            }
+        }
+    });
+}
+
+/// Advertise the existing trim handles before a drag starts. Motion and Text
+/// clips both accept edge drags, so the pointer must make those narrow targets
+/// discoverable rather than looking like ordinary timeline space.
+fn install_track_end_cursor(
+    track: &DrawingArea,
+    runtime: Rc<RefCell<MotionRuntime>>,
+    text_track: bool,
+) {
+    let pointer = EventControllerMotion::new();
+    let last_cursor = Rc::new(Cell::new(None::<&'static str>));
+    let motion_cursor = last_cursor.clone();
+    pointer.connect_motion(move |controller, x, _| {
+        let width = controller
+            .widget()
+            .map(|widget| widget.allocated_width().max(1) as f64)
+            .unwrap_or(1.0);
+        let cursor_name = {
+            let runtime = runtime.borrow();
+            let duration = runtime.motion.duration.max(0.001);
+            let time = ((x / width) * duration).clamp(0.0, duration);
+            let edge_seconds = (8.0 / width) * duration;
+            let open = runtime.lanes.is_open(text_track);
+            let edge_at = |start: f64, end: f64| {
+                if !open {
+                    return None;
+                }
+                if (time - end).abs() <= edge_seconds {
+                    Some("e-resize")
+                } else if (time - start).abs() <= edge_seconds {
+                    Some("w-resize")
+                } else {
+                    None
+                }
+            };
+            if text_track {
+                runtime
+                    .motion
+                    .text_segments
+                    .iter()
+                    .find_map(|segment| edge_at(segment.start, segment.end))
+            } else {
+                runtime
+                    .motion
+                    .segments
+                    .iter()
+                    .find_map(|segment| edge_at(segment.start, segment.end))
+            }
+        };
+        let cursor_name = cursor_name.unwrap_or("default");
+        if motion_cursor.get() != Some(cursor_name) {
+            if let Some(widget) = controller.widget() {
+                widget.set_cursor(gdk::Cursor::from_name(cursor_name, None).as_ref());
+            }
+            motion_cursor.set(Some(cursor_name));
+        }
+    });
+    pointer.connect_leave({
+        let last_cursor = last_cursor.clone();
+        move |controller| {
+            if let Some(widget) = controller.widget() {
+                widget.set_cursor(None);
+            }
+            last_cursor.set(None);
+        }
+    });
+    track.add_controller(pointer);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::capture::editor::window::motion_mode::MotionSession;
+
+    #[test]
+    fn moving_a_clip_past_another_keeps_dragging_the_original_clip() {
+        let session = MotionSession::new(false, 96.0);
+        let mut runtime = session.runtime.borrow_mut();
+        runtime.motion.set_duration(10.0);
+        runtime.motion.add_segment_at(0.0).unwrap();
+        runtime.motion.add_segment_at(2.0).unwrap();
+        let mut kind = DragKind::Body {
+            index: 0,
+            origin: 0.0,
+        };
+        let mut checkpointed = false;
+
+        assert!(update_clip_drag(
+            &mut runtime,
+            &mut kind,
+            5.1,
+            4.1,
+            0.0,
+            false,
+            &mut checkpointed,
+        ));
+        assert_eq!(drag_kind_index(kind), 1);
+        assert_eq!(runtime.motion.segments[0].start, 2.0);
+        assert_eq!(runtime.motion.segments[1].start, 4.1);
+
+        assert!(update_clip_drag(
+            &mut runtime,
+            &mut kind,
+            5.2,
+            4.2,
+            0.0,
+            false,
+            &mut checkpointed,
+        ));
+        assert_eq!(runtime.motion.segments[0].start, 2.0);
+        assert_eq!(runtime.motion.segments[1].start, 4.2);
+    }
+
+    #[test]
+    fn rejected_overlapping_drag_preserves_redo_history() {
+        let session = MotionSession::new(false, 96.0);
+        let mut runtime = session.runtime.borrow_mut();
+        runtime.motion.add_segment_at(0.0).unwrap();
+        runtime.motion.add_segment_at(2.0).unwrap();
+        runtime.motion.selected = Some(0);
+        runtime.begin_motion_command();
+        runtime.motion.set_selected_end_scale(1.5);
+        assert!(runtime.undo_motion());
+        assert!(runtime.motion_history_availability().1);
+
+        let mut kind = DragKind::Body {
+            index: 0,
+            origin: 0.0,
+        };
+        let mut checkpointed = false;
+        assert!(!update_clip_drag(
+            &mut runtime,
+            &mut kind,
+            2.5,
+            2.5,
+            0.0,
+            false,
+            &mut checkpointed,
+        ));
+        assert!(!checkpointed);
+        assert_eq!(runtime.motion.segments[0].start, 0.0);
+        assert!(runtime.motion_history_availability().1);
+    }
+
+    #[test]
+    fn only_changed_edge_resizes_request_a_fresh_preview() {
+        let session = MotionSession::new(false, 96.0);
+        let mut runtime = session.runtime.borrow_mut();
+        runtime.motion.add_segment_at(0.0).unwrap();
+        let edge = DragKind::End(0);
+        let body = DragKind::Body {
+            index: 0,
+            origin: 0.0,
+        };
+
+        assert!(matches!(
+            drag_preview_request(&runtime, edge, false, true),
+            Some(ClipPreviewRequest::Motion { start }) if start.abs() < f64::EPSILON
+        ));
+        assert_eq!(drag_preview_request(&runtime, body, false, true), None);
+        assert_eq!(drag_preview_request(&runtime, edge, false, false), None);
+
+        runtime.motion.add_text_at(2.0).unwrap();
+        let text_edge = DragKind::Start(0);
+        let text_body = DragKind::Body {
+            index: 0,
+            origin: 2.0,
+        };
+        assert!(matches!(
+            drag_preview_request(&runtime, text_edge, true, true),
+            Some(ClipPreviewRequest::Text {
+                start,
+                entrance_seconds,
+            }) if (start - 2.0).abs() < f64::EPSILON
+                && (entrance_seconds - runtime.motion.selected_text_segment().unwrap().entrance_seconds()).abs() < f64::EPSILON
+        ));
+        assert_eq!(drag_preview_request(&runtime, text_body, true, true), None);
+        assert_eq!(drag_preview_request(&runtime, text_edge, true, false), None);
+    }
+
+    #[test]
+    fn edge_resize_stops_the_old_preview_and_uses_the_retimed_motion_bounds() {
+        let session = MotionSession::new(false, 96.0);
+        let mut runtime = session.runtime.borrow_mut();
+        runtime.motion.add_segment_at(0.0).unwrap();
+        runtime.playing = true;
+        runtime.preview_end = Some(1.0);
+        runtime.last_tick = Some(std::time::Instant::now());
+        let mut kind = DragKind::End(0);
+        let mut checkpointed = false;
+        assert!(update_clip_drag(
+            &mut runtime,
+            &mut kind,
+            4.0,
+            0.0,
+            0.0,
+            false,
+            &mut checkpointed
+        ));
+        assert!(!runtime.playing);
+        assert_eq!(runtime.preview_end, None);
+        assert_eq!(
+            runtime
+                .motion
+                .selected_segment()
+                .unwrap()
+                .timing
+                .transition_duration,
+            4.0
+        );
+        let Some(ClipPreviewRequest::Motion { start }) =
+            drag_preview_request(&runtime, kind, false, true)
+        else {
+            panic!("a resized motion needs a fresh preview");
+        };
+        let (_, end, pose_time) =
+            super::super::motion_auto_preview_range(&runtime.motion, start).unwrap();
+        assert_eq!(end, 4.0);
+        assert_eq!(pose_time, 4.0);
+    }
+
+    #[test]
+    fn text_resize_preview_uses_the_updated_entrance_duration() {
+        use crate::recording::editor::model::MotionTextAnimation;
+        let session = MotionSession::new(false, 96.0);
+        let mut runtime = session.runtime.borrow_mut();
+        runtime.motion.add_text_at(0.0).unwrap();
+        runtime
+            .motion
+            .set_selected_text_animation(MotionTextAnimation::Typewriter);
+        let mut kind = DragKind::End(0);
+        let mut checkpointed = false;
+        assert!(update_clip_drag(
+            &mut runtime,
+            &mut kind,
+            4.0,
+            0.0,
+            0.0,
+            true,
+            &mut checkpointed
+        ));
+        let Some(ClipPreviewRequest::Text {
+            start,
+            entrance_seconds,
+        }) = drag_preview_request(&runtime, kind, true, true)
+        else {
+            panic!("a resized title needs a fresh preview");
+        };
+        assert_eq!(start, 0.0);
+        assert_eq!(entrance_seconds, 2.4);
+        let (_, end) =
+            super::super::motion_text_preview_range(&runtime.motion, start, entrance_seconds);
+        assert_eq!(end, 2.65);
+    }
+}
