@@ -1,12 +1,10 @@
 use crate::i18n::{t, tfmt};
 use gtk4::{prelude::*, Align, Box as GtkBox, Button, Label, Orientation};
 
-/// Shotbolt's source and licence.
-const SOURCE_URL: &str = "https://github.com/keinbug/shotbolt";
-
 /// The logo the icon set is made from, so the page shows the real app icon.
 const LOGO_PNG: &[u8] = include_bytes!("../../media/shotbolt-logo-400.png");
 
+#[cfg(not(target_os = "windows"))]
 fn open_in_browser(url: &'static str) {
     std::thread::spawn(move || {
         let _ = crate::utils::open::open_url(url);
@@ -79,29 +77,6 @@ pub fn build_about_section() -> AboutSettingsWidgets {
     update_vbox.append(&check_btn);
     update_vbox.append(&update_status);
     section.append(&update_vbox);
-
-    // --- 3. FOOTER ---
-    let footer_vbox = GtkBox::new(Orientation::Vertical, 8);
-    footer_vbox.set_margin_top(48);
-
-    let licence = Label::new(Some(&t(
-        "Shotbolt is a fork of ApexShot, free software under the GNU GPL v3 or later.",
-    )));
-    licence.add_css_class("settings-sub-option-hint");
-    licence.set_wrap(true);
-    licence.set_justify(gtk4::Justification::Center);
-    licence.set_max_width_chars(44);
-    licence.set_halign(Align::Center);
-    licence.set_opacity(0.6);
-
-    let source = Button::with_label(&t("Source code"));
-    source.add_css_class("about-link-button");
-    source.set_halign(Align::Center);
-    source.connect_clicked(|_| open_in_browser(SOURCE_URL));
-
-    footer_vbox.append(&licence);
-    footer_vbox.append(&source);
-    section.append(&footer_vbox);
 
     AboutSettingsWidgets { section }
 }

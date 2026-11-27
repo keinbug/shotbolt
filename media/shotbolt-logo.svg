@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0.15" y1="0.1" x2="0.85" y2="0.95">
+      <stop offset="0" stop-color="#a87ff7"/>
+      <stop offset="1" stop-color="#582cc8"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="258" cy="266" r="190" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.38"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bolt" x1="0.1" y1="0.9" x2="0.9" y2="0.1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.82"/>
+      <stop offset="0.5" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.92"/>
+    </linearGradient>
+  </defs>
+  <circle cx="256" cy="256" r="256" fill="url(#bg)"/>
+  <circle cx="256" cy="256" r="256" fill="url(#glow)"/>
+  <circle cx="258" cy="266" r="118" fill="none" stroke="#ffffff" stroke-opacity="0.16" stroke-width="3"/>
+  <polygon points="468,144 306,250 318,146 230,228 64,410 220,302 366,440 294,294" fill="url(#bolt)" stroke="#ffffff" stroke-width="2" stroke-linejoin="miter"/>
+</svg>
