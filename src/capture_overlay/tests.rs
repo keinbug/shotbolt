@@ -817,8 +817,8 @@ mod tests {
             .next()
             .unwrap();
         let overlay = include_str!("../../capture-overlay/src/CaptureOverlay.cpp");
-        assert!(opened_event.contains("\"ApexShot Capture Overlay\""));
-        assert!(overlay.contains("setWindowTitle(QStringLiteral(\"ApexShot Capture Overlay\"));"));
+        assert!(opened_event.contains("\"Shotbolt Capture Overlay\""));
+        assert!(overlay.contains("setWindowTitle(QStringLiteral(\"Shotbolt Capture Overlay\"));"));
     }
 
     #[test]

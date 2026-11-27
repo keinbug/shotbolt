@@ -62,7 +62,7 @@ impl Intro {
         Self {
             headline: t("Sign in to get a share link"),
             lede: t(
-                "Your capture is saved. Connect a free ApexShot account and every upload becomes a link in your clipboard.",
+                "Your capture is saved. Connect a free Shotbolt account and every upload becomes a link in your clipboard.",
             ),
             primary: t("Connect account"),
         }
@@ -74,7 +74,7 @@ impl Intro {
         Self {
             headline: t("Copied. Want a link instead?"),
             lede: t(
-                "A free ApexShot account turns every capture into a share link, with 20 links a month.",
+                "A free Shotbolt account turns every capture into a share link, with 20 links a month.",
             ),
             primary: t("Get link"),
         }
@@ -866,7 +866,7 @@ fn login_error_message(error: &LoginError) -> String {
         LoginError::Expired => t("This code expired. Try again to get a new one."),
         LoginError::Denied => t("Authorization was denied in the browser."),
         LoginError::NotConfigured | LoginError::HttpRequest(_) | LoginError::Server(_) => {
-            t("Couldn't reach ApexShot Cloud. Check your connection and try again.")
+            t("Couldn't reach Shotbolt Cloud. Check your connection and try again.")
         }
         LoginError::Local(_) => t("Signed in, but this device could not save the account."),
     }

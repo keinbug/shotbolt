@@ -68,8 +68,9 @@ pub enum OnboardingStep {
 }
 
 impl OnboardingStep {
-    fn all() -> [Self; 4] {
-        [Self::Welcome, Self::HowToUse, Self::Cloud, Self::Complete]
+    // Shotbolt: no hosted-cloud step; uploads are set up in Settings.
+    fn all() -> [Self; 3] {
+        [Self::Welcome, Self::HowToUse, Self::Complete]
     }
 
     fn label(self) -> &'static str {
@@ -91,7 +92,7 @@ impl OnboardingStep {
     fn next(self) -> Option<Self> {
         match self {
             Self::Welcome => Some(Self::HowToUse),
-            Self::HowToUse => Some(Self::Cloud),
+            Self::HowToUse => Some(Self::Complete),
             Self::Cloud => Some(Self::Complete),
             Self::Complete => None,
         }
@@ -102,7 +103,7 @@ impl OnboardingStep {
             Self::Welcome => None,
             Self::HowToUse => Some(Self::Welcome),
             Self::Cloud => Some(Self::HowToUse),
-            Self::Complete => Some(Self::Cloud),
+            Self::Complete => Some(Self::HowToUse),
         }
     }
 }
@@ -274,12 +275,8 @@ fn switch_to_cloud_connect() {
     let Some(widgets) = widgets else {
         return;
     };
+    // Shotbolt has no hosted-cloud step; bringing the window up is enough.
     widgets.window.present();
-    // A live device-code view is already what the link asks for.
-    if widgets.current_step.get() == Some(OnboardingStep::Cloud) && cloud::connect_in_progress() {
-        return;
-    }
-    show_step_inner(&widgets, OnboardingStep::Cloud, true);
 }
 
 /// Hand the action to an instance that already owns the application id.
@@ -308,7 +305,7 @@ fn build_window_at(app: &Application, outcome: Rc<RefCell<Outcome>>, cloud_conne
 
     let window = ApplicationWindow::builder()
         .application(app)
-        .title(t("ApexShot Setup"))
+        .title(t("Shotbolt Setup"))
         .icon_name(crate::app_identity::icon_name())
         .default_width(px(scale, BASE_WIDTH))
         .default_height(px(scale, BASE_HEIGHT))
@@ -328,11 +325,8 @@ fn build_window_at(app: &Application, outcome: Rc<RefCell<Outcome>>, cloud_conne
         glib::Propagation::Proceed
     });
 
-    let initial_step = if cloud_connect {
-        OnboardingStep::Cloud
-    } else {
-        OnboardingStep::Welcome
-    };
+    let _ = cloud_connect;
+    let initial_step = OnboardingStep::Welcome;
     let widgets = install_at(
         &window,
         scale,
@@ -478,7 +472,7 @@ fn show_step_inner(widgets: &OnboardingWidgets, step: OnboardingStep, start_clou
     widgets.cancel_animations();
     let id = widgets.generation.get() + 1;
     widgets.generation.set(id);
-    widgets.window.set_title(Some(&t("ApexShot Setup")));
+    widgets.window.set_title(Some(&t("Shotbolt Setup")));
     widgets.status.set_visible(false);
     clear(&widgets.back_slot);
     // With no Back button the slot is hidden so the bar starts at the window
@@ -843,7 +837,7 @@ mod tests {
         let _ = crate::test_support::with_gtk(|| {
             for scale in [1.0, 1.25, 1.5, 2.0] {
                 let (root, body, actions, _) = test_form(scale, OnboardingStep::Welcome);
-                let heading = ui::heading_parts(scale, "Welcome to ApexShot", "Supporting copy");
+                let heading = ui::heading_parts(scale, "Welcome to Shotbolt", "Supporting copy");
                 body.append(&heading.block);
                 let hint = gtk4::Label::new(Some("Helpful detail"));
                 hint.add_css_class("settings-sub-option");
@@ -894,7 +888,7 @@ mod tests {
                     {
                         build_progress(&progress, step, scale);
                         let parts = children(&progress);
-                        assert_eq!(parts.len(), 7);
+                        assert_eq!(parts.len(), 5);
                         for (index, item) in OnboardingStep::all().iter().enumerate() {
                             let node = &parts[index * 2];
                             assert!(node.has_css_class("onboarding-progress-node"));
@@ -957,7 +951,7 @@ mod tests {
     #[test]
     fn step_chain_matches_the_rail_order() {
         let steps = OnboardingStep::all();
-        assert_eq!(steps.len(), 4);
+        assert_eq!(steps.len(), 3);
 
         // next() walks the same order as the rail, prev() walks it back.
         for pair in steps.windows(2) {

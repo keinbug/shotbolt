@@ -120,12 +120,12 @@ pub fn build_about_section() -> AboutSettingsWidgets {
     support_vbox.set_halign(Align::Center);
     support_vbox.set_hexpand(true);
 
-    let support_title = Label::new(Some(&t("Support ApexShot")));
+    let support_title = Label::new(Some(&t("Support Shotbolt")));
     support_title.add_css_class("about-support-title");
     support_title.set_halign(Align::Center);
 
     let support_copy = Label::new(Some(&t(
-        "ApexShot is free and open source. Donations keep development going.",
+        "Shotbolt is free and open source. Donations keep development going.",
     )));
     support_copy.add_css_class("about-support-copy");
     support_copy.set_wrap(true);
@@ -142,11 +142,11 @@ pub fn build_about_section() -> AboutSettingsWidgets {
         open_in_browser(KOFI_URL);
     });
 
-    let cloud_note = Button::with_label(&t("Support ApexShot / Go Pro"));
+    let cloud_note = Button::with_label(&t("Support Shotbolt / Go Pro"));
     cloud_note.add_css_class("about-link-button");
     cloud_note.set_halign(Align::Center);
     cloud_note.set_tooltip_text(Some(&t(
-        "Opens ApexShot Cloud plans. This is not a donation.",
+        "Opens Shotbolt Cloud plans. This is not a donation.",
     )));
     cloud_note.connect_clicked(|_| {
         open_in_browser(CLOUD_PLANS_URL);
@@ -163,7 +163,7 @@ pub fn build_about_section() -> AboutSettingsWidgets {
     footer_vbox.set_margin_top(40);
     footer_vbox.set_opacity(0.5);
 
-    let copyright = Label::new(Some(&t("Copyright © 2026 ApexShot. All rights reserved.")));
+    let copyright = Label::new(Some(&t("Copyright © 2026 Shotbolt. All rights reserved.")));
     copyright.add_css_class("settings-sub-option-hint");
     copyright.set_halign(Align::Center);
 

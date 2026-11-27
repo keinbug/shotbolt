@@ -175,6 +175,18 @@ pub struct AppConfig {
     pub cloud_destination: String,
     pub xbackbone_url: String,
     pub xbackbone_api_token: String,
+    // Shotbolt: upload to a user-defined HTTP API (destination "custom").
+    /// Endpoint that receives the file as a multipart POST.
+    pub custom_upload_url: String,
+    /// Optional secret sent in `custom_upload_auth_header`.
+    pub custom_upload_token: String,
+    /// Header carrying the token. `Authorization` sends `Bearer <token>`;
+    /// any other header name sends the token as-is (e.g. `X-API-Key`).
+    pub custom_upload_auth_header: String,
+    /// Multipart field name for the file.
+    pub custom_upload_field: String,
+    /// Dotted JSON path to the share link in the response (e.g. `data.link`).
+    pub custom_upload_url_key: String,
     /// When true and the selected cloud destination is configured, upload
     /// automatically after a screenshot is saved (in addition to the manual
     /// Upload button on Quick Access / the editor).
@@ -213,7 +225,7 @@ impl Default for AppConfig {
             export_location: String::new(),
             screenshot_export_location: String::new(),
             video_export_location: String::new(),
-            rec_filename_pattern: "ApexShot Recording {Date} at {Time}".to_string(),
+            rec_filename_pattern: "Shotbolt Recording {Date} at {Time}".to_string(),
             rec_remember_export_folder: true,
             last_video_export_dir: String::new(),
             after_capture_show_quick_access: DEFAULT_AFTER_CAPTURE_SHOW_QUICK_ACCESS,
@@ -320,9 +332,14 @@ impl Default for AppConfig {
             cloud_api_token: String::new(),
             cloud_refresh_token: String::new(),
             cloud_install_id: String::new(),
-            cloud_destination: "apexshot".to_string(),
+            cloud_destination: "custom".to_string(),
             xbackbone_url: String::new(),
             xbackbone_api_token: String::new(),
+            custom_upload_url: String::new(),
+            custom_upload_token: String::new(),
+            custom_upload_auth_header: "Authorization".to_string(),
+            custom_upload_field: "file".to_string(),
+            custom_upload_url_key: "url".to_string(),
             cloud_auto_upload_after_capture: true,
             cloud_nudge_enabled: true,
             cloud_link_expiry_notice_shown: false,
@@ -415,11 +432,25 @@ impl AppConfig {
             _ => "Disabled".to_string(),
         };
         self.cloud_destination = match self.cloud_destination.as_str() {
-            "apexshot" | "xbackbone" => self.cloud_destination,
-            _ => "apexshot".to_string(),
+            "apexshot" | "xbackbone" | "custom" => self.cloud_destination,
+            _ => "custom".to_string(),
         };
         self.xbackbone_url = self.xbackbone_url.trim().to_string();
         self.xbackbone_api_token = self.xbackbone_api_token.trim().to_string();
+        self.custom_upload_url = self.custom_upload_url.trim().to_string();
+        self.custom_upload_token = self.custom_upload_token.trim().to_string();
+        self.custom_upload_auth_header = match self.custom_upload_auth_header.trim() {
+            "" => "Authorization".to_string(),
+            header => header.to_string(),
+        };
+        self.custom_upload_field = match self.custom_upload_field.trim() {
+            "" => "file".to_string(),
+            field => field.to_string(),
+        };
+        self.custom_upload_url_key = match self.custom_upload_url_key.trim() {
+            "" => "url".to_string(),
+            key => key.to_string(),
+        };
         // Tiers are compared case-insensitively; normalise once on the way in.
         self.cloud_plan_tier = self.cloud_plan_tier.trim().to_lowercase();
         self.ui_theme = sanitize_ui_theme(&self.ui_theme);
@@ -1031,9 +1062,9 @@ mod tests {
         assert!(config.start_at_login);
         assert_eq!(
             config.rec_filename_pattern,
-            "ApexShot Recording {Date} at {Time}"
+            "Shotbolt Recording {Date} at {Time}"
         );
-        assert_eq!(config.cloud_destination, "apexshot");
+        assert_eq!(config.cloud_destination, "custom");
     }
 
     #[test]
@@ -1816,7 +1847,7 @@ quick_access_overlay_size: 0.5
             ..AppConfig::default()
         }
         .sanitized();
-        assert_eq!(unknown.cloud_destination, "apexshot");
+        assert_eq!(unknown.cloud_destination, "custom");
 
         let apexshot = AppConfig {
             cloud_destination: "apexshot".into(),
@@ -1831,6 +1862,31 @@ quick_access_overlay_size: 0.5
         }
         .sanitized();
         assert_eq!(xbackbone.cloud_destination, "xbackbone");
+
+        let custom = AppConfig {
+            cloud_destination: "custom".into(),
+            ..AppConfig::default()
+        }
+        .sanitized();
+        assert_eq!(custom.cloud_destination, "custom");
+    }
+
+    #[test]
+    fn sanitize_trims_custom_upload_fields_and_restores_defaults() {
+        let cfg = AppConfig {
+            custom_upload_url: "  https://api.example/upload  ".into(),
+            custom_upload_token: "  tok  ".into(),
+            custom_upload_auth_header: "   ".into(),
+            custom_upload_field: "".into(),
+            custom_upload_url_key: " data.link ".into(),
+            ..AppConfig::default()
+        }
+        .sanitized();
+        assert_eq!(cfg.custom_upload_url, "https://api.example/upload");
+        assert_eq!(cfg.custom_upload_token, "tok");
+        assert_eq!(cfg.custom_upload_auth_header, "Authorization");
+        assert_eq!(cfg.custom_upload_field, "file");
+        assert_eq!(cfg.custom_upload_url_key, "data.link");
     }
 
     #[test]
@@ -1864,9 +1920,9 @@ quick_access_overlay_size: 0.5
     }
 
     #[test]
-    fn default_cloud_destination_is_apexshot() {
+    fn default_cloud_destination_is_custom() {
         let cfg = AppConfig::default();
-        assert_eq!(cfg.cloud_destination, "apexshot");
+        assert_eq!(cfg.cloud_destination, "custom");
         assert!(cfg.xbackbone_url.is_empty());
         assert!(cfg.xbackbone_api_token.is_empty());
     }

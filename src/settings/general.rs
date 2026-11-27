@@ -159,7 +159,7 @@ pub fn build_general_section(config: &AppConfig) -> GeneralSettingsWidgets {
     let sound_help_text = if custom_shutter_sound {
         t("Played once, when the capture freezes. Saving or cropping stays silent.")
     } else {
-        t("Your desktop controls the capture sound on this route, so ApexShot cannot replace or disable it here and will not play an additional sound.")
+        t("Your desktop controls the capture sound on this route, so Shotbolt cannot replace or disable it here and will not play an additional sound.")
     };
     let sound_help = Label::new(Some(&sound_help_text));
     sound_help.add_css_class("dim-label");

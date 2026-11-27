@@ -566,7 +566,7 @@ fn select_monitor_interactive(
     let result = Rc::new(RefCell::new(None));
     let main_loop = glib::MainLoop::new(None, false);
     let panel = Window::builder()
-        .title("ApexShot Display Picker")
+        .title("Shotbolt Display Picker")
         .decorated(false)
         .resizable(false)
         .modal(true)

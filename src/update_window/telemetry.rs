@@ -69,7 +69,7 @@ impl Asset {
         std::thread::spawn(move || {
             let _ = ureq::AgentBuilder::new()
                 .timeout(HTTP_TIMEOUT)
-                .user_agent(&format!("ApexShotDownloadTelemetry/{SCRIPT}"))
+                .user_agent(&format!("ShotboltDownloadTelemetry/{SCRIPT}"))
                 .build()
                 .post(&endpoint())
                 .send_json(&payload);

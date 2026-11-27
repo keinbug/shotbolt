@@ -2521,7 +2521,7 @@ mod tests {
 
     #[test]
     fn sidecar_path_is_app_local_and_legacy_path_stays_local() {
-        let video = PathBuf::from("/tmp/ApexShot Recording 2026-08-15 at 12-00-00.mp4");
+        let video = PathBuf::from("/tmp/Shotbolt Recording 2026-08-15 at 12-00-00.mp4");
         assert_eq!(
             PointerSidecar::sidecar_path(&video),
             pointer_sidecars_directory().join(sidecar_file_name(&video))

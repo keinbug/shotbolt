@@ -97,7 +97,7 @@ fn intro(view: &View) {
         &t("Every capture becomes a link in your clipboard. Free: 20 uploads a month."),
     ));
 
-    let hosted_title = t("ApexShot Cloud");
+    let hosted_title = t("Shotbolt Cloud");
     let hosted_body = t("Hosted by us. Connect with a one-time code from your browser.");
     let self_hosted_title = t("XBackBone");
     let self_hosted_body =
@@ -123,7 +123,7 @@ fn intro(view: &View) {
     skip_btn.connect_clicked(move |_| advance());
     view.actions.append(&skip_btn);
 
-    let connect_btn = Button::with_label(&t("Connect ApexShot Cloud"));
+    let connect_btn = Button::with_label(&t("Connect Shotbolt Cloud"));
     connect_btn.add_css_class("settings-primary-btn");
     let view_c = view.clone();
     connect_btn.connect_clicked(move |_| connect(&view_c));
@@ -465,7 +465,7 @@ fn error_message(error: &LoginError) -> String {
         LoginError::Expired => t("This code expired. Try again to get a new one."),
         LoginError::Denied => t("Authorization was denied in the browser."),
         LoginError::NotConfigured | LoginError::HttpRequest(_) | LoginError::Server(_) => {
-            t("Couldn't reach ApexShot Cloud. Check your connection and try again.")
+            t("Couldn't reach Shotbolt Cloud. Check your connection and try again.")
         }
         LoginError::Local(_) => t("Signed in, but this device could not save the account."),
     }
@@ -480,7 +480,7 @@ fn select_hosted_destination() {
     }
     config.cloud_destination = "apexshot".to_string();
     if let Err(error) = save_config(&config.sanitized()) {
-        eprintln!("[onboarding] Failed to select ApexShot Cloud: {error}");
+        eprintln!("[onboarding] Failed to select Shotbolt Cloud: {error}");
     }
 }
 

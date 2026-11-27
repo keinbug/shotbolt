@@ -89,7 +89,7 @@ impl InstallUi {
                         pulse.set(false);
                         progress.set_fraction(1.0);
                         done_copy.set_text(&tfmt(
-                            "ApexShot v{version} is installed.",
+                            "Shotbolt v{version} is installed.",
                             &[("version", &version)],
                         ));
                         let mut notes = Vec::new();
@@ -113,7 +113,7 @@ impl InstallUi {
                         } else if restartable {
                             done_note.set_visible(false);
                         } else {
-                            done_note.set_text(&t("Restart ApexShot to use the new version."));
+                            done_note.set_text(&t("Restart Shotbolt to use the new version."));
                             done_note.set_visible(true);
                         }
                         stack.set_visible_child_name("done");

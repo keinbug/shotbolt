@@ -15,6 +15,10 @@ pub mod apexshot;
 #[rustfmt::skip]
 pub mod auth;
 
+#[path = "../../../src/cloud/custom.rs"]
+#[rustfmt::skip]
+pub mod custom;
+
 #[path = "../../../src/cloud/destination.rs"]
 #[rustfmt::skip]
 pub mod destination;

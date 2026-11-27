@@ -938,7 +938,7 @@ pub(super) fn start(
                         title.set_text(&t("Export failed"));
                         timing.set_visible(false);
                         detail.add_css_class("recording-editor-export-error");
-                        detail.set_text(&t("ApexShot lost contact with the export worker."));
+                        detail.set_text(&t("Shotbolt lost contact with the export worker."));
                         detail.set_visible(true);
                         bar.set_visible(false);
                         stop.set_visible(false);
@@ -949,7 +949,7 @@ pub(super) fn start(
                         export_flow::release(&flow);
                         crate::utils::notify::desktop_notification(
                             &t("Export failed"),
-                            &t("ApexShot lost contact with the export worker."),
+                            &t("Shotbolt lost contact with the export worker."),
                         );
                     }
                     glib::ControlFlow::Break
@@ -1044,7 +1044,7 @@ fn start_upload(ui: &UploadUi, phase: &Rc<Cell<UploadPhase>>) {
         }
 
         if disconnected {
-            let message = t("ApexShot lost contact with the upload worker.");
+            let message = t("Shotbolt lost contact with the upload worker.");
             if !ui.window_is_active() {
                 crate::utils::notify::desktop_notification(&t("Upload failed"), &message);
             }

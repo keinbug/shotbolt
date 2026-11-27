@@ -88,7 +88,7 @@ int main(int argc, char** argv)
     };
     backend.unregisterKey = [&registered](int id) { registered.remove(id); };
     QString activated;
-    const QString className = QStringLiteral("ApexShotHotkeyTest_%1").arg(GetCurrentProcessId());
+    const QString className = QStringLiteral("ShotboltHotkeyTest_%1").arg(GetCurrentProcessId());
 
     {
         Platform::GlobalHotkeys hotkeys(

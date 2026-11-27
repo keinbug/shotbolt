@@ -523,7 +523,7 @@ fn setup_image_loading_shell(app: &Application, initial_image_path: Option<PathB
     // the full toolbar.
     let window = ApplicationWindow::builder()
         .application(app)
-        .title(t("ApexShot Editor"))
+        .title(t("Shotbolt Editor"))
         .icon_name(crate::app_identity::icon_name())
         .default_width(default_width)
         .default_height(default_height)
@@ -757,12 +757,12 @@ fn setup_editor_window_full(
         for controller in stale {
             existing.remove_controller(&controller);
         }
-        existing.set_title(Some(&t("ApexShot Editor")));
+        existing.set_title(Some(&t("Shotbolt Editor")));
         existing
     } else {
         ApplicationWindow::builder()
             .application(app)
-            .title(t("ApexShot Editor"))
+            .title(t("Shotbolt Editor"))
             .icon_name(crate::app_identity::icon_name())
             .default_width(default_width)
             .default_height(default_height)
@@ -1342,7 +1342,7 @@ fn setup_editor_window_full(
     }
 
     let tracked_window_id = next_tracked_window_id("annotate-editor");
-    let window_title = "ApexShot Editor";
+    let window_title = "Shotbolt Editor";
     let window_namespace = "apexshot-annotate-editor";
 
     let canvas::CanvasShellParts {

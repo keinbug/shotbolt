@@ -1022,7 +1022,7 @@ mod tests {
                 "application.name":"Google Chrome",
                 "application.process.id":"9707"}},
             {"object.serial":"40","properties":{
-                "application.name":"ApexShot Recording",
+                "application.name":"Shotbolt Recording",
                 "application.process.id":"123"}},
             {"object.serial":41,"properties":{
                 "application.process.binary":"mpv",

@@ -60,7 +60,7 @@ pub(super) fn build_window(app: &Application, update: UpdateInfo) {
     let dark = crate::capture::editor::ui_support::prefers_dark_glass_theme();
     let window = ApplicationWindow::builder()
         .application(app)
-        .title(t("ApexShot Update"))
+        .title(t("Shotbolt Update"))
         .icon_name(crate::app_identity::icon_name())
         .default_width(BASE_WIDTH)
         .default_height(BASE_HEIGHT)
@@ -110,7 +110,7 @@ pub(super) fn build_window(app: &Application, update: UpdateInfo) {
         dark,
         &t("Update available"),
         &tfmt(
-            "ApexShot v{version} is ready to install.",
+            "Shotbolt v{version} is ready to install.",
             &[("version", &update.version)],
         ),
     ));
@@ -180,7 +180,7 @@ pub(super) fn build_window(app: &Application, update: UpdateInfo) {
         dark,
         &t("Downloading update"),
         &tfmt(
-            "ApexShot v{version} is on its way. Keep this window open.",
+            "Shotbolt v{version} is on its way. Keep this window open.",
             &[("version", &update.version)],
         ),
     ));
@@ -225,7 +225,7 @@ pub(super) fn build_window(app: &Application, update: UpdateInfo) {
         dark,
         &t("Update ready"),
         &tfmt(
-            "ApexShot v{version} has finished downloading.",
+            "Shotbolt v{version} has finished downloading.",
             &[("version", &update.version)],
         ),
     ));
@@ -268,7 +268,7 @@ pub(super) fn build_window(app: &Application, update: UpdateInfo) {
     recording_body.append(&header(
         dark,
         &t("Finish your recording first"),
-        &t("Installing restarts ApexShot, which would stop the recording in progress."),
+        &t("Installing restarts Shotbolt, which would stop the recording in progress."),
     ));
 
     let recording_install = primary_button(&t("Install now"));
@@ -290,7 +290,7 @@ pub(super) fn build_window(app: &Application, update: UpdateInfo) {
     work_body.append(&header(
         dark,
         &t("Your work will reopen"),
-        &t("These windows close while ApexShot updates and reopen with your edits afterwards:"),
+        &t("These windows close while Shotbolt updates and reopen with your edits afterwards:"),
     ));
 
     let work_card = card();
@@ -311,7 +311,7 @@ pub(super) fn build_window(app: &Application, update: UpdateInfo) {
         dark,
         &t("Installing update"),
         &tfmt(
-            "ApexShot v{version} is being installed. Keep this window open.",
+            "Shotbolt v{version} is being installed. Keep this window open.",
             &[("version", &update.version)],
         ),
     ));
@@ -362,9 +362,9 @@ pub(super) fn build_window(app: &Application, update: UpdateInfo) {
     let done_body = body();
     let (done_heading, done_copy) = header_parts(
         dark,
-        &t("ApexShot is up to date"),
+        &t("Shotbolt is up to date"),
         &tfmt(
-            "ApexShot v{version} is installed.",
+            "Shotbolt v{version} is installed.",
             &[("version", &update.version)],
         ),
     );
@@ -381,7 +381,7 @@ pub(super) fn build_window(app: &Application, update: UpdateInfo) {
     done_note.set_visible(false);
     done_body.append(&done_note);
 
-    let restart_button = primary_button(&t("Restart ApexShot"));
+    let restart_button = primary_button(&t("Restart Shotbolt"));
     restart_button.set_visible(restartable);
     let close_done = quiet_button(&t("Close"));
     close_done.connect_clicked({
@@ -416,7 +416,7 @@ pub(super) fn build_window(app: &Application, update: UpdateInfo) {
         dark,
         &t("Update failed"),
         &tfmt(
-            "ApexShot v{version} could not be updated.",
+            "Shotbolt v{version} could not be updated.",
             &[("version", &update.version)],
         ),
     ));
@@ -1012,7 +1012,7 @@ fn restart_application(
             _ => install::spawn_daemon(&super::binary_path()),
         };
         if let Err(error) = result {
-            eprintln!("[update] Could not restart ApexShot: {error}");
+            eprintln!("[update] Could not restart Shotbolt: {error}");
         }
         // The editors were closed before the install; bring them back with the
         // new build once the daemon it belongs to is on its way.

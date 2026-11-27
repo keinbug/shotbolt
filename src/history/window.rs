@@ -116,7 +116,7 @@ pub fn build_history_window(app: &Application) {
 
     let window = ApplicationWindow::builder()
         .application(app)
-        .title(t("ApexShot History"))
+        .title(t("Shotbolt History"))
         .icon_name(crate::app_identity::icon_name())
         .default_width((940.0 * ui_scale).round() as i32)
         .default_height((680.0 * ui_scale).round() as i32)

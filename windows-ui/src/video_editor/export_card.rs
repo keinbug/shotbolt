@@ -601,7 +601,7 @@ fn start_upload(ui: &UploadUi, config: crate::config::AppConfig) {
             }
             Err(error) => {
                 let message = error.map_or_else(
-                    || t("ApexShot lost contact with the upload worker."),
+                    || t("Shotbolt lost contact with the upload worker."),
                     |error| error.to_string(),
                 );
                 if !ui.window_is_active() {

@@ -35,7 +35,7 @@ pub fn open_in_apexshot_editor(entry: &CaptureEntry) -> Result<String, String> {
         return Err(t("The video editor only supports MP4 recordings"));
     }
 
-    let exe = std::env::current_exe().map_err(|e| format!("Could not find ApexShot: {e}"))?;
+    let exe = std::env::current_exe().map_err(|e| format!("Could not find Shotbolt: {e}"))?;
     std::process::Command::new(exe)
         .arg(command)
         .arg(&entry.path)

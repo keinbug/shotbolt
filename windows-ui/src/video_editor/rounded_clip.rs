@@ -39,7 +39,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for RoundedClip {
-        const NAME: &'static str = "ApexShotWindowsRoundedClip";
+        const NAME: &'static str = "ShotboltWindowsRoundedClip";
         type Type = super::RoundedClip;
         type ParentType = GtkBox;
     }

@@ -73,7 +73,7 @@ void CaptureOverlay::drawScrollPopup(QPainter& p, double centerX, double centerY
     QFont bodyFont("Sans", 12);
     p.setFont(bodyFont);
     p.setPen(QColor(255, 255, 255, 180));
-    p.drawText(QRectF(popupX + 20, popupY + 55, popupW - 40, 18), Qt::AlignLeft | Qt::AlignVCenter, "Scroll capture requires the ApexShot");
+    p.drawText(QRectF(popupX + 20, popupY + 55, popupW - 40, 18), Qt::AlignLeft | Qt::AlignVCenter, "Scroll capture requires the Shotbolt");
     p.drawText(QRectF(popupX + 20, popupY + 73, popupW - 40, 18), Qt::AlignLeft | Qt::AlignVCenter, "browser extension.");
 
     // CTA button — orange gradient, matching Rust overlay

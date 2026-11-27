@@ -426,7 +426,7 @@ pub mod editor {
             ] {
                 if !tool_available(&path) {
                     return Err(format!(
-                        "{name} is not available. Reinstall ApexShot or add {name} to PATH."
+                        "{name} is not available. Reinstall Shotbolt or add {name} to PATH."
                     ));
                 }
             }
@@ -537,7 +537,7 @@ pub fn recording_output_dir(config: &crate::config::AppConfig) -> std::path::Pat
                 .map(|home| home.join("Videos"))
         })
         .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("ApexShotRec")
+        .join("ShotboltRec")
 }
 
 #[cfg(test)]
@@ -549,7 +549,7 @@ mod output_dir_tests {
         let dir = super::recording_output_dir(&config);
         assert_eq!(
             dir.file_name().and_then(|name| name.to_str()),
-            Some("ApexShotRec")
+            Some("ShotboltRec")
         );
     }
 

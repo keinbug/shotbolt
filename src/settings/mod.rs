@@ -277,7 +277,7 @@ fn build_settings_window_at(
     let (default_width, default_height) = initial_size.unwrap_or((900, 635));
     let window = ApplicationWindow::builder()
         .application(app)
-        .title(t("ApexShot Settings"))
+        .title(t("Shotbolt Settings"))
         .icon_name(crate::app_identity::icon_name())
         .default_width(default_width)
         .default_height(default_height)
@@ -773,6 +773,12 @@ fn build_settings_window_at(
         cloud_auto_upload_sync: cloud.auto_upload_sync.clone(),
         xbackbone_url: cloud.xb_url_entry.clone(),
         xbackbone_api_token: cloud.xb_token_entry.clone(),
+        cloud_custom: cloud.custom_check.clone(),
+        custom_upload_url: cloud.custom_url_entry.clone(),
+        custom_upload_token: cloud.custom_token_entry.clone(),
+        custom_upload_auth_header: cloud.custom_header_entry.clone(),
+        custom_upload_field: cloud.custom_field_entry.clone(),
+        custom_upload_url_key: cloud.custom_url_key_entry.clone(),
         ui_theme: general.theme_input.clone(),
         ui_language: general.ui_language_input.clone(),
     });
@@ -947,5 +953,11 @@ fn install_save_dirty_tracking(inputs: &Rc<SaveInputs>, mark_dirty: Rc<dyn Fn()>
     }
     wire_entry(&inputs.xbackbone_url);
     wire_entry(&inputs.xbackbone_api_token);
+    wire_check(&inputs.cloud_custom);
+    wire_entry(&inputs.custom_upload_url);
+    wire_entry(&inputs.custom_upload_token);
+    wire_entry(&inputs.custom_upload_auth_header);
+    wire_entry(&inputs.custom_upload_field);
+    wire_entry(&inputs.custom_upload_url_key);
     wire_theme(&inputs.ui_theme);
 }

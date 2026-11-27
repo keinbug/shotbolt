@@ -98,7 +98,7 @@ pub fn register_capture_overlay(app_id: &'static str) {
             "/org/apexshot/ShellOverlay",
             Some("org.apexshot.ShellOverlay"),
             "RegisterCaptureOverlayV2",
-            &(app_id, "ApexShot Capture Overlay"),
+            &(app_id, "Shotbolt Capture Overlay"),
         ) {
             eprintln!("[gnome_integration] Failed to register the capture overlay with GNOME Shell: {error}");
         }

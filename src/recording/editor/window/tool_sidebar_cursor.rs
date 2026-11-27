@@ -167,7 +167,7 @@ fn build_cursor_panel(
             } else {
                 (
                     t("No editable cursor data was found."),
-                    t("Cursor styling requires pointer data from an ApexShot recording."),
+                    t("Cursor styling requires pointer data from an Shotbolt recording."),
                 )
             };
             unavailable_detail.set_text(&message);

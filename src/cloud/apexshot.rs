@@ -111,7 +111,7 @@ pub(crate) fn is_configured(config: &AppConfig) -> bool {
 pub(crate) fn not_configured_notification(_config: &AppConfig) -> (String, String) {
     (
         crate::i18n::t("Sign in to get a share link"),
-        crate::i18n::t("Connect your ApexShot account in Settings → Cloud to get share links."),
+        crate::i18n::t("Connect your Shotbolt account in Settings → Cloud to get share links."),
     )
 }
 
@@ -131,7 +131,7 @@ pub(crate) fn upload(
     if is_auth_error(&result) {
         if config.cloud_refresh_token.is_empty() {
             return Err(UploadError::AuthExpired(
-                "Your ApexShot Cloud session has expired. Run `apexshot login` again.".to_string(),
+                "Your Shotbolt Cloud session has expired. Run `apexshot login` again.".to_string(),
             ));
         }
         let _ = refresh_access_token(&mut config);
@@ -419,7 +419,7 @@ mod tests {
     #[test]
     fn rejects_local_file_share_url() {
         let err = normalize_share_url(
-            "file:///home/codegoddy/Pictures/ApexShot2026-06-28_17-39-42.png",
+            "file:///home/codegoddy/Pictures/Shotbolt2026-06-28_17-39-42.png",
             "https://apexshot.org/api",
         )
         .unwrap_err();
@@ -530,7 +530,7 @@ mod tests {
         ));
 
         assert!(
-            matches!(error, UploadError::Server(message) if message.contains("Update ApexShot"))
+            matches!(error, UploadError::Server(message) if message.contains("Update Shotbolt"))
         );
     }
 

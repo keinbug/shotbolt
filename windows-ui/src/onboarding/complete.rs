@@ -18,7 +18,7 @@ pub fn build(body: &GtkBox, actions: &GtkBox, nav: &Nav) {
     let tray_title = t("Tray icon");
     let tray_body = t("Right-click for your capture menu.");
     let hotkeys_title = t("Hotkeys");
-    let hotkeys_body = t("Your shortcuts work while ApexShot runs.");
+    let hotkeys_body = t("Your shortcuts work while Shotbolt runs.");
     let menu_title = t("Settings");
     let menu_body = t("Change any of this later.");
     let [tray_icon, hotkeys_icon, settings_icon] =
@@ -34,7 +34,7 @@ pub fn build(body: &GtkBox, actions: &GtkBox, nav: &Nav) {
     checklist.set_margin_top(px(scale, SECTION_GAP));
     body.append(&checklist);
 
-    let finish_btn = Button::with_label(&t("Open ApexShot"));
+    let finish_btn = Button::with_label(&t("Open Shotbolt"));
     finish_btn.add_css_class("settings-primary-btn");
     let finish = nav.finish.clone();
     finish_btn.connect_clicked(move |_| finish());

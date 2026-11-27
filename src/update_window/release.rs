@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 use super::install::PackageFormat;
 
 const RELEASE_API: &str = "https://api.github.com/repos/apex-shot/apexshot/releases/tags/v";
-const USER_AGENT: &str = concat!("ApexShot/", env!("CARGO_PKG_VERSION"));
+const USER_AGENT: &str = concat!("Shotbolt/", env!("CARGO_PKG_VERSION"));
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 

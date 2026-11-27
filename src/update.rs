@@ -15,8 +15,8 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-pub const RELEASES_URL: &str = "https://github.com/apex-shot/apexshot/releases";
-const LATEST_RELEASE_API: &str = "https://api.github.com/repos/apex-shot/apexshot/releases/latest";
+pub const RELEASES_URL: &str = "https://github.com/keinbug/shotbolt/releases";
+const LATEST_RELEASE_API: &str = "https://api.github.com/repos/keinbug/shotbolt/releases/latest";
 /// Official entrypoint for distribution-aware native package updates.
 pub const UPDATE_SCRIPT_URL: &str = "https://apexshot.org/update";
 const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
@@ -164,7 +164,7 @@ fn fetch_latest_release() -> Result<GithubRelease, String> {
         .set("Accept", "application/vnd.github+json")
         .set(
             "User-Agent",
-            concat!("ApexShot/", env!("CARGO_PKG_VERSION")),
+            concat!("Shotbolt/", env!("CARGO_PKG_VERSION")),
         )
         .call()
         .map_err(|err| err.to_string())?
@@ -250,7 +250,7 @@ fn fetch_studio_release_metadata(release: &GithubRelease) -> Option<StudioReleas
         .get(&asset.browser_download_url)
         .set(
             "User-Agent",
-            concat!("ApexShot/", env!("CARGO_PKG_VERSION")),
+            concat!("Shotbolt/", env!("CARGO_PKG_VERSION")),
         )
         .call()
         .ok()?;
@@ -282,10 +282,10 @@ fn studio_coverage_notice(
 
     match coverage {
         StudioUpdateCoverage::NotIncluded => Some(format!(
-            "The Studio build marker for ApexShot v{version} is beyond your included updates. Studio exports will not be available on that version, but you can still install the update."
+            "The Studio build marker for Shotbolt v{version} is beyond your included updates. Studio exports will not be available on that version, but you can still install the update."
         )),
         StudioUpdateCoverage::Unknown => Some(format!(
-            "Studio update coverage for ApexShot v{version} could not be confirmed from its published build marker. Check your license; the update will not be blocked."
+            "Studio update coverage for Shotbolt v{version} could not be confirmed from its published build marker. Check your license; the update will not be blocked."
         )),
         StudioUpdateCoverage::Included | StudioUpdateCoverage::NotApplicable => None,
     }
@@ -596,7 +596,7 @@ mod tests {
                 crate::studio_entitlement::StudioUpdateCoverage::NotIncluded
             )
             .unwrap(),
-            "The Studio build marker for ApexShot v0.2.36 is beyond your included updates. Studio exports will not be available on that version, but you can still install the update."
+            "The Studio build marker for Shotbolt v0.2.36 is beyond your included updates. Studio exports will not be available on that version, but you can still install the update."
         );
     }
 

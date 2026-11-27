@@ -294,7 +294,7 @@ fn tool_definitions(protocol_version: &str) -> Vec<Value> {
     let mut tools = vec![
         json!({
             "name": "apexshot_capabilities",
-            "description": "Report the installed ApexShot version, supported agent operations, session state, and consent limits.",
+            "description": "Report the installed Shotbolt version, supported agent operations, session state, and consent limits.",
             "inputSchema": empty_schema()
         }),
         json!({
@@ -315,7 +315,7 @@ fn tool_definitions(protocol_version: &str) -> Vec<Value> {
     ];
     if protocol_supports_annotations(protocol_version) {
         let metadata = [
-            ("ApexShot capabilities", true),
+            ("Shotbolt capabilities", true),
             ("List display monitors", true),
             ("Capture a screenshot", false),
             ("Recognize text in an image", true),
@@ -465,7 +465,7 @@ fn invoke_tool(name: &str, arguments: &Map<String, Value>) -> Result<ToolSuccess
         "apexshot_capture" => capture_tool(arguments),
         "apexshot_ocr" => ocr_tool(arguments),
         _ => Err(ToolCallError::InvalidParams(
-            "Unknown ApexShot tool".to_owned(),
+            "Unknown Shotbolt tool".to_owned(),
         )),
     }
 }
@@ -695,7 +695,7 @@ fn execute_agent_owned(args: &[String]) -> Result<Value, ToolError> {
     let message = error
         .and_then(|error| error.get("message"))
         .and_then(Value::as_str)
-        .unwrap_or("ApexShot could not complete the operation");
+        .unwrap_or("Shotbolt could not complete the operation");
     Err(ToolError::new(code, message))
 }
 

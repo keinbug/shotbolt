@@ -596,7 +596,7 @@ impl MotionSession {
         async move {
             worker
                 .await
-                .map_err(|_| crate::i18n::t("ApexShot lost contact with the export worker."))?
+                .map_err(|_| crate::i18n::t("Shotbolt lost contact with the export worker."))?
         }
     }
 

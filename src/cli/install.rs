@@ -43,7 +43,7 @@ pub(crate) fn run_install(args: &[String]) {
     }
 
     if cfg!(feature = "nix") && !no_binary {
-        eprintln!("This installation is managed by Nix. Add ApexShot to your NixOS configuration or Nix profile instead of copying its binaries.");
+        eprintln!("This installation is managed by Nix. Add Shotbolt to your NixOS configuration or Nix profile instead of copying its binaries.");
         eprintln!("Use `apexshot install --no-binary` only to configure user-session integration.");
         std::process::exit(1);
     }
@@ -103,7 +103,7 @@ pub(crate) fn run_uninstall(args: &[String]) {
     }
 
     if cfg!(feature = "nix") && !autostart_only {
-        eprintln!("This installation is managed by Nix. Remove ApexShot from your configuration and rebuild, or remove its Nix profile entry.");
+        eprintln!("This installation is managed by Nix. Remove Shotbolt from your configuration and rebuild, or remove its Nix profile entry.");
         eprintln!(
             "Use `apexshot uninstall --autostart-only` only to remove user-session autostart."
         );
@@ -262,21 +262,21 @@ pub(crate) fn uninstall_package_managed_app_if_present() -> bool {
     };
 
     let Some(manager) = manager else {
-        eprintln!("Error: package-managed ApexShot files exist under /usr/bin, but no supported package manager owns an installed 'apexshot' package.");
-        eprintln!("Remove ApexShot with your distribution package manager, or remove the package files manually.");
+        eprintln!("Error: package-managed Shotbolt files exist under /usr/bin, but no supported package manager owns an installed 'apexshot' package.");
+        eprintln!("Remove Shotbolt with your distribution package manager, or remove the package files manually.");
         std::process::exit(1);
     };
 
     let Some((program, args)) = package_uninstall_command(manager) else {
-        eprintln!("Error: unsupported package manager for ApexShot uninstall: {manager}");
+        eprintln!("Error: unsupported package manager for Shotbolt uninstall: {manager}");
         std::process::exit(1);
     };
 
-    println!("Package-managed ApexShot install detected; uninstalling with {manager}.");
+    println!("Package-managed Shotbolt install detected; uninstalling with {manager}.");
     let status = std::process::Command::new(&program).args(&args).status();
     match status {
         Ok(status) if status.success() => {
-            println!("✓ Package-managed ApexShot removed");
+            println!("✓ Package-managed Shotbolt removed");
             true
         }
         Ok(status) => {
@@ -331,7 +331,7 @@ pub(crate) fn install_binary(force: bool, dev_install: bool) {
     let current_version = env!("CARGO_PKG_VERSION");
 
     if !dev_install && (packaged_dest.exists() || packaged_capture_dest.exists()) {
-        eprintln!("Error: package-managed ApexShot binaries exist under /usr/bin.");
+        eprintln!("Error: package-managed Shotbolt binaries exist under /usr/bin.");
         eprintln!(
             "`apexshot install` would write to /usr/local/bin/apexshot, which shadows the distro-managed installation."
         );
@@ -356,13 +356,13 @@ pub(crate) fn install_binary(force: bool, dev_install: bool) {
             Some(ref v) if v == current_version => {
                 if dev_install {
                     println!(
-                        "Refreshing ApexShot Dev {} at {}.",
+                        "Refreshing Shotbolt Dev {} at {}.",
                         current_version,
                         dest.display()
                     );
                 } else {
                     println!(
-                        "ApexShot {} is already installed at {}. Use --force to reinstall.",
+                        "Shotbolt {} is already installed at {}. Use --force to reinstall.",
                         current_version,
                         dest.display()
                     );
@@ -370,7 +370,7 @@ pub(crate) fn install_binary(force: bool, dev_install: bool) {
                 }
             }
             Some(ref v) => {
-                println!("Updating ApexShot {} → {}", v, current_version);
+                println!("Updating Shotbolt {} → {}", v, current_version);
             }
             None => {
                 // Could not determine version — proceed with install (likely a dev build or corrupted).
@@ -560,9 +560,9 @@ pub(crate) fn install_autostart(dev_install: bool) {
          Hidden=false\n\
          NoDisplay=true\n",
         if dev_install {
-            "ApexShot Dev Daemon"
+            "Shotbolt Dev Daemon"
         } else {
-            "ApexShot Daemon"
+            "Shotbolt Daemon"
         },
         if dev_install {
             app_identity::DEV_APP_ID

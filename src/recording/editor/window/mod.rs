@@ -150,7 +150,7 @@ fn build_window(application: &Application, initial_video: InitialVideo) {
         crate::capture::editor::ui_support::clamp_editor_window_size(1400, 900);
     let window = ApplicationWindow::builder()
         .application(application)
-        .title(t("ApexShot Recording Editor"))
+        .title(t("Shotbolt Recording Editor"))
         .icon_name(crate::app_identity::icon_name())
         .default_width(default_width)
         .default_height(default_height)

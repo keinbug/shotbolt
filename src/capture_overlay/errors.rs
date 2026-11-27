@@ -5,7 +5,7 @@ pub fn is_launch_blocked_error(err: &SelectionError) -> bool {
 fn blocked_selection_error(reason: LaunchBlockedReason) -> SelectionError {
     match reason {
         LaunchBlockedReason::ApexOverlayAlreadyActive => {
-            SelectionError::Blocked("ApexShot capture overlay is already active".into())
+            SelectionError::Blocked("Shotbolt capture overlay is already active".into())
         }
         LaunchBlockedReason::BuiltinOverlayActive => {
             SelectionError::Blocked("GNOME screenshot UI is already active".into())

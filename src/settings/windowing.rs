@@ -90,9 +90,9 @@ fn autostart_dir() -> anyhow::Result<std::path::PathBuf> {
 /// Flatpak autostart via XDG Background portal (no ~/.config/autostart write).
 fn request_background_autostart(enable: bool) -> anyhow::Result<std::path::PathBuf> {
     let reason = if enable {
-        "Start ApexShot on login for tray icon and global hotkeys"
+        "Start Shotbolt on login for tray icon and global hotkeys"
     } else {
-        "Disable ApexShot login autostart"
+        "Disable Shotbolt login autostart"
     };
 
     let result = block_on_async(async {

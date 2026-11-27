@@ -93,7 +93,7 @@ pub fn detect() -> InstallMethod {
     }
     if cfg!(feature = "nix") {
         return InstallMethod::Unsupported(t(
-            "This installation is managed by Nix. Update the ApexShot flake input and rebuild your configuration, or upgrade its Nix profile entry.",
+            "This installation is managed by Nix. Update the Shotbolt flake input and rebuild your configuration, or upgrade its Nix profile entry.",
         ));
     }
     // The release only publishes x86_64 packages; other machines keep the

@@ -291,7 +291,7 @@ fn build_onboarding_window_at(app: &Application, cloud_connect: bool) {
     let animations = Rc::new(RefCell::new(Vec::new()));
     let window = ApplicationWindow::builder()
         .application(app)
-        .title(t("ApexShot Setup"))
+        .title(t("Shotbolt Setup"))
         .default_width(BASE_WIDTH)
         .default_height(BASE_HEIGHT)
         .decorated(false)
@@ -524,7 +524,7 @@ fn show_step_inner(widgets: &OnboardingWidgets, step: OnboardingStep, start_clou
     widgets.cancel_animations();
     let id = widgets.generation.get() + 1;
     widgets.generation.set(id);
-    widgets.window.set_title(Some(&t("ApexShot Setup")));
+    widgets.window.set_title(Some(&t("Shotbolt Setup")));
     widgets.status.set_visible(false);
     clear(&widgets.back_slot);
     // With no Back button the slot is hidden so the controls start at the

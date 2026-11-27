@@ -25,7 +25,7 @@ pub fn build(body: &GtkBox, actions: &GtkBox, nav: &Nav) {
     hotkeys_block.set_halign(Align::Fill);
 
     let hotkeys_hint = Label::new(Some(&t(
-        "Shortcuts work while ApexShot runs in the background.",
+        "Shortcuts work while Shotbolt runs in the background.",
     )));
     hotkeys_hint.set_halign(Align::Start);
     hotkeys_hint.set_xalign(0.0);

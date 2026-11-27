@@ -236,7 +236,7 @@ mod tests {
             .build()
             .expect("runtime");
         rt.block_on(async {
-            desktop_notification("ApexShot test", "nested-runtime guard");
+            desktop_notification("Shotbolt test", "nested-runtime guard");
         });
     }
 
@@ -259,7 +259,7 @@ mod tests {
         }
         assert!(
             notify_via_notify_send(
-                "ApexShot notification test",
+                "Shotbolt notification test",
                 "If you see this popup, notify-send works on this session.",
                 Urgency::Critical,
             )

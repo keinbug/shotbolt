@@ -18,7 +18,7 @@
 
 namespace {
 
-constexpr wchar_t kWindowClass[] = L"ApexShotGlobalHotkeys";
+constexpr wchar_t kWindowClass[] = L"ShotboltGlobalHotkeys";
 constexpr UINT kSuspendMessage = WM_APP + 0x531;
 
 struct Entry {
@@ -91,7 +91,7 @@ private:
         if (!RegisterClassW(&klass) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
             m_error = QStringLiteral("Could not register the shortcut listener window");
         } else if (FindWindowW(m_windowClass.c_str(), nullptr)) {
-            m_error = QStringLiteral("Another ApexShot shortcut listener is already running");
+            m_error = QStringLiteral("Another Shotbolt shortcut listener is already running");
         } else {
             m_window = CreateWindowExW(0, m_windowClass.c_str(), L"", 0, 0, 0, 0, 0,
                                        nullptr, nullptr, klass.hInstance, this);

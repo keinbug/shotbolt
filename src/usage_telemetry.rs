@@ -438,7 +438,7 @@ fn maybe_send_heartbeat_with_config(config: &AppConfig) -> bool {
 
 fn post_heartbeat(payload: &HeartbeatPayload) -> bool {
     let url = usage_telemetry_url();
-    let agent = format!("ApexShotUsageTelemetry/{}", env!("CARGO_PKG_VERSION"));
+    let agent = format!("ShotboltUsageTelemetry/{}", env!("CARGO_PKG_VERSION"));
     let result = ureq::AgentBuilder::new()
         .timeout(HTTP_TIMEOUT)
         .user_agent(&agent)

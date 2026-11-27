@@ -257,7 +257,7 @@ QVector<Platform::AudioOutputDevice> outputsFromBlocks(const QVector<PactlBlock>
 /// The recorder's own streams are never a choice in its menus.
 bool isOwnAudioApplication(const QString& name)
 {
-    return name.contains(QStringLiteral("ApexShot"), Qt::CaseInsensitive);
+    return name.contains(QStringLiteral("Shotbolt"), Qt::CaseInsensitive);
 }
 
 QString applicationName(const QJsonObject& properties)

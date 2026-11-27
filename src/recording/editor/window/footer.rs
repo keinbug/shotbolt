@@ -384,7 +384,7 @@ fn wire_upload_button(
                     }
                     crate::utils::notify::desktop_notification(
                         &t("Upload failed"),
-                        &t("ApexShot lost contact with the upload worker."),
+                        &t("Shotbolt lost contact with the upload worker."),
                     );
                     glib::ControlFlow::Break
                 }
@@ -494,7 +494,7 @@ fn wire_export_button(
                         dialogs::show_error(
                             &window_actions,
                             &t("Export failed"),
-                            &t("ApexShot could not reserve a file for the export."),
+                            &t("Shotbolt could not reserve a file for the export."),
                             None,
                         );
                         return;
@@ -644,7 +644,7 @@ fn choose_export_path(
             dialogs::show_error(
                 &window,
                 &t("Export failed"),
-                &t("ApexShot could not export this recording."),
+                &t("Shotbolt could not export this recording."),
                 Some("Choose a local file to export."),
             );
             return;

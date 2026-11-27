@@ -803,7 +803,7 @@ fn handle_interactive_capture_result(
                     send_desktop_notification(
                         &crate::i18n::t("Recording failed"),
                         &crate::i18n::t(
-                            "GNOME Shell extension is not installed. Please install the ApexShot GNOME extension first.",
+                            "GNOME Shell extension is not installed. Please install the Shotbolt GNOME extension first.",
                         ),
                     );
                     return;

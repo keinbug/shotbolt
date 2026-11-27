@@ -59,7 +59,7 @@ pub(super) fn build_window(app: &Application, release: Release) {
 
     let window = ApplicationWindow::builder()
         .application(app)
-        .title(t("ApexShot Update"))
+        .title(t("Shotbolt Update"))
         .icon_name(crate::app_identity::icon_name())
         .default_width(px(scale, BASE_WIDTH))
         .default_height(px(scale, BASE_HEIGHT))
@@ -104,7 +104,7 @@ pub(super) fn build_window(app: &Application, release: Release) {
         dark,
         &t("Update available"),
         &tfmt(
-            "ApexShot v{version} is ready to install.",
+            "Shotbolt v{version} is ready to install.",
             &[("version", &release.version)],
         ),
     ));
@@ -165,7 +165,7 @@ pub(super) fn build_window(app: &Application, release: Release) {
         dark,
         &t("Downloading update"),
         &tfmt(
-            "ApexShot v{version} is on its way. Keep this window open.",
+            "Shotbolt v{version} is on its way. Keep this window open.",
             &[("version", &release.version)],
         ),
     ));
@@ -219,7 +219,7 @@ pub(super) fn build_window(app: &Application, release: Release) {
         dark,
         &t("Update ready"),
         &tfmt(
-            "ApexShot v{version} has finished downloading.",
+            "Shotbolt v{version} has finished downloading.",
             &[("version", &release.version)],
         ),
     ));
@@ -253,7 +253,7 @@ pub(super) fn build_window(app: &Application, release: Release) {
         scale,
         dark,
         &t("Your work will reopen"),
-        &t("These windows close while ApexShot updates and reopen with your edits afterwards:"),
+        &t("These windows close while Shotbolt updates and reopen with your edits afterwards:"),
     ));
     let work_card = card(scale);
     let work_list = GtkBox::new(Orientation::Vertical, 0);
@@ -313,7 +313,7 @@ pub(super) fn build_window(app: &Application, release: Release) {
         dark,
         &t("Update failed"),
         &tfmt(
-            "ApexShot v{version} could not be updated.",
+            "Shotbolt v{version} could not be updated.",
             &[("version", &release.version)],
         ),
     ));
@@ -662,7 +662,7 @@ pub(super) fn build_window(app: &Application, release: Release) {
                 super::open_windows::reopen(&closed);
                 pulse.set(false);
                 failure_status.set_text(&t(
-                    "ApexShot could not close every window. Close them, then try again.",
+                    "Shotbolt could not close every window. Close them, then try again.",
                 ));
                 failure_status.set_visible(true);
                 retry_to_ready.set(true);

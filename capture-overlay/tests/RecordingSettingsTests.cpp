@@ -223,7 +223,7 @@ void checkLoadSanitizes(const QString& path)
 int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
-    QCoreApplication::setOrganizationName(QStringLiteral("ApexShotTests"));
+    QCoreApplication::setOrganizationName(QStringLiteral("ShotboltTests"));
     QCoreApplication::setApplicationName(QStringLiteral("RecordingSettingsTests"));
 
     checkDefaults();

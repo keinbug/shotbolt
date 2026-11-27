@@ -84,7 +84,7 @@ fn main() {
                 // starting the daemon before this process exits.
                 let _ = daemon.join();
                 if let Err(error) = result {
-                    eprintln!("Failed to open ApexShot for the Cloud link: {error}");
+                    eprintln!("Failed to open Shotbolt for the Cloud link: {error}");
                     std::process::exit(1);
                 }
                 return;
@@ -400,37 +400,37 @@ async fn async_main(args: Vec<String>) {
         }
         "show-last-preview" => {
             if !trigger_daemon_action("show_last_preview").await {
-                eprintln!("Show last preview requires a running ApexShot daemon.");
+                eprintln!("Show last preview requires a running Shotbolt daemon.");
                 std::process::exit(1);
             }
         }
         "save-last" => {
             if !trigger_daemon_action("save_last_capture").await {
-                eprintln!("Save Last Screenshot requires a running ApexShot daemon.");
+                eprintln!("Save Last Screenshot requires a running Shotbolt daemon.");
                 std::process::exit(1);
             }
         }
         "open-file" => {
             if !trigger_daemon_action("open_file").await {
-                eprintln!("Open File requires a running ApexShot daemon.");
+                eprintln!("Open File requires a running Shotbolt daemon.");
                 std::process::exit(1);
             }
         }
         "open-from-clipboard" => {
             if !trigger_daemon_action("open_from_clipboard").await {
-                eprintln!("Open From Clipboard requires a running ApexShot daemon.");
+                eprintln!("Open From Clipboard requires a running Shotbolt daemon.");
                 std::process::exit(1);
             }
         }
         "restore-recently-closed" => {
             if !trigger_daemon_action("restore_recently_closed").await {
-                eprintln!("Restore Recently Closed requires a running ApexShot daemon.");
+                eprintln!("Restore Recently Closed requires a running Shotbolt daemon.");
                 std::process::exit(1);
             }
         }
         "toggle-overlays" => {
             if !trigger_daemon_action("toggle_overlays").await {
-                eprintln!("Hide/Show Overlays requires a running ApexShot daemon.");
+                eprintln!("Hide/Show Overlays requires a running Shotbolt daemon.");
                 std::process::exit(1);
             }
         }
@@ -795,7 +795,7 @@ fn run_daemon_with_gtk_on_main_thread() {
 }
 
 pub(crate) fn print_usage() {
-    println!("ApexShot - Screenshot tool for Linux");
+    println!("Shotbolt - Screenshot tool for Linux");
     println!();
     println!("Usage: cargo run -- <command> [options]");
     println!();
@@ -812,14 +812,14 @@ pub(crate) fn print_usage() {
     println!("  studio-activate <url> Activate Studio from an apexshot:// link");
     println!("  studio-device-id  Print this machine's Studio device ID");
     println!("  history           Open capture history window");
-    println!("  login             Sign in to ApexShot Cloud (device authorization)");
-    println!("  logout            Sign out of ApexShot Cloud");
+    println!("  login             Sign in to Shotbolt Cloud (device authorization)");
+    println!("  logout            Sign out of Shotbolt Cloud");
     println!("  native-host <sub> Install/uninstall native messaging host");
     println!("  agent <command>   Run agent CLI commands");
     println!("  mcp               Run the MCP stdio server");
     println!("  video-editor [mp4] Open the recording editor");
     println!("  install           Install local binary and set up autostart");
-    println!("  update            Update ApexShot to the latest published release");
+    println!("  update            Update Shotbolt to the latest published release");
     println!("  update-window     Open the standalone update window (--force ignores snooze)");
     println!("  whats-new         Open the latest release's highlights");
     println!("  cloud-limit <kind> [--used N] [--max N] [--resets-at RFC3339] [--message TEXT]");
@@ -841,7 +841,7 @@ pub(crate) fn print_usage() {
     println!("Hotkeys subcommands:");
     println!("  setup [--config <path>]     Interactive wizard + install desktop keybindings");
     println!("  install [--config <path>]   Install desktop keybindings from config");
-    println!("  uninstall                   Remove desktop keybindings installed by ApexShot");
+    println!("  uninstall                   Remove desktop keybindings installed by Shotbolt");
     println!();
     println!("Capture types:");
     println!("  menu              Open Quick Capture for screenshots and recording");

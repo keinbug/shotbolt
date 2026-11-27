@@ -76,7 +76,7 @@ pub fn build_cloud_page(toast: HistoryToast) -> super::HistoryPage {
         title.add_css_class("recent-captures-title");
         title.set_halign(Align::Start);
 
-        let subtitle = Label::new(Some(&t("Everything you have uploaded to ApexShot Cloud")));
+        let subtitle = Label::new(Some(&t("Everything you have uploaded to Shotbolt Cloud")));
         subtitle.add_css_class("history-page-subtitle");
         subtitle.set_halign(Align::Start);
         subtitle.set_margin_bottom(18);
@@ -135,7 +135,8 @@ impl CloudPage {
 
         // XBackBone users have no ApexShot Cloud listing to show, whatever their
         // session state — check the destination before anything else.
-        if config.cloud_destination == "xbackbone" {
+        // Shotbolt: only the hosted cloud has a listing to show.
+        if config.cloud_destination != "apexshot" {
             self.show_xbackbone_notice();
             return;
         }
@@ -152,8 +153,8 @@ impl CloudPage {
 
     fn show_signed_out(self: &Rc<Self>) {
         let state = empty_state(
-            &t("Sign in to ApexShot Cloud"),
-            &t("Connect your ApexShot Cloud account to browse everything you have uploaded, right here in History."),
+            &t("Sign in to Shotbolt Cloud"),
+            &t("Connect your Shotbolt Cloud account to browse everything you have uploaded, right here in History."),
         );
 
         let sign_in = Button::with_label(&t("Sign in"));
@@ -215,8 +216,8 @@ impl CloudPage {
 
     fn show_xbackbone_notice(self: &Rc<Self>) {
         let state = empty_state(
-            &t("This page covers ApexShot Cloud"),
-            &t("Your uploads currently go to a self-hosted XBackBone instance. Switch your upload destination to ApexShot Cloud in Settings to browse those uploads here."),
+            &t("No upload list"),
+            &t("Your uploads go to your own upload API or XBackBone instance. Every upload copies its link to the clipboard; your server keeps the list."),
         );
         self.body.append(&state);
     }
@@ -431,7 +432,7 @@ impl GridContext {
         if self.grid.first_child().is_none() {
             self.status.set_visible(true);
             self.status
-                .set_text(&t("You have not uploaded anything to ApexShot Cloud yet."));
+                .set_text(&t("You have not uploaded anything to Shotbolt Cloud yet."));
         } else {
             self.status.set_visible(false);
         }

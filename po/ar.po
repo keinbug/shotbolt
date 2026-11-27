@@ -44,14 +44,14 @@ msgstr "تجاوز الحافة"
 msgid "Float"
 msgstr "طافٍ"
 
-msgid "Welcome to ApexShot"
-msgstr "مرحبًا بك في ApexShot"
+msgid "Welcome to Shotbolt"
+msgstr "مرحبًا بك في Shotbolt"
 
 msgid "Version {version}"
 msgstr "الإصدار {version}"
 
-msgid "ApexShot Settings"
-msgstr "إعدادات ApexShot"
+msgid "Shotbolt Settings"
+msgstr "إعدادات Shotbolt"
 
 msgid "Close"
 msgstr "إغلاق"
@@ -175,8 +175,8 @@ msgid "Include pointer when available"
 msgstr "تضمين المؤشر عند توفره"
 
 msgid ""
-"ApexShot includes the pointer only when the current capture flow provides cursor data."
-msgstr "يُدرج ApexShot المؤشر فقط إذا وفّر مسار الالتقاط بيانات المؤشر."
+"Shotbolt includes the pointer only when the current capture flow provides cursor data."
+msgstr "يُدرج Shotbolt المؤشر فقط إذا وفّر مسار الالتقاط بيانات المؤشر."
 
 msgid "Drawing Tools"
 msgstr "أدوات الرسم"
@@ -221,9 +221,9 @@ msgid "Shortcut will be disabled"
 msgstr "سيتم تعطيل الاختصار"
 
 msgid ""
-"Shortcuts set here are the same hotkeys ApexShot uses. If one does not work, your desktop environment may already be using it. Open your system keyboard settings and disable conflicting shortcuts if you want to reuse them in ApexShot."
+"Shortcuts set here are the same hotkeys Shotbolt uses. If one does not work, your desktop environment may already be using it. Open your system keyboard settings and disable conflicting shortcuts if you want to reuse them in Shotbolt."
 msgstr ""
-"الاختصارات هنا هي مفاتيح ApexShot الفعلية. إن لم تعمل فقد يستخدمها سطح المكتب. عطّل التعارض من إعدادات لوحة مفاتيح النظام."
+"الاختصارات هنا هي مفاتيح Shotbolt الفعلية. إن لم تعمل فقد يستخدمها سطح المكتب. عطّل التعارض من إعدادات لوحة مفاتيح النظام."
 
 msgid "Save Location"
 msgstr "مكان الحفظ"
@@ -243,8 +243,8 @@ msgstr "تذكّر آخر مجلد تصدير"
 msgid "Upload destination"
 msgstr "وجهة الرفع"
 
-msgid "ApexShot Cloud"
-msgstr "ApexShot Cloud"
+msgid "Shotbolt Cloud"
+msgstr "Shotbolt Cloud"
 
 msgid "XBackBone (self-hosted)"
 msgstr "XBackBone (استضافة ذاتية)"
@@ -268,23 +268,23 @@ msgid "Copied. Want a link instead?"
 msgstr "تم النسخ. هل تريد رابطًا بدلًا من ذلك؟"
 
 msgid ""
-"A free ApexShot account turns every capture into a share link, with 20 links "
+"A free Shotbolt account turns every capture into a share link, with 20 links "
 "a month."
 msgstr ""
-"يحوّل حساب ApexShot المجاني كل لقطة إلى رابط مشاركة، مع 20 رابطًا شهريًا."
+"يحوّل حساب Shotbolt المجاني كل لقطة إلى رابط مشاركة، مع 20 رابطًا شهريًا."
 
 msgid "Get link"
 msgstr "احصل على الرابط"
 
-msgid "Suggest ApexShot Cloud when copying"
-msgstr "اقترح ApexShot Cloud عند النسخ"
+msgid "Suggest Shotbolt Cloud when copying"
+msgstr "اقترح Shotbolt Cloud عند النسخ"
 
 msgid ""
 "Uploads each saved screenshot and copies the share link. Does nothing until you Connect."
 msgstr "يرفع كل لقطة محفوظة وينسخ رابط المشاركة. لا يفعل شيئًا حتى تتصل."
 
-msgid "ApexShot Cloud account"
-msgstr "حساب ApexShot Cloud"
+msgid "Shotbolt Cloud account"
+msgstr "حساب Shotbolt Cloud"
 
 msgid "Connected"
 msgstr "متصل"
@@ -470,11 +470,11 @@ msgstr "إرسال ملاحظات"
 msgid "Website"
 msgstr "الموقع"
 
-msgid "Support ApexShot"
-msgstr "ادعم ApexShot"
+msgid "Support Shotbolt"
+msgstr "ادعم Shotbolt"
 
-msgid "ApexShot is free and open source. Donations keep development going."
-msgstr "ApexShot حر ومفتوح المصدر. التبرعات تبقي التطوير مستمرًا."
+msgid "Shotbolt is free and open source. Donations keep development going."
+msgstr "Shotbolt حر ومفتوح المصدر. التبرعات تبقي التطوير مستمرًا."
 
 msgid "Support on Ko-fi"
 msgstr "الدعم عبر Ko-fi"
@@ -482,11 +482,11 @@ msgstr "الدعم عبر Ko-fi"
 msgid "Cloud is a separate paid product"
 msgstr "السحابة منتج مدفوع منفصل"
 
-msgid "Opens ApexShot Cloud plans. This is not a donation."
-msgstr "يفتح خطط ApexShot Cloud. هذا ليس تبرعًا."
+msgid "Opens Shotbolt Cloud plans. This is not a donation."
+msgstr "يفتح خطط Shotbolt Cloud. هذا ليس تبرعًا."
 
-msgid "Copyright © 2026 ApexShot. All rights reserved."
-msgstr "حقوق النشر © 2026 ApexShot. جميع الحقوق محفوظة."
+msgid "Copyright © 2026 Shotbolt. All rights reserved."
+msgstr "حقوق النشر © 2026 Shotbolt. جميع الحقوق محفوظة."
 
 msgid "Terms of Service"
 msgstr "شروط الخدمة"
@@ -494,8 +494,8 @@ msgstr "شروط الخدمة"
 msgid "Privacy Policy"
 msgstr "سياسة الخصوصية"
 
-msgid "ApexShot Setup"
-msgstr "إعداد ApexShot"
+msgid "Shotbolt Setup"
+msgstr "إعداد Shotbolt"
 
 msgid "← Back"
 msgstr "→ رجوع"
@@ -503,8 +503,8 @@ msgstr "→ رجوع"
 msgid "Next →"
 msgstr "التالي ←"
 
-msgid "Start Using ApexShot"
-msgstr "ابدأ استخدام ApexShot"
+msgid "Start Using Shotbolt"
+msgstr "ابدأ استخدام Shotbolt"
 
 msgid "Extension Installed ✓"
 msgstr "تم تثبيت الامتداد ✓"
@@ -513,8 +513,8 @@ msgid "GNOME Shell Extension Required"
 msgstr "امتداد GNOME Shell مطلوب"
 
 msgid ""
-"ApexShot requires GNOME Shell. Please install on a GNOME desktop to continue."
-msgstr "يتطلب ApexShot بيئة GNOME Shell. ثبّته على سطح مكتب GNOME للمتابعة."
+"Shotbolt requires GNOME Shell. Please install on a GNOME desktop to continue."
+msgstr "يتطلب Shotbolt بيئة GNOME Shell. ثبّته على سطح مكتب GNOME للمتابعة."
 
 msgid "Exit"
 msgstr "خروج"
@@ -523,7 +523,7 @@ msgid "Update GNOME Extension"
 msgstr "تحديث امتداد GNOME"
 
 msgid ""
-"An old version of the ApexShot extension is installed. It needs to be removed before installing the new version."
+"An old version of the Shotbolt extension is installed. It needs to be removed before installing the new version."
 msgstr "هناك إصدار قديم من الامتداد. أزله قبل تثبيت الإصدار الجديد."
 
 msgid "Remove Old Extension"
@@ -572,9 +572,9 @@ msgid "Browser Extension"
 msgstr "امتداد المتصفح"
 
 msgid ""
-"Optional Chrome/Chromium add-on for full-page web captures that open straight in ApexShot."
+"Optional Chrome/Chromium add-on for full-page web captures that open straight in Shotbolt."
 msgstr ""
-"إضافة اختيارية لـ Chrome/Chromium لالتقاط صفحات كاملة تفتح مباشرة في ApexShot."
+"إضافة اختيارية لـ Chrome/Chromium لالتقاط صفحات كاملة تفتح مباشرة في Shotbolt."
 
 msgid "Full-page scroll capture"
 msgstr "التقاط صفحة كاملة بالتمرير"
@@ -582,8 +582,8 @@ msgstr "التقاط صفحة كاملة بالتمرير"
 msgid "Stitch long pages that a normal screenshot can't fit"
 msgstr "يجمع الصفحات الطويلة التي لا تتسع في لقطة عادية"
 
-msgid "Sends directly to ApexShot"
-msgstr "يُرسل مباشرة إلى ApexShot"
+msgid "Sends directly to Shotbolt"
+msgstr "يُرسل مباشرة إلى Shotbolt"
 
 msgid "Opens in the editor so you can annotate and share immediately"
 msgstr "يُفتح في المحرر للتعليق والمشاركة فورًا"
@@ -591,8 +591,8 @@ msgstr "يُفتح في المحرر للتعليق والمشاركة فورً�
 msgid "Works with your desktop app"
 msgstr "يعمل مع تطبيق سطح المكتب"
 
-msgid "Native messaging keeps the browser and ApexShot in sync"
-msgstr "الرسائل الأصلية تُزامن المتصفح مع ApexShot"
+msgid "Native messaging keeps the browser and Shotbolt in sync"
+msgstr "الرسائل الأصلية تُزامن المتصفح مع Shotbolt"
 
 msgid "Get Chrome Extension"
 msgstr "الحصول على امتداد Chrome"
@@ -602,10 +602,10 @@ msgid ""
 msgstr "اختياري. يمكنك تثبيته لاحقًا من الإعدادات أو متجر Chrome."
 
 msgid ""
-"Thanks for choosing ApexShot as your screenshot companion.\n"
+"Thanks for choosing Shotbolt as your screenshot companion.\n"
 "Let's get you set up in just a few quick steps."
 msgstr ""
-"شكرًا لاختيار ApexShot.\n"
+"شكرًا لاختيار Shotbolt.\n"
 "لنجهّزه في بضع خطوات."
 
 msgid "Area & fullscreen capture"
@@ -657,8 +657,8 @@ msgstr "انسخ رابطًا بعد الالتقاط دون مغادرة سير
 msgid "Storage you control"
 msgstr "تخزين تتحكم به"
 
-msgid "Hosted ApexShot Cloud or your own XBackBone instance"
-msgstr "سحابة ApexShot المستضافة أو مثيل XBackBone الخاص بك"
+msgid "Hosted Shotbolt Cloud or your own XBackBone instance"
+msgstr "سحابة Shotbolt المستضافة أو مثيل XBackBone الخاص بك"
 
 msgid "Choose your cloud"
 msgstr "اختر سحابتك"
@@ -681,10 +681,10 @@ msgid "How to capture"
 msgstr "كيفية الالتقاط"
 
 msgid ""
-"ApexShot runs in the background with a tray icon and hotkeys.\n"
+"Shotbolt runs in the background with a tray icon and hotkeys.\n"
 "After setup, you do not need to open Settings every time."
 msgstr ""
-"يعمل ApexShot في الخلفية بأيقونة شريط واختصارات.\n"
+"يعمل Shotbolt في الخلفية بأيقونة شريط واختصارات.\n"
 "بعد الإعداد لا تحتاج فتح الإعدادات في كل مرة."
 
 msgid "Tray icon"
@@ -696,8 +696,8 @@ msgstr "انقر باليمين: منطقة، شاشة، نافذة، تسجيل
 msgid "App menu"
 msgstr "قائمة التطبيق"
 
-msgid "Opening ApexShot shows Settings; captures stay on tray and hotkeys"
-msgstr "فتح ApexShot يعرض الإعدادات؛ الالتقاط يبقى عبر الشريط والاختصارات"
+msgid "Opening Shotbolt shows Settings; captures stay on tray and hotkeys"
+msgstr "فتح Shotbolt يعرض الإعدادات؛ الالتقاط يبقى عبر الشريط والاختصارات"
 
 msgid "Hotkeys"
 msgstr "المفاتيح السريعة"
@@ -742,8 +742,8 @@ msgstr "انقر باليمين: منطقة، شاشة، تسجيل"
 msgid "Capture without opening Settings every time"
 msgstr "التقط دون فتح الإعدادات في كل مرة"
 
-msgid "Open ApexShot anytime for Settings and preferences"
-msgstr "افتح ApexShot في أي وقت للإعدادات"
+msgid "Open Shotbolt anytime for Settings and preferences"
+msgstr "افتح Shotbolt في أي وقت للإعدادات"
 
 msgid "Pro tip"
 msgstr "نصيحة"
@@ -983,41 +983,41 @@ msgstr "جاري تحليل حركة المؤشر المرئية…"
 msgid "Animation"
 msgstr "الرسوم المتحركة"
 
-msgid "ApexShot Editor"
-msgstr "محرر ApexShot"
+msgid "Shotbolt Editor"
+msgstr "محرر Shotbolt"
 
-msgid "ApexShot History"
-msgstr "تاريخ ApexShot"
+msgid "Shotbolt History"
+msgstr "تاريخ Shotbolt"
 
-msgid "ApexShot Preview"
-msgstr "معاينة ApexShot"
+msgid "Shotbolt Preview"
+msgstr "معاينة Shotbolt"
 
-msgid "ApexShot Recording"
-msgstr "تسجيل ApexShot"
+msgid "Shotbolt Recording"
+msgstr "تسجيل Shotbolt"
 
-msgid "ApexShot Recording Countdown"
-msgstr "العد التنازلي لتسجيل ApexShot"
+msgid "Shotbolt Recording Countdown"
+msgstr "العد التنازلي لتسجيل Shotbolt"
 
-msgid "ApexShot Recording Editor"
-msgstr "محرر التسجيلات ApexShot"
+msgid "Shotbolt Recording Editor"
+msgstr "محرر التسجيلات Shotbolt"
 
-msgid "ApexShot Recording Mask"
-msgstr "قناع التسجيل ApexShot"
+msgid "Shotbolt Recording Mask"
+msgstr "قناع التسجيل Shotbolt"
 
-msgid "ApexShot could not export this recording."
-msgstr "تعذر على ApexShot تصدير هذا التسجيل."
+msgid "Shotbolt could not export this recording."
+msgstr "تعذر على Shotbolt تصدير هذا التسجيل."
 
-msgid "ApexShot could not open this video file."
-msgstr "تعذر على ApexShot فتح ملف الفيديو هذا."
+msgid "Shotbolt could not open this video file."
+msgstr "تعذر على Shotbolt فتح ملف الفيديو هذا."
 
-msgid "ApexShot lost contact with the export worker."
-msgstr "فقدت شركة «ApexShot» الاتصال بموظف التصدير."
+msgid "Shotbolt lost contact with the export worker."
+msgstr "فقدت شركة «Shotbolt» الاتصال بموظف التصدير."
 
-msgid "ApexShot lost contact with the upload worker."
-msgstr "فقدت ApexShot الاتصال بعامل التحميل."
+msgid "Shotbolt lost contact with the upload worker."
+msgstr "فقدت Shotbolt الاتصال بعامل التحميل."
 
-msgid "ApexShot-YYYY-MM-DD_HH-MM-SS.png"
-msgstr "ApexShot-YYYY-MM-DD_HH-MM-SS.png"
+msgid "Shotbolt-YYYY-MM-DD_HH-MM-SS.png"
+msgstr "Shotbolt-YYYY-MM-DD_HH-MM-SS.png"
 
 msgid "Apply selection"
 msgstr "تطبيق التحديد"
@@ -1138,14 +1138,14 @@ msgid "Colors"
 msgstr "الألوان"
 
 msgid ""
-"Connect ApexShot Cloud in Settings → Cloud, or switch destination to XBackBone and configure it."
+"Connect Shotbolt Cloud in Settings → Cloud, or switch destination to XBackBone and configure it."
 msgstr ""
-"قم بربط ApexShot Cloud من خلال «الإعدادات» → «السحابة»، أو قم بتغيير الوجهة إلى XBackBone وقم بتكوينها."
+"قم بربط Shotbolt Cloud من خلال «الإعدادات» → «السحابة»، أو قم بتغيير الوجهة إلى XBackBone وقم بتكوينها."
 
 msgid ""
-"Connect your ApexShot Cloud account to browse everything you have uploaded, right here in History."
+"Connect your Shotbolt Cloud account to browse everything you have uploaded, right here in History."
 msgstr ""
-"اربط حسابك على ApexShot Cloud لتتمكن من تصفح كل ما قمت بتحميله، هنا في قسم «السجل»."
+"اربط حسابك على Shotbolt Cloud لتتمكن من تصفح كل ما قمت بتحميله، هنا في قسم «السجل»."
 
 msgid "Content copied to clipboard"
 msgstr "تم نسخ المحتوى إلى الحافظة"
@@ -1235,8 +1235,8 @@ msgid ""
 msgstr ""
 "لا تتوفر ميزة استبدال المؤشر. ومع ذلك، يمكن أن يسترشد «التكبير التلقائي» بمساره المفترض."
 
-msgid "Cursor styling requires pointer data from an ApexShot recording."
-msgstr "يتطلب تصميم المؤشر الحصول على بيانات المؤشر من تسجيل ApexShot."
+msgid "Cursor styling requires pointer data from an Shotbolt recording."
+msgstr "يتطلب تصميم المؤشر الحصول على بيانات المؤشر من تسجيل Shotbolt."
 
 msgid "Cursor unavailable"
 msgstr "المؤشر غير متاح"
@@ -1358,8 +1358,8 @@ msgstr "نهاية {time}"
 msgid "Estimated export size"
 msgstr "الحجم التقديري للصادرات"
 
-msgid "Everything you have uploaded to ApexShot Cloud"
-msgstr "كل ما قمت بتحميله إلى ApexShot Cloud"
+msgid "Everything you have uploaded to Shotbolt Cloud"
+msgstr "كل ما قمت بتحميله إلى Shotbolt Cloud"
 
 msgid "Export complete"
 msgstr "اكتمل التصدير"
@@ -1427,8 +1427,8 @@ msgid "GIF"
 msgstr "GIF"
 
 msgid ""
-"GNOME Shell extension is not installed. Please install the ApexShot GNOME extension first."
-msgstr "ملحق GNOME Shell غير مثبت. يرجى تثبيت ملحق ApexShot لـ GNOME أولاً."
+"GNOME Shell extension is not installed. Please install the Shotbolt GNOME extension first."
+msgstr "ملحق GNOME Shell غير مثبت. يرجى تثبيت ملحق Shotbolt لـ GNOME أولاً."
 
 msgid "Geometry"
 msgstr "الهندسة"
@@ -1854,9 +1854,9 @@ msgid "Recording setup"
 msgstr "إعدادات التسجيل"
 
 msgid ""
-"Recording will continue with the OS cursor hidden. Enable the ApexShot GNOME extension for the editor."
+"Recording will continue with the OS cursor hidden. Enable the Shotbolt GNOME extension for the editor."
 msgstr ""
-"سيستمر التسجيل مع إخفاء مؤشر نظام التشغيل. قم بتمكين ملحق ApexShot لـ GNOME في المحرر."
+"سيستمر التسجيل مع إخفاء مؤشر نظام التشغيل. قم بتمكين ملحق Shotbolt لـ GNOME في المحرر."
 
 msgid "Recordings"
 msgstr "التسجيلات"
@@ -1933,8 +1933,8 @@ msgstr "التمرير"
 msgid "Scroll Capture"
 msgstr "التقاط التمرير"
 
-msgid "Scroll capture requires the ApexShot"
-msgstr "يتطلب التقاط شاشة التمرير استخدام برنامج ApexShot"
+msgid "Scroll capture requires the Shotbolt"
+msgstr "يتطلب التقاط شاشة التمرير استخدام برنامج Shotbolt"
 
 msgid "Search isn't available for Cloud"
 msgstr "البحث غير متاح في السحابة"
@@ -1969,9 +1969,9 @@ msgid "Set a fixed focus point for this zoom"
 msgstr "اضبط نقطة تركيز ثابتة لهذا الزوم"
 
 msgid ""
-"Set the instance URL and API token in Settings → Cloud, or switch to ApexShot Cloud and sign in."
+"Set the instance URL and API token in Settings → Cloud, or switch to Shotbolt Cloud and sign in."
 msgstr ""
-"قم بتعيين عنوان URL للمثيل ورمز API في «الإعدادات» → «السحابة»، أو انتقل إلى ApexShot Cloud وقم بتسجيل الدخول."
+"قم بتعيين عنوان URL للمثيل ورمز API في «الإعدادات» → «السحابة»، أو انتقل إلى Shotbolt Cloud وقم بتسجيل الدخول."
 
 msgid "Shadow"
 msgstr "الظل"
@@ -2006,8 +2006,8 @@ msgstr "يظهر فوق التسجيل في وضع المعاينة والتصد
 msgid "Sign in"
 msgstr "تسجيل الدخول"
 
-msgid "Sign in to ApexShot Cloud"
-msgstr "تسجيل الدخول إلى ApexShot Cloud"
+msgid "Sign in to Shotbolt Cloud"
+msgstr "تسجيل الدخول إلى Shotbolt Cloud"
 
 msgid "Size"
 msgstr "الحجم"
@@ -2119,8 +2119,8 @@ msgstr "السماكة"
 msgid "Thin"
 msgstr "رقيق"
 
-msgid "This page covers ApexShot Cloud"
-msgstr "تتناول هذه الصفحة خدمة ApexShot Cloud"
+msgid "This page covers Shotbolt Cloud"
+msgstr "تتناول هذه الصفحة خدمة Shotbolt Cloud"
 
 msgid "This permanently removes the file from disk."
 msgstr "يؤدي هذا إلى إزالة الملف نهائيًا من القرص."
@@ -2224,8 +2224,8 @@ msgstr "يارو"
 msgid "Yesterday"
 msgstr "أمس"
 
-msgid "You have not uploaded anything to ApexShot Cloud yet."
-msgstr "لم تقم بعد بتحميل أي شيء إلى ApexShot Cloud."
+msgid "You have not uploaded anything to Shotbolt Cloud yet."
+msgstr "لم تقم بعد بتحميل أي شيء إلى Shotbolt Cloud."
 
 msgid "You're connected"
 msgstr "أنت متصل"
@@ -2234,9 +2234,9 @@ msgid "Your next screenshot gets a share link."
 msgstr "ستظهر رابط مشاركة مع لقطة الشاشة التالية."
 
 msgid ""
-"Your uploads currently go to a self-hosted XBackBone instance. Switch your upload destination to ApexShot Cloud in Settings to browse those uploads here."
+"Your uploads currently go to a self-hosted XBackBone instance. Switch your upload destination to Shotbolt Cloud in Settings to browse those uploads here."
 msgstr ""
-"يتم حاليًا تحميل ملفاتك إلى نسخة XBackBone مستضافة ذاتيًا. قم بتغيير وجهة التحميل إلى ApexShot Cloud من خلال «الإعدادات» لتتمكن من تصفح تلك الملفات هنا."
+"يتم حاليًا تحميل ملفاتك إلى نسخة XBackBone مستضافة ذاتيًا. قم بتغيير وجهة التحميل إلى Shotbolt Cloud من خلال «الإعدادات» لتتمكن من تصفح تلك الملفات هنا."
 
 msgid "Zoom"
 msgstr "تكبير"
@@ -2298,14 +2298,14 @@ msgstr "قلم"
 msgid "Choose the solid color used when Background is set to plain color"
 msgstr "اختر اللون المستخدم عند ضبط الخلفية على لون موحّد"
 
-msgid "ApexShot update available"
-msgstr "يتوفر تحديث لـ ApexShot"
+msgid "Shotbolt update available"
+msgstr "يتوفر تحديث لـ Shotbolt"
 
 msgid "Update available · v{version}"
 msgstr "يتوفر تحديث · الإصدار {version}"
 
-msgid "Version {version} is ready. Open the ApexShot menu to view it."
-msgstr "الإصدار {version} جاهز. افتح قائمة ApexShot لعرضه."
+msgid "Version {version} is ready. Open the Shotbolt menu to view it."
+msgstr "الإصدار {version} جاهز. افتح قائمة Shotbolt لعرضه."
 
 msgid "Static"
 msgstr "ثابت"
@@ -2821,8 +2821,8 @@ msgstr "تبدأ حركة الكاميرا قبل كل تكبير بـ 0.35 ثا
 msgid "Played once, when the capture freezes. Saving or cropping stays silent."
 msgstr "يتم تشغيله مرة واحدة عند تجميد الالتقاط. يبقى الحفظ والقص صامتين."
 
-msgid "Your desktop controls the capture sound on this route, so ApexShot cannot replace or disable it here and will not play an additional sound."
-msgstr "في هذا المسار يتحكم سطح المكتب في صوت الالتقاط، لذا لا يستطيع ApexShot استبداله أو تعطيله هنا ولن يشغّل صوتًا إضافيًا."
+msgid "Your desktop controls the capture sound on this route, so Shotbolt cannot replace or disable it here and will not play an additional sound."
+msgstr "في هذا المسار يتحكم سطح المكتب في صوت الالتقاط، لذا لا يستطيع Shotbolt استبداله أو تعطيله هنا ولن يشغّل صوتًا إضافيًا."
 
 msgid "Bold"
 msgstr "عريض"
@@ -2959,9 +2959,9 @@ msgstr ""
 "تتطلب هذه الإعدادات الافتراضية دعم بوابة GlobalShortcuts لسطح المكتب وموافقتك. استخدم أيقونة النظام إذا لم تتوفر الاختصارات."
 
 msgid ""
-"This Flatpak cannot install extensions into your host desktop. Open the release page and download the GNOME extension archive, then install and enable it on the host in GNOME Extensions or run `gnome-extensions install --force ~/Downloads/apexshot-gnome-integration.zip` followed by `gnome-extensions enable apexshot-gnome-integration@apexshot.github.io` in a host terminal. ApexShot will detect it when the extension is enabled."
+"This Flatpak cannot install extensions into your host desktop. Open the release page and download the GNOME extension archive, then install and enable it on the host in GNOME Extensions or run `gnome-extensions install --force ~/Downloads/apexshot-gnome-integration.zip` followed by `gnome-extensions enable apexshot-gnome-integration@apexshot.github.io` in a host terminal. Shotbolt will detect it when the extension is enabled."
 msgstr ""
-"لا يمكن لحزمة Flatpak هذه تثبيت امتدادات على سطح المكتب المضيف. افتح صفحة الإصدار ونزّل أرشيف امتداد GNOME، ثم ثبّته وفعّله على المضيف في تطبيق امتدادات GNOME أو شغّل `gnome-extensions install --force ~/Downloads/apexshot-gnome-integration.zip` ثم `gnome-extensions enable apexshot-gnome-integration@apexshot.github.io` في طرفية المضيف. سيكتشفه ApexShot عند تفعيل الامتداد."
+"لا يمكن لحزمة Flatpak هذه تثبيت امتدادات على سطح المكتب المضيف. افتح صفحة الإصدار ونزّل أرشيف امتداد GNOME، ثم ثبّته وفعّله على المضيف في تطبيق امتدادات GNOME أو شغّل `gnome-extensions install --force ~/Downloads/apexshot-gnome-integration.zip` ثم `gnome-extensions enable apexshot-gnome-integration@apexshot.github.io` في طرفية المضيف. سيكتشفه Shotbolt عند تفعيل الامتداد."
 
 msgid ""
 "You may need to log out and back in for the extension to appear in GNOME."
@@ -2973,8 +2973,8 @@ msgstr "رجوع"
 msgid "Cloud sharing"
 msgstr "المشاركة عبر السحابة"
 
-msgid "Connect ApexShot Cloud"
-msgstr "ربط ApexShot Cloud"
+msgid "Connect Shotbolt Cloud"
+msgstr "ربط Shotbolt Cloud"
 
 msgid "Connect your account"
 msgstr "اربط حسابك"
@@ -3027,8 +3027,8 @@ msgstr "الترقية إلى Pro"
 msgid "Keep working"
 msgstr "متابعة العمل"
 
-msgid "Support ApexShot / Go Pro"
-msgstr "دعم ApexShot / الترقية إلى Pro"
+msgid "Support Shotbolt / Go Pro"
+msgstr "دعم Shotbolt / الترقية إلى Pro"
 
 msgid "Your capture is saved"
 msgstr "تم حفظ لقطتك"
@@ -3048,8 +3048,8 @@ msgstr "تُرفع اللقطات إلى خادم XBackBone الخاص بك. غ�
 msgid "Code expires in {minutes} min"
 msgstr "تنتهي صلاحية الرمز خلال {minutes} دقيقة"
 
-msgid "Couldn't reach ApexShot Cloud. Check your connection and try again."
-msgstr "تعذر الوصول إلى ApexShot Cloud. تحقق من اتصالك وحاول مرة أخرى."
+msgid "Couldn't reach Shotbolt Cloud. Check your connection and try again."
+msgstr "تعذر الوصول إلى Shotbolt Cloud. تحقق من اتصالك وحاول مرة أخرى."
 
 msgid "Couldn't save your setup. Check that your config folder is writable, then try again."
 msgstr "تعذر حفظ الإعداد. تأكد من إمكانية الكتابة في مجلد الإعدادات، ثم حاول مرة أخرى."
@@ -3060,8 +3060,8 @@ msgstr "ابدأ"
 msgid "Hosted by us. Connect with a one-time code from your browser."
 msgstr "نستضيفه نحن. اربط جهازك برمز لمرة واحدة من المتصفح."
 
-msgid "Optional. Connect ApexShot Cloud to turn a capture into a link you can paste anywhere. ApexShot works offline without an account, so you can skip this."
-msgstr "اختياري. اربط ApexShot Cloud لتحويل أي لقطة إلى رابط يمكنك لصقه في أي مكان. يعمل ApexShot دون اتصال بحساب، لذا يمكنك تخطي هذه الخطوة."
+msgid "Optional. Connect Shotbolt Cloud to turn a capture into a link you can paste anywhere. Shotbolt works offline without an account, so you can skip this."
+msgstr "اختياري. اربط Shotbolt Cloud لتحويل أي لقطة إلى رابط يمكنك لصقه في أي مكان. يعمل Shotbolt دون اتصال بحساب، لذا يمكنك تخطي هذه الخطوة."
 
 msgid "Self-host for full control of storage. Set it up later in Settings → Cloud."
 msgstr "استضفه بنفسك للتحكم الكامل في التخزين. يمكنك إعداده لاحقًا من الإعدادات ← السحابة."
@@ -3093,8 +3093,8 @@ msgstr "تعذّر فتح متصفح: {error}. انسخ الرابط أدناه 
 msgid "The selected portal will embed the cursor in the video, so it cannot be edited separately."
 msgstr "ستُضمّن البوابة المحددة المؤشر في الفيديو، لذا لن يمكن تعديله بشكل منفصل."
 
-msgid "The window cursor remains editable, but Auto Zoom clicks will not be recorded without the ApexShot GNOME extension."
-msgstr "سيظل مؤشر النافذة قابلاً للتحرير، لكن نقرات التكبير التلقائي لن تُسجّل دون إضافة GNOME الخاصة بـ ApexShot."
+msgid "The window cursor remains editable, but Auto Zoom clicks will not be recorded without the Shotbolt GNOME extension."
+msgstr "سيظل مؤشر النافذة قابلاً للتحرير، لكن نقرات التكبير التلقائي لن تُسجّل دون إضافة GNOME الخاصة بـ Shotbolt."
 
 msgid "Export Motion video"
 msgstr "تصدير فيديو Motion"
@@ -3240,8 +3240,8 @@ msgstr "هذا الإصدار أحدث من ترخيصك"
 msgid "Tilt, rotate and position a still inside its background."
 msgstr "أمِل لقطة ثابتة وأدرها وضعها داخل خلفيتها."
 
-msgid "Unlock ApexShot Studio"
-msgstr "افتح ApexShot Studio"
+msgid "Unlock Shotbolt Studio"
+msgstr "افتح Shotbolt Studio"
 
 msgid "Upgrade to Studio — $39 once"
 msgstr "الترقية إلى Studio — 39 دولارًا لمرة واحدة"
@@ -3264,8 +3264,8 @@ msgstr "نسخ الترخيص"
 msgid "100% displays export pixels at native screen scale"
 msgstr "يعرض 100% وحدات بكسل التصدير بالحجم الأصلي للشاشة."
 
-msgid "ApexShot lost contact with the copy worker."
-msgstr "فقد ApexShot الاتصال بعامل النسخ."
+msgid "Shotbolt lost contact with the copy worker."
+msgstr "فقد Shotbolt الاتصال بعامل النسخ."
 
 msgid "Before / after divider"
 msgstr "فاصل قبل/بعد"
@@ -3509,8 +3509,8 @@ msgstr "9:16"
 msgid "Add gradient stop"
 msgstr "إضافة نقطة تدرّج"
 
-msgid "ApexShot Video Editor"
-msgstr "محرر الفيديو ApexShot"
+msgid "Shotbolt Video Editor"
+msgstr "محرر الفيديو Shotbolt"
 
 msgid "Background image"
 msgstr "صورة الخلفية"
@@ -3748,17 +3748,17 @@ msgstr "تحرير الفيديو غير متاح في إصدار Windows بعد
 msgid "Your screenshot companion for Windows. Set it up in a few quick steps."
 msgstr "رفيقك للقطات الشاشة على ويندوز. أعِدّه في خطوات سريعة."
 
-msgid "ApexShot runs in the background with a tray icon.\nAfter setup, you do not need to open Settings every time."
-msgstr "يعمل ApexShot في الخلفية بأيقونة في شريط النظام.\nبعد الإعداد لا تحتاج فتح الإعدادات في كل مرة."
+msgid "Shotbolt runs in the background with a tray icon.\nAfter setup, you do not need to open Settings every time."
+msgstr "يعمل Shotbolt في الخلفية بأيقونة في شريط النظام.\nبعد الإعداد لا تحتاج فتح الإعدادات في كل مرة."
 
-msgid "ApexShot stays in the tray; right-click it for the capture menu."
-msgstr "يبقى ApexShot في شريط النظام؛ انقر باليمين لفتح قائمة الالتقاط."
+msgid "Shotbolt stays in the tray; right-click it for the capture menu."
+msgstr "يبقى Shotbolt في شريط النظام؛ انقر باليمين لفتح قائمة الالتقاط."
 
 msgid "Bindings are saved; global hotkeys arrive in a later build."
 msgstr "تُحفظ الاختصارات؛ وستصل الاختصارات العامة في إصدار لاحق."
 
-msgid "ApexShot is ready. It runs from the tray from now on."
-msgstr "ApexShot جاهز. سيعمل من شريط النظام من الآن."
+msgid "Shotbolt is ready. It runs from the tray from now on."
+msgstr "Shotbolt جاهز. سيعمل من شريط النظام من الآن."
 
 msgid "Signed in, but this device could not save the account."
 msgstr "تم تسجيل الدخول، لكن هذا الجهاز تعذّر عليه حفظ الحساب."
@@ -3865,8 +3865,8 @@ msgstr "تشغيل الكاميرا"
 msgid "Add change at playhead"
 msgstr "إضافة تغيير عند موضع التشغيل"
 
-msgid "ApexShot"
-msgstr "ApexShot"
+msgid "Shotbolt"
+msgstr "Shotbolt"
 
 msgid "No settings found"
 msgstr "لم يتم العثور على إعدادات"
@@ -3991,8 +3991,8 @@ msgstr ""
 msgid "Requires the corresponding Windows OCR language pack."
 msgstr "يتطلب حزمة لغة OCR المقابلة في Windows."
 
-msgid "Shortcuts work while the ApexShot background shell is running."
-msgstr "تعمل الاختصارات ما دام غلاف ApexShot في الخلفية قيد التشغيل."
+msgid "Shortcuts work while the Shotbolt background shell is running."
+msgstr "تعمل الاختصارات ما دام غلاف Shotbolt في الخلفية قيد التشغيل."
 
 msgid ""
 "The Windows shell uses its tray icon to open capture, Settings, and Quit."
@@ -4007,8 +4007,8 @@ msgstr "يمكن لشريط أدوات الالتقاط تغيير المؤقت 
 msgid "This action requires the Windows image editor or overlay backend."
 msgstr "يتطلب هذا الإجراء محرر الصور أو خلفية الطبقة في Windows."
 
-msgid "Use your configured shortcuts while ApexShot runs in the background."
-msgstr "استخدم اختصاراتك المضبوطة أثناء تشغيل ApexShot في الخلفية."
+msgid "Use your configured shortcuts while Shotbolt runs in the background."
+msgstr "استخدم اختصاراتك المضبوطة أثناء تشغيل Shotbolt في الخلفية."
 
 msgid "When hidden, stop the recording from the tray or with its shortcut."
 msgstr "عند الإخفاء، أوقف التسجيل من الشريط أو باختصاره."
@@ -4175,8 +4175,8 @@ msgstr "شدة الطمس"
 msgid "One shortcut away."
 msgstr "على بُعد اختصار واحد."
 
-msgid "Open ApexShot"
-msgstr "فتح ApexShot"
+msgid "Open Shotbolt"
+msgstr "فتح Shotbolt"
 
 msgid "Open Image"
 msgstr "فتح صورة"
@@ -4221,8 +4221,8 @@ msgstr "حفظ الصورة المعلّق عليها"
 msgid "Select image"
 msgstr "اختيار صورة"
 
-msgid "Shortcuts work while ApexShot runs in the background."
-msgstr "تعمل الاختصارات أثناء تشغيل ApexShot في الخلفية."
+msgid "Shortcuts work while Shotbolt runs in the background."
+msgstr "تعمل الاختصارات أثناء تشغيل Shotbolt في الخلفية."
 
 msgid "Start a capture from your keyboard or the tray menu."
 msgstr "ابدأ الالتقاط من لوحة المفاتيح أو قائمة الشريط."
@@ -4278,8 +4278,8 @@ msgstr "تم التصدير، لكن تعذرت إضافة الصوت:"
 msgid "Wait for the background image to finish loading."
 msgstr "انتظر اكتمال تحميل صورة الخلفية."
 
-msgid "Your shortcuts work while ApexShot runs."
-msgstr "تعمل اختصاراتك أثناء تشغيل ApexShot."
+msgid "Your shortcuts work while Shotbolt runs."
+msgstr "تعمل اختصاراتك أثناء تشغيل Shotbolt."
 
 msgid "You’re all set."
 msgstr "أصبحت جاهزًا."
@@ -4305,20 +4305,20 @@ msgstr "يتبقى {remaining} قبل الوصول إلى حدّك."
 msgid "{remaining} remains of your {limit} allowance."
 msgstr "يتبقى {remaining} من حدّك البالغ {limit}."
 
-msgid "ApexShot Update"
-msgstr "تحديث ApexShot"
+msgid "Shotbolt Update"
+msgstr "تحديث Shotbolt"
 
-msgid "ApexShot v{version} is ready to install."
-msgstr "ApexShot v{version} جاهز للتثبيت."
+msgid "Shotbolt v{version} is ready to install."
+msgstr "Shotbolt v{version} جاهز للتثبيت."
 
-msgid "ApexShot v{version} is on its way. Keep this window open."
-msgstr "ApexShot v{version} في الطريق. أبقِ هذه النافذة مفتوحة."
+msgid "Shotbolt v{version} is on its way. Keep this window open."
+msgstr "Shotbolt v{version} في الطريق. أبقِ هذه النافذة مفتوحة."
 
-msgid "ApexShot v{version} has finished downloading."
-msgstr "اكتمل تنزيل ApexShot v{version}."
+msgid "Shotbolt v{version} has finished downloading."
+msgstr "اكتمل تنزيل Shotbolt v{version}."
 
-msgid "ApexShot v{version} could not be updated."
-msgstr "تعذّر تحديث ApexShot v{version}."
+msgid "Shotbolt v{version} could not be updated."
+msgstr "تعذّر تحديث Shotbolt v{version}."
 
 msgid "Update available"
 msgstr "يتوفر تحديث"
@@ -4404,8 +4404,8 @@ msgstr "لا يحتوي Motion على صورة ثابتة للتصدير."
 msgid "Opened {name} in the image editor"
 msgstr "تم فتح {name} في محرر الصور"
 
-msgid "Optional. Link your account to upload screenshots and recordings to ApexShot Cloud."
-msgstr "اختياري. اربط حسابك لرفع لقطات الشاشة والتسجيلات إلى ApexShot Cloud."
+msgid "Optional. Link your account to upload screenshots and recordings to Shotbolt Cloud."
+msgstr "اختياري. اربط حسابك لرفع لقطات الشاشة والتسجيلات إلى Shotbolt Cloud."
 
 msgid "Share link copied to clipboard: {url}"
 msgstr "تم نسخ رابط المشاركة إلى الحافظة: {url}"
@@ -4900,8 +4900,8 @@ msgstr "{seconds} ث"
 msgid "A link to the exported file was copied"
 msgstr "تم نسخ رابط إلى الملف المُصدَّر"
 
-msgid "ApexShot could not reserve a file for the export."
-msgstr "تعذّر على ApexShot حجز ملف للتصدير."
+msgid "Shotbolt could not reserve a file for the export."
+msgstr "تعذّر على Shotbolt حجز ملف للتصدير."
 
 msgid "Checking encoder support…"
 msgstr "جارٍ التحقق من دعم المُرمِّز…"
@@ -4991,8 +4991,8 @@ msgstr "{used} من {limit}"
 msgid "Activate a license"
 msgstr "تفعيل ترخيص"
 
-msgid "ApexShot Studio"
-msgstr "ApexShot Studio"
+msgid "Shotbolt Studio"
+msgstr "Shotbolt Studio"
 
 msgid "Included updates ended {date}."
 msgstr "انتهت التحديثات المضمّنة في {date}."
@@ -5009,8 +5009,8 @@ msgstr "يحتاج إلى انتباه"
 msgid "Not activated on this device."
 msgstr "غير مفعّل على هذا الجهاز."
 
-msgid "Open ApexShot anytime for Settings, shortcuts, and preferences"
-msgstr "افتح ApexShot في أي وقت للوصول إلى الإعدادات والاختصارات والتفضيلات"
+msgid "Open Shotbolt anytime for Settings, shortcuts, and preferences"
+msgstr "افتح Shotbolt في أي وقت للوصول إلى الإعدادات والاختصارات والتفضيلات"
 
 msgid "Other device"
 msgstr "جهاز آخر"
@@ -5045,23 +5045,23 @@ msgstr "0 بايت/ث"
 msgid "An export is still running. Let it finish, then try again."
 msgstr "لا يزال التصدير قيد التشغيل. انتظر حتى ينتهي، ثم حاول مرة أخرى."
 
-msgid "ApexShot could not close every window. Close them, then try again."
-msgstr "تعذّر على ApexShot إغلاق كل النوافذ. أغلقها، ثم حاول مرة أخرى."
+msgid "Shotbolt could not close every window. Close them, then try again."
+msgstr "تعذّر على Shotbolt إغلاق كل النوافذ. أغلقها، ثم حاول مرة أخرى."
 
-msgid "ApexShot is up to date"
-msgstr "ApexShot محدَّث"
+msgid "Shotbolt is up to date"
+msgstr "Shotbolt محدَّث"
 
-msgid "ApexShot v{version} is being installed. Keep this window open."
-msgstr "جارٍ تثبيت ApexShot v{version}. أبقِ هذه النافذة مفتوحة."
+msgid "Shotbolt v{version} is being installed. Keep this window open."
+msgstr "جارٍ تثبيت Shotbolt v{version}. أبقِ هذه النافذة مفتوحة."
 
-msgid "ApexShot v{version} is installed."
-msgstr "تم تثبيت ApexShot v{version}."
+msgid "Shotbolt v{version} is installed."
+msgstr "تم تثبيت Shotbolt v{version}."
 
-msgid "ApexShot v{version} is ready. Your current work will not be interrupted."
-msgstr "ApexShot v{version} جاهز. لن يتم مقاطعة عملك الحالي."
+msgid "Shotbolt v{version} is ready. Your current work will not be interrupted."
+msgstr "Shotbolt v{version} جاهز. لن يتم مقاطعة عملك الحالي."
 
-msgid "ApexShot window"
-msgstr "نافذة ApexShot"
+msgid "Shotbolt window"
+msgstr "نافذة Shotbolt"
 
 msgid "Could not check the release: {error}"
 msgstr "تعذّر التحقق من الإصدار: {error}"
@@ -5105,8 +5105,8 @@ msgstr "محرر الصور"
 msgid "Installation was cancelled."
 msgstr "تم إلغاء التثبيت."
 
-msgid "Installing restarts ApexShot, which would stop the recording in progress."
-msgstr "يؤدي التثبيت إلى إعادة تشغيل ApexShot، مما سيوقف التسجيل الجاري."
+msgid "Installing restarts Shotbolt, which would stop the recording in progress."
+msgstr "يؤدي التثبيت إلى إعادة تشغيل Shotbolt، مما سيوقف التسجيل الجاري."
 
 msgid "Installing update"
 msgstr "جارٍ تثبيت التحديث"
@@ -5120,11 +5120,11 @@ msgstr "جارٍ التحضير للتثبيت"
 msgid "Refreshing the GNOME extension..."
 msgstr "جارٍ تحديث إضافة GNOME..."
 
-msgid "Restart ApexShot"
-msgstr "إعادة تشغيل ApexShot"
+msgid "Restart Shotbolt"
+msgstr "إعادة تشغيل Shotbolt"
 
-msgid "Restart ApexShot to use the new version."
-msgstr "أعد تشغيل ApexShot لاستخدام الإصدار الجديد."
+msgid "Restart Shotbolt to use the new version."
+msgstr "أعد تشغيل Shotbolt لاستخدام الإصدار الجديد."
 
 msgid "Saving your work…"
 msgstr "جارٍ حفظ عملك…"
@@ -5174,11 +5174,11 @@ msgstr "أرسل الخادم تنزيلاً فارغًا."
 msgid "The update package is missing."
 msgstr "حزمة التحديث مفقودة."
 
-msgid "These windows close while ApexShot updates and reopen with your edits afterwards:"
-msgstr "تُغلق هذه النوافذ أثناء تحديث ApexShot ثم تُعاد فتحها بتعديلاتك بعد ذلك:"
+msgid "These windows close while Shotbolt updates and reopen with your edits afterwards:"
+msgstr "تُغلق هذه النوافذ أثناء تحديث Shotbolt ثم تُعاد فتحها بتعديلاتك بعد ذلك:"
 
-msgid "This installation is managed by Nix. Update the ApexShot flake input and rebuild your configuration, or upgrade its Nix profile entry."
-msgstr "تتم إدارة هذا التثبيت بواسطة Nix. حدّث مُدخل flake الخاص بـ ApexShot وأعد بناء الإعدادات، أو رقِّ إدخاله في ملف تعريف Nix."
+msgid "This installation is managed by Nix. Update the Shotbolt flake input and rebuild your configuration, or upgrade its Nix profile entry."
+msgstr "تتم إدارة هذا التثبيت بواسطة Nix. حدّث مُدخل flake الخاص بـ Shotbolt وأعد بناء الإعدادات، أو رقِّ إدخاله في ملف تعريف Nix."
 
 msgid "This release does not include a package for this system."
 msgstr "لا يتضمن هذا الإصدار حزمة لهذا النظام."
@@ -5192,8 +5192,8 @@ msgstr "هذا الإصدار غير متوفر في مستودع Flatpak لدي
 msgid "Tidying the startup entries..."
 msgstr "جارٍ ترتيب عناصر بدء التشغيل..."
 
-msgid "Update ApexShot"
-msgstr "تحديث ApexShot"
+msgid "Update Shotbolt"
+msgstr "تحديث Shotbolt"
 
 msgid "Updating..."
 msgstr "جارٍ التحديث..."
@@ -5309,8 +5309,8 @@ msgstr "عرض Studio"
 msgid "What's new"
 msgstr "ما الجديد"
 
-msgid "What's new in ApexShot {version}"
-msgstr "ما الجديد في ApexShot {version}"
+msgid "What's new in Shotbolt {version}"
+msgstr "ما الجديد في Shotbolt {version}"
 
 msgid "Explore Studio"
 msgstr "استكشف Studio"
@@ -5420,11 +5420,11 @@ msgstr "احصل على Studio للاحتفاظ بهذه الأنماط."
 msgid "Get Studio"
 msgstr "الحصول على Studio"
 
-msgid "Your next 3 Studio exports are on us. After each one, ApexShot shows how many are left."
-msgstr "عمليات تصدير Studio الثلاث التالية مجانية. بعد كل عملية، يعرض ApexShot عدد ما تبقّى منها."
+msgid "Your next 3 Studio exports are on us. After each one, Shotbolt shows how many are left."
+msgstr "عمليات تصدير Studio الثلاث التالية مجانية. بعد كل عملية، يعرض Shotbolt عدد ما تبقّى منها."
 
-msgid "Choose Studio in ApexShot, sign in, and pay. ApexShot turns Studio on for you, with no licence file to copy or import."
-msgstr "اختر Studio في ApexShot، وسجّل الدخول، وادفع. يفعّل ApexShot Studio نيابةً عنك، دون أي ملف ترخيص لنسخه أو استيراده."
+msgid "Choose Studio in Shotbolt, sign in, and pay. Shotbolt turns Studio on for you, with no licence file to copy or import."
+msgstr "اختر Studio في Shotbolt، وسجّل الدخول، وادفع. يفعّل Shotbolt Studio نيابةً عنك، دون أي ملف ترخيص لنسخه أو استيراده."
 
 msgid "Name"
 msgstr "الاسم"
@@ -5444,8 +5444,8 @@ msgstr "احفظ خلفية هذا المشروع والمؤشر وصوت الن
 msgid "Save this project's background, cursor, camera and captions, then put them on any recording."
 msgstr "احفظ خلفية هذا المشروع والمؤشر والكاميرا والترجمة، ثم طبّقها على أي تسجيل."
 
-msgid "ApexShot on X11 desktops"
-msgstr "ApexShot على أسطح مكتب X11"
+msgid "Shotbolt on X11 desktops"
+msgstr "Shotbolt على أسطح مكتب X11"
 
 msgid "Cinnamon, Xfce, MATE, and other X11 desktops now get shortcuts, window recordings, scrolling capture, and Auto Zoom."
 msgstr "تحصل Cinnamon وXfce وMATE وغيرها من أسطح مكتب X11 الآن على الاختصارات وتسجيل النوافذ والالتقاط مع التمرير والتكبير التلقائي."
@@ -5489,8 +5489,8 @@ msgstr "تسجّل قائمة «Speaker» صوت كل التطبيقات أو ت
 msgid "Faster downloads and updates"
 msgstr "تنزيلات وتحديثات أسرع"
 
-msgid "ApexShot now downloads from its own download servers, so installs and updates finish sooner."
-msgstr "يُنزَّل ApexShot الآن من خوادم التنزيل الخاصة به، فتنتهي عمليات التثبيت والتحديث أسرع."
+msgid "Shotbolt now downloads from its own download servers, so installs and updates finish sooner."
+msgstr "يُنزَّل Shotbolt الآن من خوادم التنزيل الخاصة به، فتنتهي عمليات التثبيت والتحديث أسرع."
 
 msgid "Updates skip the setup wizard"
 msgstr "التحديثات تتخطى معالج الإعداد"
@@ -5513,8 +5513,8 @@ msgstr "التسجيل الذي يبدأ دون شريط التحكم يتوقف
 msgid "Not now"
 msgstr "ليس الآن"
 
-msgid "Your capture is saved. Connect a free ApexShot account and every upload becomes a link in your clipboard."
-msgstr "تم حفظ اللقطة. اربط حساب ApexShot مجانيًا ليصبح كل رفع رابطًا في الحافظة."
+msgid "Your capture is saved. Connect a free Shotbolt account and every upload becomes a link in your clipboard."
+msgstr "تم حفظ اللقطة. اربط حساب Shotbolt مجانيًا ليصبح كل رفع رابطًا في الحافظة."
 
 msgid "Connected as {email}"
 msgstr "متصل باسم {email}"
@@ -5528,8 +5528,8 @@ msgstr "ستحصل لقطتك التالية على رابط مشاركة."
 msgid "Sign in to get a share link"
 msgstr "سجّل الدخول للحصول على رابط مشاركة."
 
-msgid "Connect your ApexShot account in Settings → Cloud to get share links."
-msgstr "اربط حساب ApexShot في «الإعدادات ← السحابة» للحصول على روابط المشاركة."
+msgid "Connect your Shotbolt account in Settings → Cloud to get share links."
+msgstr "اربط حساب Shotbolt في «الإعدادات ← السحابة» للحصول على روابط المشاركة."
 
 msgid ""
 "Every capture becomes a link in your clipboard. Free: 20 uploads a month."

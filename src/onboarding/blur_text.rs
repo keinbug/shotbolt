@@ -21,7 +21,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for BlurText {
-        const NAME: &'static str = "ApexShotOnboardingBlurText";
+        const NAME: &'static str = "ShotboltOnboardingBlurText";
         type Type = super::BlurText;
         type ParentType = GtkBox;
     }

@@ -745,7 +745,7 @@ pub fn print_pointer_debug() -> anyhow::Result<()> {
     }
     if !is_shell_overlay_service_available() {
         anyhow::bail!(
-            "{} is not on the bus — enable the ApexShot GNOME extension",
+            "{} is not on the bus — enable the Shotbolt GNOME extension",
             shell_overlay_bus_name()
         );
     }

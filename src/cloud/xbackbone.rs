@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::config::AppConfig;
 
-use super::upload::{guess_content_type, UploadError, UploadResult};
+use super::upload::{build_multipart, guess_content_type, UploadError, UploadResult};
 
 // --- 4.x (upcoming, Laravel + Sanctum) ---
 
@@ -37,7 +37,7 @@ pub(crate) fn is_configured(config: &AppConfig) -> bool {
 pub(crate) fn not_configured_notification(_config: &AppConfig) -> (String, String) {
     (
         crate::i18n::t("XBackBone upload not configured"),
-        crate::i18n::t("Set the instance URL and API token in Settings → Cloud, or switch to ApexShot Cloud and sign in."),
+        crate::i18n::t("Set the instance URL and API token in Settings → Cloud, or switch to your own upload API."),
     )
 }
 
@@ -376,39 +376,10 @@ fn is_not_found(http_error_message: &str) -> bool {
 }
 
 fn boundary() -> String {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    format!("apexshot-xb-{nanos:x}")
+    super::upload::multipart_boundary()
 }
 
 /// Build a multipart body with a single file part (4.x).
-fn build_multipart(
-    boundary: &str,
-    field_name: &str,
-    filename: &str,
-    content_type: &str,
-    bytes: &[u8],
-) -> Vec<u8> {
-    let mut body = Vec::with_capacity(bytes.len() + 512);
-    body.extend_from_slice(b"--");
-    body.extend_from_slice(boundary.as_bytes());
-    body.extend_from_slice(b"\r\n");
-    body.extend_from_slice(b"Content-Disposition: form-data; name=\"");
-    body.extend_from_slice(field_name.as_bytes());
-    body.extend_from_slice(b"\"; filename=\"");
-    body.extend_from_slice(filename.as_bytes());
-    body.extend_from_slice(b"\"\r\n");
-    body.extend_from_slice(b"Content-Type: ");
-    body.extend_from_slice(content_type.as_bytes());
-    body.extend_from_slice(b"\r\n\r\n");
-    body.extend_from_slice(bytes);
-    body.extend_from_slice(b"\r\n--");
-    body.extend_from_slice(boundary.as_bytes());
-    body.extend_from_slice(b"--\r\n");
-    body
-}
 
 /// Build a multipart body with a file part plus a `token` form field (3.x).
 fn build_multipart_v3(

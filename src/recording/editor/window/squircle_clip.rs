@@ -59,7 +59,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for SquircleClip {
-        const NAME: &'static str = "ApexShotSquircleClip";
+        const NAME: &'static str = "ShotboltSquircleClip";
         type Type = super::SquircleClip;
         type ParentType = gtk4::Box;
     }

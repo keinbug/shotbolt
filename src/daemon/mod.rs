@@ -470,7 +470,7 @@ pub(super) fn should_quit_on_sigint(recording_active: bool) -> bool {
 pub(super) async fn run_daemon_inner(
     gtk_tx: Option<std::sync::mpsc::Sender<GtkWork>>,
 ) -> anyhow::Result<()> {
-    eprintln!("[daemon] ApexShot daemon starting…");
+    eprintln!("[daemon] Shotbolt daemon starting…");
 
     crate::backend::portal_permissions::report_portal_permissions();
 

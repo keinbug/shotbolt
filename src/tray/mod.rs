@@ -188,14 +188,14 @@ impl ksni::Tray for ApexShotTray {
         tray_icons(self.recording).clone()
     }
     fn title(&self) -> String {
-        "ApexShot".to_string()
+        "Shotbolt".to_string()
     }
     fn tool_tip(&self) -> ksni::ToolTip {
         ksni::ToolTip {
             icon_name: self.icon_name(),
             icon_pixmap: vec![tray_icons(self.recording)[1].clone()],
-            title: "ApexShot".to_string(),
-            description: "ApexShot".to_string(),
+            title: "Shotbolt".to_string(),
+            description: "Shotbolt".to_string(),
         }
     }
 

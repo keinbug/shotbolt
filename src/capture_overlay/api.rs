@@ -152,7 +152,7 @@ pub fn open_recording_ui_via_cpp() -> Result<AreaCapturePathResult, SelectionErr
 
 pub fn open_quick_capture_via_cpp() -> Result<AreaCapturePathResult, SelectionError> {
     if should_use_gtk_layer_shell_selector() {
-        eprintln!("[capture_overlay] Using ApexShot GTK capture menu on wlroots compositor");
+        eprintln!("[capture_overlay] Using Shotbolt GTK capture menu on wlroots compositor");
         return open_quick_capture_via_gtk_layer_shell_wlroots();
     }
 
@@ -300,7 +300,7 @@ pub fn capture_area_file_via_cpp() -> Result<AreaCapturePathResult, SelectionErr
 
     if should_use_gtk_layer_shell_selector() {
         eprintln!(
-            "[capture_overlay] Using ApexShot GTK layer-shell selector on wlroots compositor"
+            "[capture_overlay] Using Shotbolt GTK layer-shell selector on wlroots compositor"
         );
         return capture_area_file_via_gtk_layer_shell_wlroots();
     }
@@ -337,7 +337,7 @@ pub fn capture_area_via_cpp() -> Result<AreaCaptureResult, SelectionError> {
 
     if should_use_gtk_layer_shell_selector() {
         eprintln!(
-            "[capture_overlay] Using ApexShot GTK layer-shell selector on wlroots compositor"
+            "[capture_overlay] Using Shotbolt GTK layer-shell selector on wlroots compositor"
         );
         return capture_area_via_gtk_layer_shell_wlroots();
     }
@@ -376,7 +376,7 @@ pub fn capture_crosshair_file_via_cpp() -> Result<PathBuf, SelectionError> {
 
     if should_use_gtk_layer_shell_selector() {
         eprintln!(
-            "[capture_overlay] Using ApexShot GTK layer-shell crosshair selector on wlroots compositor"
+            "[capture_overlay] Using Shotbolt GTK layer-shell crosshair selector on wlroots compositor"
         );
         return capture_crosshair_file_via_gtk_layer_shell_wlroots();
     }
@@ -407,7 +407,7 @@ pub fn capture_crosshair_via_cpp() -> Result<AreaCaptureResult, SelectionError> 
 
     if should_use_gtk_layer_shell_selector() {
         eprintln!(
-            "[capture_overlay] Using ApexShot GTK layer-shell crosshair selector on wlroots compositor"
+            "[capture_overlay] Using Shotbolt GTK layer-shell crosshair selector on wlroots compositor"
         );
         return capture_crosshair_via_gtk_layer_shell_wlroots();
     }

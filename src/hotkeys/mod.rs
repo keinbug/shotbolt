@@ -428,7 +428,7 @@ pub fn install_hotkeys_for_current_desktop(config_path: Option<PathBuf>) -> anyh
 
     if gnome::is_gnome_desktop() {
         gnome::install_gnome_custom_keybindings(&cfg)?;
-        println!("Installed GNOME custom keybindings for ApexShot (no daemon required).");
+        println!("Installed GNOME custom keybindings for Shotbolt (no daemon required).");
         return Ok(());
     }
 
@@ -444,7 +444,7 @@ pub fn uninstall_hotkeys_for_current_desktop() -> anyhow::Result<()> {
     }
     if gnome::is_gnome_desktop() {
         gnome::uninstall_gnome_custom_keybindings()?;
-        println!("Removed ApexShot GNOME custom keybindings.");
+        println!("Removed Shotbolt GNOME custom keybindings.");
         return Ok(());
     }
 

@@ -356,7 +356,7 @@ void RecordingControlsWindow::setupUi()
 
     connect(m_menuButton, &QPushButton::clicked, this, [this]() {
         QMenu menu(this);
-        menu.addAction(QStringLiteral("ApexShot recording controls"))->setEnabled(false);
+        menu.addAction(QStringLiteral("Shotbolt recording controls"))->setEnabled(false);
         menu.exec(m_menuButton->mapToGlobal(QPoint(0, m_menuButton->height() + 6)));
     });
 }

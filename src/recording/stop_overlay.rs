@@ -482,7 +482,7 @@ fn setup_window(
 
     let window = ApplicationWindow::builder()
         .application(app)
-        .title(t("ApexShot Recording"))
+        .title(t("Shotbolt Recording"))
         .default_width(bar_w_i)
         .default_height(bar_h_i)
         .decorated(false)
@@ -847,7 +847,7 @@ fn setup_countdown_window(
 
     let window = ApplicationWindow::builder()
         .application(app)
-        .title(t("ApexShot Recording Countdown"))
+        .title(t("Shotbolt Recording Countdown"))
         .default_width(win_w)
         .default_height(win_h)
         .decorated(false)
@@ -1187,7 +1187,7 @@ fn build_dim_window(
 ) -> Option<ApplicationWindow> {
     let window = ApplicationWindow::builder()
         .application(app)
-        .title(t("ApexShot Recording Mask"))
+        .title(t("Shotbolt Recording Mask"))
         .default_width(width)
         .default_height(height)
         .decorated(false)

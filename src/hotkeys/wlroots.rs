@@ -8,7 +8,7 @@ pub(super) fn export_hotkeys_for_hyprland_config(
     let exe_str = exe.to_string_lossy();
 
     let mut output = String::new();
-    output.push_str("# ApexShot Hotkeys for Hyprland\n");
+    output.push_str("# Shotbolt Hotkeys for Hyprland\n");
     output.push_str("# Add these lines to your hyprland.conf\n\n");
 
     for binding in bindings {
@@ -59,7 +59,7 @@ pub(super) fn export_hotkeys_for_sway_config(
     let exe_str = exe.to_string_lossy();
 
     let mut output = String::new();
-    output.push_str("# ApexShot Hotkeys for Sway/i3\n");
+    output.push_str("# Shotbolt Hotkeys for Sway/i3\n");
     output.push_str("# Add these lines to your sway config (e.g. ~/.config/sway/config)\n\n");
 
     for binding in bindings {
@@ -86,7 +86,7 @@ pub(super) fn export_hotkeys_for_niri_config(
     let exe_str = exe.to_string_lossy();
 
     let mut output = String::new();
-    output.push_str("// ApexShot Hotkeys for Niri\n");
+    output.push_str("// Shotbolt Hotkeys for Niri\n");
     output.push_str("// Add these to your config.niri binds { ... } block\n\n");
 
     for binding in bindings {
@@ -132,7 +132,7 @@ pub(super) fn export_hotkeys_for_river_config(
     let exe_str = exe.to_string_lossy();
 
     let mut output = String::new();
-    output.push_str("# ApexShot Hotkeys for River\n");
+    output.push_str("# Shotbolt Hotkeys for River\n");
     output.push_str("# Add these to your river init script\n\n");
 
     for binding in bindings {
@@ -224,13 +224,13 @@ pub(super) fn ensure_hyprland_sources_hotkey_snippet(snippet_path: &Path) -> any
     if !updated.is_empty() && !updated.ends_with('\n') {
         updated.push('\n');
     }
-    updated.push_str("\n# ApexShot shortcuts\n");
+    updated.push_str("\n# Shotbolt shortcuts\n");
     updated.push_str(&source_line);
     updated.push('\n');
 
     std::fs::write(&config_path, updated).with_context(|| {
         format!(
-            "Failed to add ApexShot source line to {}",
+            "Failed to add Shotbolt source line to {}",
             config_path.display()
         )
     })?;
@@ -307,7 +307,7 @@ pub(super) fn write_niri_hotkey_snippet(
     // Wrap in a binds { } block so it can be sourced standalone.
     let bind_lines = export_hotkeys_for_niri_config(&cfg.bindings)?;
     let output = format!(
-        "// ApexShot hotkeys — source this from your config.niri\nbinds {{\n{bind_lines}}}\n"
+        "// Shotbolt hotkeys — source this from your config.niri\nbinds {{\n{bind_lines}}}\n"
     );
     if let Some(parent) = snippet_path.parent() {
         std::fs::create_dir_all(parent)

@@ -1,10 +1,10 @@
 [package]
 name = "apexshot-windows-settings"
-version = "0.3.2"
+version = "1.0.0"
 edition = "2021"
 description = "GTK4 settings window for the Windows build of ApexShot"
 license = "GPL-3.0-or-later"
-repository = "https://github.com/apex-shot/apexshot"
+repository = "https://github.com/keinbug/shotbolt"
 
 [lib]
 name = "apexshot_settings"

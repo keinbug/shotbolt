@@ -207,7 +207,7 @@ fn hero(scale: f64, dark: bool, notes: &ReleaseNotes, window: &ApplicationWindow
 
     let headline = centered_label(
         &tfmt(
-            "What's new in ApexShot {version}",
+            "What's new in Shotbolt {version}",
             &[("version", notes.version)],
         ),
         "apexshot-studio-headline",

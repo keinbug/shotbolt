@@ -1,0 +1,201 @@
+name: Shotbolt release
+
+# Builds the Windows installer and publishes it as a GitHub release.
+# Release = bump `version` in Cargo.toml and windows-ui/Cargo.toml, push a tag
+# `v<version>`. Installed Shotbolt builds find the release through the GitHub
+# API (windows-ui/src/update/check.rs) and offer the update.
+#
+# A manual run (Actions → Shotbolt release → Run workflow) builds the
+# installer as an artifact only, without a release.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: shotbolt-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  # No official Studio signing key in this fork: Studio stays locked.
+  APEXSHOT_ALLOW_NO_STUDIO: '1'
+
+jobs:
+  windows:
+    name: Build Windows installer
+    # Pinned: the packaging script looks for the Visual Studio 2022
+    # vcvars64.bat, and the Qt 5 install is the MSVC 2019 build.
+    runs-on: windows-2022
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The packaging script is bash and the installer source is read by MSYS2;
+      # a CRLF checkout puts a \r in every command and path.
+      - name: Check out the line endings the repository stores
+        shell: bash
+        run: |
+          git config --global core.autocrlf false
+          git rm --cached -r --quiet .
+          git reset --hard --quiet
+
+      - name: Install Qt 5
+        id: qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '5.15.2'
+          arch: win64_msvc2019_64
+          cache: true
+
+      - name: Verify the Qt tools
+        shell: bash
+        run: |
+          qt_dir=$(cygpath -u "${{ steps.qt.outputs.qt-root-dir }}")
+          test -f "$qt_dir/bin/windeployqt.exe"
+
+      - name: Install GTK4 and ffmpeg
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          path-type: inherit
+          install: >-
+            mingw-w64-ucrt-x86_64-gtk4
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-ffmpeg
+            mingw-w64-ucrt-x86_64-ninja
+
+      - name: Check the pinned MSYS2 versions
+        shell: msys2 {0}
+        run: bash scripts/check-msys2-versions.sh
+
+      - name: Install the GNU Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install stable-x86_64-pc-windows-gnu --profile minimal
+          rustup default stable-x86_64-pc-windows-gnu
+
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            windows-ui/target/
+          key: shotbolt-release-cargo-ucrt64-${{ hashFiles('windows-ui/Cargo.lock', 'Cargo.lock') }}
+          restore-keys: |
+            shotbolt-release-cargo-ucrt64-
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: |
+          choco install innosetup --no-progress -y
+          if (-not (Test-Path 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe')) {
+            throw 'Inno Setup compiler was not installed'
+          }
+
+      # The package script looks for dist/ffmpeg/bin: the MSYS2 ffmpeg build
+      # and the DLL closure it loads.
+      - name: Stage the ffmpeg payload
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          prefix=${MINGW_PREFIX:?the MSYS2 shell sets MINGW_PREFIX}
+          mkdir -p dist/ffmpeg/bin
+          cp "$prefix/bin/ffmpeg.exe" "$prefix/bin/ffprobe.exe" dist/ffmpeg/bin/
+          for executable in ffmpeg.exe ffprobe.exe; do
+            libraries=$(PATH="$prefix/bin:$PATH" ldd "$prefix/bin/$executable" 2>/dev/null |
+              awk -v bin="$prefix/bin/" '{ for (field = 1; field <= NF; field++) if (index($field, bin) == 1) print $field }')
+            while IFS= read -r library; do
+              [[ -n $library && -f $library ]] && cp "$library" dist/ffmpeg/bin/
+            done <<< "$libraries"
+          done
+          test -n "$(ls dist/ffmpeg/bin/*.dll 2>/dev/null)" || {
+            echo "No ffmpeg DLLs were staged from $prefix/bin" >&2
+            exit 1
+          }
+          for license in "$prefix"/share/licenses/ffmpeg/*; do
+            if [[ -f $license ]]; then
+              cp "$license" dist/ffmpeg/LICENSE.txt
+              break
+            fi
+          done
+
+      # The tag must match Cargo.toml, or the updater would compare the wrong
+      # version against the installed build.
+      - name: Build the Windows installer
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            cargo_version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+            if [[ -z $cargo_version || $version != "$cargo_version" ]]; then
+              echo "Tag version $version does not match Cargo.toml version $cargo_version" >&2
+              exit 1
+            fi
+          fi
+          qt_dir=$(cygpath -u "${{ steps.qt.outputs.qt-root-dir }}")
+          bash scripts/package-windows.sh --qt-dir "$qt_dir"
+
+      - name: Install the installer silently
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist/windows/Shotbolt-*-setup.exe | Select-Object -First 1
+          $install = Join-Path $env:RUNNER_TEMP 'ShotboltSmoke'
+          $process = Start-Process $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER',"/DIR=`"$install`"" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "installer exited with $($process.ExitCode)" }
+          Get-Process apexshot-* -ErrorAction SilentlyContinue | Stop-Process -Force
+          "SHOTBOLT_SMOKE_DIR=$install" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Smoke test the installed recorder and editor
+        shell: pwsh
+        run: |
+          $bin = Join-Path $env:SHOTBOLT_SMOKE_DIR 'bin'
+          & (Join-Path $bin 'ffmpeg.exe') -hide_banner -version | Select-Object -First 1
+          $video = Join-Path $env:RUNNER_TEMP 'smoke.mp4'
+          $recorder = Start-Process (Join-Path $bin 'apexshot-capture.exe') -ArgumentList '--self-test-record',"`"$video`"" -Wait -PassThru
+          Get-Content "$video.selftest.txt" -ErrorAction SilentlyContinue
+          if ($recorder.ExitCode -ne 0) {
+            Get-Content (Join-Path $env:TEMP 'apexshot-recording.log') -ErrorAction SilentlyContinue | Select-Object -Last 60
+            throw "recorder self-test failed ($($recorder.ExitCode))"
+          }
+          $duration = & (Join-Path $bin 'ffprobe.exe') -v error -show_entries format=duration -of csv=p=0 $video
+          Write-Host "recorded ${duration}s"
+          if ([double]$duration -lt 1.0) { throw "recording is shorter than one second" }
+          $report = Join-Path $env:RUNNER_TEMP 'editor-check.txt'
+          $editor = Start-Process (Join-Path $bin 'apexshot-video-editor.exe') -ArgumentList '--self-check',"`"$report`"" -Wait -PassThru
+          Get-Content $report -ErrorAction SilentlyContinue
+          if ($editor.ExitCode -ne 0) { throw "video editor self-check failed ($($editor.ExitCode))" }
+
+      - name: Write checksums
+        shell: bash
+        run: |
+          cd dist/windows
+          sha256sum Shotbolt-*-setup.exe > SHA256SUMS
+
+      - name: Upload the installer as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shotbolt-windows-installer
+          path: |
+            dist/windows/Shotbolt-*-setup.exe
+            dist/windows/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish the GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Shotbolt ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/windows/Shotbolt-*-setup.exe
+            dist/windows/SHA256SUMS

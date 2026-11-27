@@ -94,7 +94,7 @@ fn deb_package_bundles_layer_shell_in_a_private_runtime_directory() {
     );
     assert!(
         build_script.contains("-Wl,-rpath,$ORIGIN/../lib/apexshot"),
-        "the ApexShot executable must resolve its privately bundled layer-shell library"
+        "the Shotbolt executable must resolve its privately bundled layer-shell library"
     );
     assert!(
         packaging_script.contains("cp -L \"$library\" \"$staged_library\"")

@@ -108,6 +108,12 @@ pub struct SaveInputs {
     pub cloud_auto_upload_sync: std::rc::Rc<AutoUploadSync>,
     pub xbackbone_url: Entry,
     pub xbackbone_api_token: Entry,
+    pub cloud_custom: CheckButton,
+    pub custom_upload_url: Entry,
+    pub custom_upload_token: Entry,
+    pub custom_upload_auth_header: Entry,
+    pub custom_upload_field: Entry,
+    pub custom_upload_url_key: Entry,
     pub ui_theme: ThemePicker,
     pub ui_language: SettingsSelect,
 }
@@ -414,9 +420,16 @@ pub fn save_settings(inputs: &SaveInputs, state: &mut SaveState) -> anyhow::Resu
 
     config.cloud_destination = if inputs.cloud_xbackbone.is_active() {
         "xbackbone".to_string()
-    } else {
+    } else if inputs.cloud_apexshot.is_active() {
         "apexshot".to_string()
+    } else {
+        "custom".to_string()
     };
+    config.custom_upload_url = inputs.custom_upload_url.text().to_string();
+    config.custom_upload_token = inputs.custom_upload_token.text().to_string();
+    config.custom_upload_auth_header = inputs.custom_upload_auth_header.text().to_string();
+    config.custom_upload_field = inputs.custom_upload_field.text().to_string();
+    config.custom_upload_url_key = inputs.custom_upload_url_key.text().to_string();
     config.cloud_auto_upload_after_capture = inputs.cloud_auto_upload.is_active();
     config.cloud_nudge_enabled = inputs.cloud_nudge.is_active();
     config.xbackbone_url = inputs.xbackbone_url.text().to_string();

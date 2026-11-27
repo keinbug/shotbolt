@@ -100,7 +100,7 @@ fn intro(view: &View) {
     let scale = view.nav.scale;
     view.body.append(&heading(
         scale,
-        &t("ApexShot Cloud"),
+        &t("Shotbolt Cloud"),
         &t("Every capture becomes a link in your clipboard. Free: 20 uploads a month."),
     ));
 
@@ -474,7 +474,7 @@ fn select_hosted_destination() {
     }
     config.cloud_destination = "apexshot".to_string();
     if let Err(error) = save_config(&config.sanitized()) {
-        eprintln!("[onboarding] failed to select ApexShot Cloud: {error}");
+        eprintln!("[onboarding] failed to select Shotbolt Cloud: {error}");
     }
 }
 

@@ -19,7 +19,7 @@ use super::release::{self, AssetError, ReleaseAsset};
 use super::telemetry;
 use crate::i18n::{t, tfmt};
 
-const USER_AGENT: &str = concat!("ApexShot/", env!("CARGO_PKG_VERSION"));
+const USER_AGENT: &str = concat!("Shotbolt/", env!("CARGO_PKG_VERSION"));
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 const REPORT_INTERVAL: Duration = Duration::from_millis(100);

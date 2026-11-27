@@ -374,7 +374,7 @@ fn card_copy(error: &StudioEntitlementError) -> (String, String) {
             let title = if crate::studio_trial::trial_remaining() == 0 {
                 t("You've used your 3 free Studio exports")
             } else {
-                t("Unlock ApexShot Studio")
+                t("Unlock Shotbolt Studio")
             };
             (
                 title,
@@ -1215,7 +1215,7 @@ mod tests {
     fn the_purchase_card_offers_a_first_try_while_the_trial_remains() {
         let _trial = crate::studio_trial::test_trial_path_scope();
         let (title, _) = card_copy(&StudioEntitlementError::NotActivated);
-        assert_eq!(title, t("Unlock ApexShot Studio"));
+        assert_eq!(title, t("Unlock Shotbolt Studio"));
     }
 
     #[test]

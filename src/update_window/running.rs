@@ -33,7 +33,7 @@ impl OpenWork {
             Self::Settings => t("Settings"),
             Self::History => t("History"),
             Self::Onboarding => t("Setup"),
-            Self::Other => t("ApexShot window"),
+            Self::Other => t("Shotbolt window"),
         }
     }
 }

@@ -23,7 +23,7 @@ namespace {
 
 QString defaultRecordingPattern()
 {
-    return QStringLiteral("ApexShot Recording {Date} at {Time}");
+    return QStringLiteral("Shotbolt Recording {Date} at {Time}");
 }
 
 QString defaultRecordingDirectory()
@@ -31,7 +31,7 @@ QString defaultRecordingDirectory()
     QString directory = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation);
     if (directory.isEmpty())
         directory = QDir::home().filePath(QStringLiteral("Videos"));
-    return QDir(directory).filePath(QStringLiteral("ApexShotRec"));
+    return QDir(directory).filePath(QStringLiteral("ShotboltRec"));
 }
 
 QString normalizedFormat(const QString& value)
@@ -573,7 +573,7 @@ QString shellRecordingOutputPath(const ShellSettings& settings, const QDateTime&
 QString shellTemporaryRecordingOutputPath()
 {
     const QString name = QUuid::createUuid().toString(QUuid::WithoutBraces) + QStringLiteral(".mp4");
-    return QDir(QDir::tempPath()).filePath(QStringLiteral("ApexShot/") + name);
+    return QDir(QDir::tempPath()).filePath(QStringLiteral("Shotbolt/") + name);
 }
 
 QMimeData* captureClipboardData(const QImage& image, const QString& filePath, const QString& mode)
@@ -624,7 +624,7 @@ bool saveScreenshotImage(const QImage& image,
     const QString stamp =
         QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd_HH-mm-ss"));
     const bool highDpi = settings.screenshots.highDpiSuffix && devicePixelRatio > 1.01;
-    const QString name = QStringLiteral("ApexShot-%1%2.%3")
+    const QString name = QStringLiteral("Shotbolt-%1%2.%3")
                              .arg(stamp,
                                   highDpi ? QStringLiteral("@2x") : QString(),
                                   screenshotExtension(settings.screenshots.format));

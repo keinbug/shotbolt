@@ -237,7 +237,7 @@ CaptureModeToolbar::CaptureModeToolbar(QScreen* screen, bool screenIsLocked,
     setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(true);
     setFixedSize(preferredWidth(), kPanelHeight);
-    setWindowTitle(QStringLiteral("ApexShot Capture"));
+    setWindowTitle(QStringLiteral("Shotbolt Capture"));
 
     const QRect available = screen ? screen->availableGeometry() : QRect(0, 0, width(), height());
     move(available.center().x() - width() / 2, available.top() + 28);

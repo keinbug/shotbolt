@@ -32,7 +32,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 /// The window class the notification icon belongs to.
-const WINDOW_CLASS: &str = "ApexShotNotificationHost";
+const WINDOW_CLASS: &str = "ShotboltNotificationHost";
 
 /// The window message the shell reports balloon events through.
 const CALLBACK_MESSAGE: u32 = WM_APP + 1;
@@ -456,7 +456,7 @@ mod tests {
     #[test]
     fn a_field_is_terminated_and_holds_the_whole_text() {
         let mut field = [0xFFFF_u16; 16];
-        write_utf16(&mut field, "ApexShot");
+        write_utf16(&mut field, "Shotbolt");
         assert_eq!(&field[..9], &[65, 112, 101, 120, 83, 104, 111, 116, 0]);
     }
 
@@ -482,11 +482,11 @@ mod tests {
             return;
         }
         desktop_notification(
-            "ApexShot notifications",
+            "Shotbolt notifications",
             "A system notification from the Windows build.",
         );
         desktop_notification_important(
-            "ApexShot notifications",
+            "Shotbolt notifications",
             "An important notification from the Windows build.",
         );
         std::thread::sleep(Duration::from_millis(2_000));

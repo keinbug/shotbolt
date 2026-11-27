@@ -130,7 +130,7 @@ fn status_row(status: StudioStatus, flash: Option<String>) -> Overlay {
     text.set_valign(Align::Center);
 
     let title_line = GtkBox::new(Orientation::Horizontal, 8);
-    let name = Label::new(Some(&t("ApexShot Studio")));
+    let name = Label::new(Some(&t("Shotbolt Studio")));
     name.add_css_class("studio-hero-title");
     name.set_xalign(0.0);
     title_line.append(&name);

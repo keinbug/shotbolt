@@ -162,7 +162,7 @@ QString persistCaptureForStandaloneTest(const QString& sourcePath, bool enabled)
     if (picturesDir.isEmpty()) {
         picturesDir = QDir::home().filePath(QStringLiteral("Pictures"));
     }
-    const QString outputDir = QDir(picturesDir).filePath(QStringLiteral("ApexShot"));
+    const QString outputDir = QDir(picturesDir).filePath(QStringLiteral("Shotbolt"));
     if (!QDir().mkpath(outputDir)) {
         std::fprintf(stderr,
                      "apexshot-capture: failed to create output directory %s\n",
@@ -170,7 +170,7 @@ QString persistCaptureForStandaloneTest(const QString& sourcePath, bool enabled)
         return sourcePath;
     }
 
-    const QString filename = QStringLiteral("ApexShot-%1-%2.png")
+    const QString filename = QStringLiteral("Shotbolt-%1-%2.png")
         .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss-zzz")))
         .arg(QCoreApplication::applicationPid());
     const QString destination = QDir(outputDir).filePath(filename);
@@ -738,7 +738,7 @@ int main(int argc, char* argv[])
         overlayFont.setFamily(QStringLiteral("DM Sans"));
         app.setFont(overlayFont);
     }
-    app.setApplicationName("ApexShot Capture");
+    app.setApplicationName("Shotbolt Capture");
     const QString desktopFileName = isFlatpakSandboxed()
         ? QStringLiteral("org.apexshot.ApexShot")
         : QStringLiteral("io.github.codegoddy.apexshot");

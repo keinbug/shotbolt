@@ -13,11 +13,11 @@ use serde::{Deserialize, Serialize};
 
 use super::Release;
 
-const LATEST_RELEASE_API: &str = "https://api.github.com/repos/apex-shot/apexshot/releases/latest";
+const LATEST_RELEASE_API: &str = "https://api.github.com/repos/keinbug/shotbolt/releases/latest";
 const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 const PROMPT_SNOOZE: Duration = Duration::from_secs(24 * 60 * 60);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(4);
-/// The Windows package publishes its installer as `ApexShot-<version>-setup.exe`.
+/// The Windows package publishes its installer as `Shotbolt-<version>-setup.exe`.
 const INSTALLER_SUFFIX: &str = "setup.exe";
 
 /// The release the check found, kept so an offline launch still prompts.
@@ -204,7 +204,7 @@ fn latest_release_endpoint() -> String {
 fn fetch_latest_release() -> Result<GithubRelease, String> {
     ureq::AgentBuilder::new()
         .timeout(REQUEST_TIMEOUT)
-        .user_agent(concat!("ApexShot/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("Shotbolt/", env!("CARGO_PKG_VERSION")))
         .build()
         .get(&latest_release_endpoint())
         .set("Accept", "application/vnd.github+json")
@@ -279,8 +279,8 @@ mod tests {
                 "size": 120000000
             },
             {
-                "name": "ApexShot-0.2.37-setup.exe",
-                "browser_download_url": "https://example.test/ApexShot-0.2.37-setup.exe",
+                "name": "Shotbolt-0.2.37-setup.exe",
+                "browser_download_url": "https://example.test/Shotbolt-0.2.37-setup.exe",
                 "size": 191754859
             }
         ]
@@ -295,10 +295,10 @@ mod tests {
         let available = available_from_release(&release(RELEASE), "0.2.36").expect("an update");
 
         assert_eq!(available.version, "0.2.37");
-        assert_eq!(available.asset_name, "ApexShot-0.2.37-setup.exe");
+        assert_eq!(available.asset_name, "Shotbolt-0.2.37-setup.exe");
         assert_eq!(
             available.asset_url,
-            "https://example.test/ApexShot-0.2.37-setup.exe"
+            "https://example.test/Shotbolt-0.2.37-setup.exe"
         );
         assert_eq!(available.asset_size, Some(191_754_859));
         assert_eq!(
@@ -309,7 +309,7 @@ mod tests {
 
     #[test]
     fn a_release_without_an_installer_offers_nothing() {
-        let linux_only = RELEASE.replace("ApexShot-0.2.37-setup.exe", "apexshot-0.2.37.rpm");
+        let linux_only = RELEASE.replace("Shotbolt-0.2.37-setup.exe", "apexshot-0.2.37.rpm");
         assert!(available_from_release(&release(&linux_only), "0.2.36").is_none());
 
         let draft = RELEASE.replace("\"draft\": false", "\"draft\": true");

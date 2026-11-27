@@ -85,7 +85,7 @@ fn build_hero(status: StudioStatus) -> (Overlay, HeroParts) {
 
     let title_row = GtkBox::new(Orientation::Horizontal, 8);
     title_row.set_valign(Align::Center);
-    let title = Label::new(Some(&t("ApexShot Studio")));
+    let title = Label::new(Some(&t("Shotbolt Studio")));
     title.add_css_class("studio-hero-title");
     title.set_xalign(0.0);
     title_row.append(&title);

@@ -62,7 +62,7 @@ impl Installer {
         std::thread::spawn(move || {
             let _ = ureq::AgentBuilder::new()
                 .timeout(HTTP_TIMEOUT)
-                .user_agent(&format!("ApexShotDownloadTelemetry/{SCRIPT}"))
+                .user_agent(&format!("ShotboltDownloadTelemetry/{SCRIPT}"))
                 .build()
                 .post(&endpoint())
                 .send_json(&payload);
@@ -85,7 +85,8 @@ struct Payload {
 }
 
 fn enabled() -> bool {
-    !std::env::var("APEXSHOT_TELEMETRY").is_ok_and(|value| {
+    // Shotbolt: no download telemetry to the original project.
+    false && !std::env::var("APEXSHOT_TELEMETRY").is_ok_and(|value| {
         matches!(
             value.trim().to_ascii_lowercase().as_str(),
             "0" | "false" | "no" | "off"
@@ -115,7 +116,7 @@ mod tests {
     fn the_version_is_the_release_tag_in_the_url() {
         assert_eq!(
             release_tag(
-                "https://github.com/apex-shot/apexshot/releases/download/v0.3.1/ApexShot-0.3.1-setup.exe"
+                "https://github.com/apex-shot/apexshot/releases/download/v0.3.1/Shotbolt-0.3.1-setup.exe"
             ),
             Some("v0.3.1")
         );

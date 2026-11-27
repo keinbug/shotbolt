@@ -232,7 +232,7 @@ mod tests {
             "--version",
             "v0.2.37",
             "--asset-url",
-            "https://example.test/ApexShot-0.2.37-setup.exe",
+            "https://example.test/Shotbolt-0.2.37-setup.exe",
             "--asset-size",
             "191754859",
             "--release-url",
@@ -242,7 +242,7 @@ mod tests {
         .expect("a release");
 
         assert_eq!(release.version, "0.2.37");
-        assert_eq!(release.asset_name, "ApexShot-0.2.37-setup.exe");
+        assert_eq!(release.asset_name, "Shotbolt-0.2.37-setup.exe");
         assert_eq!(release.asset_size, Some(191_754_859));
         assert_eq!(
             release.release_url.as_deref(),
@@ -256,11 +256,11 @@ mod tests {
             "--version",
             "v0.2.37",
             "--asset-url",
-            "https://example.test/download/ApexShot-0.2.37-setup.exe?token=1",
+            "https://example.test/download/Shotbolt-0.2.37-setup.exe?token=1",
         ]))
         .expect("valid arguments")
         .expect("a release");
-        assert_eq!(derived.asset_name, "ApexShot-0.2.37-setup.exe");
+        assert_eq!(derived.asset_name, "Shotbolt-0.2.37-setup.exe");
 
         let named = release_from_args(args(&[
             "--version",
@@ -268,11 +268,11 @@ mod tests {
             "--asset-url",
             "https://example.test/download?id=1",
             "--asset-name",
-            "ApexShot-0.2.37-setup.exe",
+            "Shotbolt-0.2.37-setup.exe",
         ]))
         .expect("valid arguments")
         .expect("a release");
-        assert_eq!(named.asset_name, "ApexShot-0.2.37-setup.exe");
+        assert_eq!(named.asset_name, "Shotbolt-0.2.37-setup.exe");
     }
 
     #[test]
@@ -311,7 +311,7 @@ mod tests {
 
     #[test]
     fn a_release_round_trips_through_its_command_line() {
-        let mut release = Release::new("v0.2.37", "https://example.test/ApexShot-0.2.37-setup.exe")
+        let mut release = Release::new("v0.2.37", "https://example.test/Shotbolt-0.2.37-setup.exe")
             .expect("valid release");
         release.asset_size = Some(191_754_859);
         release.release_url = Some("https://example.test/releases/v0.2.37".to_string());

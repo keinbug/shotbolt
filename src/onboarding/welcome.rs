@@ -14,7 +14,7 @@ pub fn build(
     animations: &mut Vec<gtk4::TickCallbackId>,
 ) {
     let heading = heading_parts(
-        &t("Welcome to ApexShot"),
+        &t("Welcome to Shotbolt"),
         &t("Your screenshot companion for Linux. Set it up in a few quick steps."),
     );
     heading.block.remove(&heading.title);

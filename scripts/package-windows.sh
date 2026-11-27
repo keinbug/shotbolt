@@ -9,7 +9,7 @@
 # beside it. The GLib, GTK, and gdk-pixbuf lookups resolve `<dll_dir>/../share`
 # and `<dll_dir>/../lib` on their own, which is why the layout is not flat.
 #
-#   dist/windows/ApexShot/
+#   dist/windows/Shotbolt/
 #     bin/            apexshot-*.exe, apexshot-capture.exe, ffmpeg, Qt + GTK DLLs
 #     share/apexshot/ fonts, sounds, background images
 #     share/          glib-2.0, icons, gtk-4.0
@@ -25,7 +25,7 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$repo_root"
 
-stage=$repo_root/dist/windows/ApexShot
+stage=$repo_root/dist/windows/Shotbolt
 output=$repo_root/dist/windows
 ffmpeg_dir=${APEXSHOT_FFMPEG_DIR:-}
 gtk_dir=${APEXSHOT_GTK_DIR:-}
@@ -131,7 +131,7 @@ if [[ $build_installer == 1 ]]; then
         die "Inno Setup is not installed; get it with 'winget install JRSoftware.InnoSetup' or pass --iscc, or run with --skip-installer"
 fi
 
-printf 'ApexShot %s\n  gtk   %s\n  qt    %s\n  ffmpeg %s\n' "$version" "$gtk_dir" "$qt_dir" "$ffmpeg_dir"
+printf 'Shotbolt %s\n  gtk   %s\n  qt    %s\n  ffmpeg %s\n' "$version" "$gtk_dir" "$qt_dir" "$ffmpeg_dir"
 
 # --- Visual Studio ------------------------------------------------------
 
@@ -341,6 +341,6 @@ MSYS_NO_PATHCONV=1 "$iscc" \
     "$(cygpath -w "$repo_root/packaging/windows/ApexShot.iss")" >/dev/null ||
     die "Inno Setup failed to compile the installer"
 
-installer=$output/ApexShot-$version-setup.exe
+installer=$output/Shotbolt-$version-setup.exe
 [[ -f $installer ]] || die "Inno Setup reported success but $installer is missing"
 printf 'Installer: %s (%s)\n' "$installer" "$(du -h "$installer" | cut -f1)"

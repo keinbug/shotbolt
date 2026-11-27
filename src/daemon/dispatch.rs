@@ -26,9 +26,9 @@ pub(super) fn dispatch_daemon_action(
                 super::note_update_window_opened();
             } else {
                 crate::utils::notify::desktop_notification(
-                    &crate::i18n::t("ApexShot update available"),
+                    &crate::i18n::t("Shotbolt update available"),
                     &crate::i18n::tfmt(
-                        "Version {version} is ready. Open the ApexShot menu to view it.",
+                        "Version {version} is ready. Open the Shotbolt menu to view it.",
                         &[("version", &update.version)],
                     ),
                 );

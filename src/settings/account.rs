@@ -33,7 +33,7 @@ pub(crate) fn chip_model(config: &AppConfig) -> AccountChip {
             signed_in: false,
             initials: "?".to_string(),
             title: t("Sign in"),
-            detail: t("ApexShot Cloud"),
+            detail: t("Shotbolt Cloud"),
             badge: None,
         };
     }
@@ -44,7 +44,7 @@ pub(crate) fn chip_model(config: &AppConfig) -> AccountChip {
     } else if !email.is_empty() {
         email.to_string()
     } else {
-        t("ApexShot Cloud")
+        t("Shotbolt Cloud")
     };
     let detail = if !email.is_empty() && email != title {
         email.to_string()
@@ -195,7 +195,7 @@ mod tests {
         }));
         assert!(!model.signed_in);
         assert_eq!(model.title, "Sign in");
-        assert_eq!(model.detail, "ApexShot Cloud");
+        assert_eq!(model.detail, "Shotbolt Cloud");
         assert_eq!(model.badge, None);
     }
 
@@ -223,7 +223,7 @@ mod tests {
         let bare = chip_model(&config(|c| {
             c.cloud_api_token = "t".into();
         }));
-        assert_eq!(bare.title, "ApexShot Cloud");
+        assert_eq!(bare.title, "Shotbolt Cloud");
         assert_eq!(bare.detail, "Connected");
     }
 

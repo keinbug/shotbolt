@@ -15,7 +15,7 @@ pub fn build(
 ) {
     let heading = heading_parts(
         nav.scale,
-        &t("Welcome to ApexShot"),
+        &t("Welcome to Shotbolt"),
         &t("Capture your screen, mark it up, and export it."),
     );
     heading.block.remove(&heading.title);

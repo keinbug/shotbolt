@@ -31,7 +31,7 @@ const HERO_HEIGHT: f64 = 170.0;
 pub fn show_latest() -> anyhow::Result<()> {
     let current = env!("CARGO_PKG_VERSION");
     let Some(notes) = whats_new::notes_for(current) else {
-        println!("No release highlights for ApexShot {current}.");
+        println!("No release highlights for Shotbolt {current}.");
         return Ok(());
     };
     show(notes)
@@ -194,7 +194,7 @@ fn hero(dark: bool, notes: &ReleaseNotes, window: &ApplicationWindow) -> Overlay
 
     let headline = centered_label(
         &tfmt(
-            "What's new in ApexShot {version}",
+            "What's new in Shotbolt {version}",
             &[("version", notes.version)],
         ),
         "apexshot-studio-headline",

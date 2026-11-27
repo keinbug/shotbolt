@@ -28,7 +28,7 @@ WebcamBubble::WebcamBubble(int shape, bool flip, QWidget* parent)
     setFocusPolicy(Qt::NoFocus);
     setMouseTracking(true);
     setCursor(Qt::OpenHandCursor);
-    setWindowTitle(QStringLiteral("ApexShot webcam"));
+    setWindowTitle(QStringLiteral("Shotbolt webcam"));
     auto* topmost = new QTimer(this);
     topmost->setInterval(2000);
     connect(topmost, &QTimer::timeout, this, [this] {

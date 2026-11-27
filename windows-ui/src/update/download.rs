@@ -14,7 +14,7 @@ use async_channel::{Receiver, Sender};
 
 use super::telemetry;
 
-const USER_AGENT: &str = concat!("ApexShot/", env!("CARGO_PKG_VERSION"));
+const USER_AGENT: &str = concat!("Shotbolt/", env!("CARGO_PKG_VERSION"));
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const READ_TIMEOUT: Duration = Duration::from_secs(15);
 const REPORT_INTERVAL: Duration = Duration::from_millis(100);
@@ -104,15 +104,10 @@ pub fn start(
     Ok((receiver, destination))
 }
 
-const GITHUB_RELEASE_DOWNLOADS: &str = "https://github.com/apex-shot/apexshot/releases/download/";
-/// The Cloudflare mirror holds the latest releases at the same `<tag>/<name>`
-/// paths as GitHub's release downloads.
-const RELEASE_MIRROR: &str = "https://dl.apexshot.org/";
-
-/// The mirror's copy of a GitHub release asset, if `url` is one.
-fn mirror_url(url: &str) -> Option<String> {
-    let path = url.strip_prefix(GITHUB_RELEASE_DOWNLOADS)?;
-    (!path.is_empty()).then(|| format!("{RELEASE_MIRROR}{path}"))
+/// Shotbolt downloads straight from its own GitHub releases; the original
+/// project's Cloudflare mirror only holds ApexShot builds.
+fn mirror_url(_url: &str) -> Option<String> {
+    None
 }
 
 /// `%LOCALAPPDATA%\apexshot\updates` on Windows, the platform cache directory
@@ -406,7 +401,7 @@ fn sanitize_file_name(name: &str) -> String {
         .collect();
     let cleaned = cleaned.trim().trim_matches('.').to_string();
     if cleaned.is_empty() {
-        "ApexShot-update-setup.exe".to_string()
+        "Shotbolt-update-setup.exe".to_string()
     } else {
         cleaned
     }
@@ -461,20 +456,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn release_assets_are_fetched_from_the_mirror_first() {
+    fn release_assets_come_straight_from_github() {
         assert_eq!(
             mirror_url(
-                "https://github.com/apex-shot/apexshot/releases/download/v0.3.1/ApexShot-0.3.1-setup.exe"
-            )
-            .as_deref(),
-            Some("https://dl.apexshot.org/v0.3.1/ApexShot-0.3.1-setup.exe")
-        );
-        assert_eq!(
-            mirror_url("https://example.test/ApexShot-0.3.1-setup.exe"),
+                "https://github.com/keinbug/shotbolt/releases/download/v1.0.0/Shotbolt-1.0.0-setup.exe"
+            ),
             None
         );
         assert_eq!(
-            mirror_url("https://github.com/apex-shot/apexshot/releases/download/"),
+            mirror_url("https://example.test/Shotbolt-0.3.1-setup.exe"),
+            None
+        );
+        assert_eq!(
+            mirror_url("https://github.com/keinbug/shotbolt/releases/download/"),
             None
         );
     }
@@ -505,37 +499,37 @@ mod tests {
     #[test]
     fn asset_names_come_from_the_url_path() {
         assert_eq!(
-            file_name_from_url("https://github.test/ApexShot-0.2.37-setup.exe"),
-            "ApexShot-0.2.37-setup.exe"
+            file_name_from_url("https://github.test/Shotbolt-0.2.37-setup.exe"),
+            "Shotbolt-0.2.37-setup.exe"
         );
         assert_eq!(
-            file_name_from_url("https://github.test/a/ApexShot-0.2.37-setup.exe?token=1#notes"),
-            "ApexShot-0.2.37-setup.exe"
+            file_name_from_url("https://github.test/a/Shotbolt-0.2.37-setup.exe?token=1#notes"),
+            "Shotbolt-0.2.37-setup.exe"
         );
         assert_eq!(
             file_name_from_url("https://github.test/release/"),
-            "ApexShot-update-setup.exe"
+            "Shotbolt-update-setup.exe"
         );
         assert_eq!(
             file_name_from_url("https://github.test/a/.."),
-            "ApexShot-update-setup.exe"
+            "Shotbolt-update-setup.exe"
         );
     }
 
     #[test]
     fn asset_names_drop_characters_windows_reserves() {
         assert_eq!(
-            file_name_from_url("https://github.test/a/ApexShot:0.2.37*.exe"),
-            "ApexShot_0.2.37_.exe"
+            file_name_from_url("https://github.test/a/Shotbolt:0.2.37*.exe"),
+            "Shotbolt_0.2.37_.exe"
         );
     }
 
     #[test]
     fn the_partial_file_sits_beside_the_final_name() {
-        let destination = Path::new(r"C:\Updates\ApexShot-0.2.37-setup.exe");
+        let destination = Path::new(r"C:\Updates\Shotbolt-0.2.37-setup.exe");
         assert_eq!(
             partial_path(destination),
-            Path::new(r"C:\Updates\ApexShot-0.2.37-setup.exe.part")
+            Path::new(r"C:\Updates\Shotbolt-0.2.37-setup.exe.part")
         );
     }
 

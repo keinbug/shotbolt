@@ -61,7 +61,7 @@ pub fn build_advanced_section(config: &AppConfig) -> AdvancedSettingsWidgets {
     format_vbox.set_hexpand(true);
     let lbl_format = Label::new(Some(&t("Filename format")));
     lbl_format.set_xalign(0.0);
-    let format_hint = Label::new(Some(&t("ApexShot-YYYY-MM-DD_HH-MM-SS.png")));
+    let format_hint = Label::new(Some(&t("Shotbolt-YYYY-MM-DD_HH-MM-SS.png")));
     format_hint.add_css_class("settings-sub-option");
     format_hint.set_xalign(0.0);
     format_vbox.append(&lbl_format);

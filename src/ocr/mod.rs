@@ -1040,7 +1040,7 @@ level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theigh
         let regions = parse_tesseract_tsv_regions(tsv, 0.5);
 
         assert_eq!(regions.len(), 2);
-        assert_eq!(regions[0].text, "ApexShot OCR");
+        assert_eq!(regions[0].text, "Shotbolt OCR");
         assert_eq!(regions[0].confidence, 89);
         assert_eq!(regions[0].bounds.x, 10);
         assert_eq!(regions[0].bounds.y, 5);

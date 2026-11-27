@@ -24,7 +24,7 @@ pub fn build(body: &GtkBox, actions: &GtkBox, nav: &Nav) {
         t("Capture without opening Settings every time")
     };
     let menu_title = t("App menu");
-    let menu_body = t("Open ApexShot anytime for Settings, shortcuts, and preferences");
+    let menu_body = t("Open Shotbolt anytime for Settings, shortcuts, and preferences");
     let checklist = feature_card_list(&[
         (
             custom::OVERLAPPING_WINDOWS_SYMBOLIC,
@@ -45,7 +45,7 @@ pub fn build(body: &GtkBox, actions: &GtkBox, nav: &Nav) {
     checklist.set_margin_top(SECTION_GAP);
     body.append(&checklist);
 
-    let finish_btn = Button::with_label(&t("Start Using ApexShot"));
+    let finish_btn = Button::with_label(&t("Start Using Shotbolt"));
     finish_btn.add_css_class("settings-primary-btn");
     let finish = nav.finish.clone();
     finish_btn.connect_clicked(move |_| finish());

@@ -113,8 +113,8 @@ int main(int argc, char** argv)
     if (!selfTestPath.isEmpty()) {
         Platform::enableDpiAwareness();
         QApplication app(argc, argv);
-        QApplication::setApplicationName(QStringLiteral("ApexShot"));
-        QApplication::setOrganizationName(QStringLiteral("ApexShot"));
+        QApplication::setApplicationName(QStringLiteral("Shotbolt"));
+        QApplication::setOrganizationName(QStringLiteral("Shotbolt"));
         return runSelfTestRecord(selfTestPath);
     }
 
@@ -124,7 +124,7 @@ int main(int argc, char** argv)
     HANDLE instance = nullptr;
     bool alreadyRunning = false;
     if (!requestsDemo(argc, argv)) {
-        instance = CreateMutexW(nullptr, TRUE, L"Local\\ApexShotShell");
+        instance = CreateMutexW(nullptr, TRUE, L"Local\\ShotboltShell");
         if (instance && GetLastError() == ERROR_ALREADY_EXISTS) {
             CloseHandle(instance);
             alreadyRunning = true;
@@ -136,9 +136,9 @@ int main(int argc, char** argv)
     Platform::enableDpiAwareness();
 
     QApplication app(argc, argv);
-    QApplication::setApplicationName(QStringLiteral("ApexShot"));
-    QApplication::setApplicationDisplayName(QStringLiteral("ApexShot"));
-    QApplication::setOrganizationName(QStringLiteral("ApexShot"));
+    QApplication::setApplicationName(QStringLiteral("Shotbolt"));
+    QApplication::setApplicationDisplayName(QStringLiteral("Shotbolt"));
+    QApplication::setOrganizationName(QStringLiteral("Shotbolt"));
     QApplication::setApplicationVersion(QStringLiteral(APEXSHOT_VERSION));
 
     if (alreadyRunning) {

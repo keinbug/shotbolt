@@ -179,7 +179,7 @@ pub(super) fn draw_scroll_popup(
     context.set_font_size(12.0);
     context.set_source_rgba(1.0, 1.0, 1.0, 180.0 / 255.0);
     context.move_to(popup_x + 20.0, popup_y + 55.0);
-    let body_line1 = t("Scroll capture requires the ApexShot");
+    let body_line1 = t("Scroll capture requires the Shotbolt");
     let _ = context.show_text(&body_line1);
     context.move_to(popup_x + 20.0, popup_y + 73.0);
     let body_line2 = t("browser extension.");

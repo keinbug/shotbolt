@@ -115,7 +115,7 @@ public:
             return false;
 
         Platform::AudioLevelMonitor monitor;
-        monitor.startMicrophone(QStringLiteral("ApexShot nonexistent test device"));
+        monitor.startMicrophone(QStringLiteral("Shotbolt nonexistent test device"));
         monitor.stop();
         return monitor.peak() == 0.0f;
     }

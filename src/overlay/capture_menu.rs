@@ -1364,7 +1364,7 @@ fn choose_capture_mode_internal(
     let result = Rc::new(RefCell::new(None));
     let main_loop = glib::MainLoop::new(None, false);
     let window = Window::builder()
-        .title("ApexShot Capture")
+        .title("Shotbolt Capture")
         .decorated(false)
         .resizable(false)
         .css_classes(["apexshot-capture-menu"])

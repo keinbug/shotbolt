@@ -19,7 +19,7 @@ pub const ARCHIVE_NAME: &str = "apexshot-gnome-integration.zip";
 pub const RELEASES_URL: &str = "https://github.com/apex-shot/apexshot/releases";
 pub const RELEASES_API_URL: &str = "https://api.github.com/repos/apex-shot/apexshot/releases";
 
-const USER_AGENT: &str = concat!("ApexShot/", env!("CARGO_PKG_VERSION"));
+const USER_AGENT: &str = concat!("Shotbolt/", env!("CARGO_PKG_VERSION"));
 
 /// What a refresh did, so the caller can word the result page.
 #[derive(Debug, Clone, PartialEq, Eq)]

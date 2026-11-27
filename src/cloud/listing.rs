@@ -48,14 +48,14 @@ impl std::fmt::Display for CloudReadError {
         match self {
             CloudReadError::NotLoggedIn => write!(
                 f,
-                "You are not signed in to ApexShot Cloud. Run `apexshot login` to connect."
+                "You are not signed in to Shotbolt Cloud. Run `apexshot login` to connect."
             ),
-            CloudReadError::Network(msg) => write!(f, "Could not reach ApexShot Cloud: {msg}"),
+            CloudReadError::Network(msg) => write!(f, "Could not reach Shotbolt Cloud: {msg}"),
             CloudReadError::AuthRejected => write!(
                 f,
-                "Your ApexShot Cloud session has expired. Run `apexshot login` again."
+                "Your Shotbolt Cloud session has expired. Run `apexshot login` again."
             ),
-            CloudReadError::Server(msg) => write!(f, "ApexShot Cloud error: {msg}"),
+            CloudReadError::Server(msg) => write!(f, "Shotbolt Cloud error: {msg}"),
             CloudReadError::Cache(msg) => write!(f, "Thumbnail cache error: {msg}"),
         }
     }
@@ -529,7 +529,7 @@ mod tests {
                 "items": [
                     {
                         "id": "up_1",
-                        "filename": "ApexShot 2026-06-28.png",
+                        "filename": "Shotbolt 2026-06-28.png",
                         "share_url": "https://apexshot.org/s/7t1NE9mTWw9J",
                         "thumbnail_url": "https://cdn.apexshot.org/t/7t1NE9mTWw9J.webp",
                         "size_bytes": 184320,
@@ -538,7 +538,7 @@ mod tests {
                     },
                     {
                         "id": "up_2",
-                        "filename": "ApexShot Recording.mp4",
+                        "filename": "Shotbolt Recording.mp4",
                         "share_url": "https://apexshot.org/s/abc123",
                         "size_bytes": 5242880,
                         "content_type": "video/mp4",
@@ -557,7 +557,7 @@ mod tests {
 
         let first = &parsed.items[0];
         assert_eq!(first.id, "up_1");
-        assert_eq!(first.filename, "ApexShot 2026-06-28.png");
+        assert_eq!(first.filename, "Shotbolt 2026-06-28.png");
         assert_eq!(
             first.share_url.as_deref(),
             Some("https://apexshot.org/s/7t1NE9mTWw9J")
@@ -930,7 +930,7 @@ mod tests {
     #[test]
     fn server_status_without_a_body_still_reads_cleanly() {
         let err = map_http_error(status_error(502, ""));
-        assert_eq!(err.to_string(), "ApexShot Cloud error: HTTP 502");
+        assert_eq!(err.to_string(), "Shotbolt Cloud error: HTTP 502");
     }
 
     #[test]
@@ -947,7 +947,7 @@ mod tests {
             .contains("not signed in"));
         assert!(CloudReadError::Network("dns error".to_string())
             .to_string()
-            .contains("Could not reach ApexShot Cloud"));
+            .contains("Could not reach Shotbolt Cloud"));
         assert!(CloudReadError::AuthRejected
             .to_string()
             .contains("session has expired"));

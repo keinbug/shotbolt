@@ -259,7 +259,7 @@ void checkSanitizing(const QTemporaryDir& dir)
     CHECK(settings.recording.values.qualityIndex == 1);
     CHECK(settings.recording.values.codecIndex == 0);
     CHECK(settings.recording.filenamePattern
-          == QStringLiteral("ApexShot Recording {Date} at {Time}"));
+          == QStringLiteral("Shotbolt Recording {Date} at {Time}"));
     CHECK(settings.recording.webcam.sizeIndex == 3);
     CHECK(settings.recording.webcam.shapeIndex == 0);
     CHECK(qFuzzyCompare(settings.recording.webcam.relX, 1.0));
@@ -292,7 +292,7 @@ void checkPaths(const QTemporaryDir& dir)
     CHECK(next.endsWith(QStringLiteral(" (2).mp4")));
     const QString temporary = Platform::shellTemporaryRecordingOutputPath();
     CHECK(QFileInfo(temporary).absolutePath()
-          == QDir(QDir::tempPath()).filePath(QStringLiteral("ApexShot")));
+          == QDir(QDir::tempPath()).filePath(QStringLiteral("Shotbolt")));
     CHECK(temporary.endsWith(QStringLiteral(".mp4")));
     CHECK(temporary != Platform::shellTemporaryRecordingOutputPath());
 }

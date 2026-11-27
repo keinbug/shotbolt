@@ -318,7 +318,7 @@ QString saveCapture(const QImage& image, const QRect& region,
     const QString directory =
         settings.screenshots.afterSave
             ? Platform::shellScreenshotOutputDir(settings)
-            : QDir(QDir::tempPath()).filePath(QStringLiteral("ApexShot"));
+            : QDir(QDir::tempPath()).filePath(QStringLiteral("Shotbolt"));
 
     QString path;
     if (!Platform::saveScreenshotImage(image,
@@ -392,7 +392,7 @@ void openSettingsWindow()
     if (!QProcess::startDetached(executable, {})) {
         QMessageBox::warning(
             nullptr,
-            QStringLiteral("ApexShot Settings"),
+            QStringLiteral("Shotbolt Settings"),
             QStringLiteral("Could not start the settings window:\n%1\n\n"
                            "Set APEXSHOT_SETTINGS to the settings executable.")
                 .arg(QDir::toNativeSeparators(executable)));
@@ -415,7 +415,7 @@ void openHistoryWindow()
     if (!QProcess::startDetached(executable, {})) {
         QMessageBox::warning(
             nullptr,
-            QStringLiteral("ApexShot History"),
+            QStringLiteral("Shotbolt History"),
             QStringLiteral("Could not start the history window:\n%1\n\n"
                            "Set APEXSHOT_HISTORY to the history executable.")
                 .arg(QDir::toNativeSeparators(executable)));
@@ -439,7 +439,7 @@ void openVideoEditorWindow(const QString& path = QString())
     if (!QProcess::startDetached(executable, arguments)) {
         QMessageBox::warning(
             nullptr,
-            QStringLiteral("ApexShot Video Editor"),
+            QStringLiteral("Shotbolt Video Editor"),
             QStringLiteral("Could not start the video editor:\n%1\n\n"
                            "Set APEXSHOT_VIDEO_EDITOR to the editor executable.")
                 .arg(QDir::toNativeSeparators(executable)));
@@ -515,7 +515,7 @@ void openImageEditorWindow(const QString& path = QString())
     if (!QProcess::startDetached(executable, arguments)) {
         QMessageBox::warning(
             nullptr,
-            QStringLiteral("ApexShot Image Editor"),
+            QStringLiteral("Shotbolt Image Editor"),
             QStringLiteral("Could not start the image editor:\n%1\n\n"
                            "Set APEXSHOT_IMAGE_EDITOR to the editor executable.")
                 .arg(QDir::toNativeSeparators(executable)));
@@ -596,7 +596,7 @@ bool isTemporaryCapture(const QString& path)
     if (path.isEmpty())
         return false;
     const QString temporary =
-        QDir::cleanPath(QDir(QDir::tempPath()).filePath(QStringLiteral("ApexShot")));
+        QDir::cleanPath(QDir(QDir::tempPath()).filePath(QStringLiteral("Shotbolt")));
     return QDir::cleanPath(QFileInfo(path).absolutePath())
                .compare(temporary, Qt::CaseInsensitive)
         == 0;
@@ -1606,7 +1606,7 @@ public:
         setAttribute(Qt::WA_TranslucentBackground, true);
         setAttribute(Qt::WA_DeleteOnClose, true);
         setAttribute(Qt::WA_ShowWithoutActivating, true);
-        setWindowTitle(QStringLiteral("ApexShot Preview"));
+        setWindowTitle(QStringLiteral("Shotbolt Preview"));
         // The Settings preview only shows placement and size: clicks go
         // through to the window underneath.
         if (m_sample)
@@ -2135,7 +2135,7 @@ private:
         else
             promptSaveScreenshot(this,
                                  m_image,
-                                 m_path.isEmpty() ? QStringLiteral("ApexShot")
+                                 m_path.isEmpty() ? QStringLiteral("Shotbolt")
                                                   : QFileInfo(m_path).completeBaseName());
         if (self)
             m_saveDialogOpen = false;
@@ -2737,7 +2737,7 @@ public:
             return;
         const QImage screenshot = m_lastScreenshot;
         m_saveDialogOpen = true;
-        promptSaveScreenshot(nullptr, screenshot, QStringLiteral("ApexShot"));
+        promptSaveScreenshot(nullptr, screenshot, QStringLiteral("Shotbolt"));
         m_saveDialogOpen = false;
     }
 
@@ -3079,7 +3079,7 @@ public:
                         : QStringLiteral("%1 recordings did not finish saving.")
                               .arg(unfinished.size()));
         box.setInformativeText(QStringLiteral(
-            "ApexShot stopped before it could save them. Recover saves what was captured; "
+            "Shotbolt stopped before it could save them. Recover saves what was captured; "
             "Discard deletes it."));
         QPushButton* recoverButton =
             box.addButton(QStringLiteral("Recover"), QMessageBox::AcceptRole);
@@ -4508,7 +4508,7 @@ int run(QApplication& app)
 
     auto* tray = new QSystemTrayIcon(appIcon(), &app);
     shell->setTray(tray);
-    tray->setToolTip(QStringLiteral("ApexShot"));
+    tray->setToolTip(QStringLiteral("Shotbolt"));
 
     auto* menu = new QMenu;
     const QString menuStyle = trayMenuStyle();

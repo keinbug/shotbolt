@@ -5,7 +5,7 @@ pub(crate) fn run_update(args: &[String]) -> Result<(), String> {
         [] => {}
         [flag] if matches!(flag.as_str(), "--help" | "-h") => {
             println!("Usage: apexshot update");
-            println!("Update ApexShot using the official distro-aware updater.");
+            println!("Update Shotbolt using the official distro-aware updater.");
             println!("Run as your normal user; the updater asks for sudo when needed.");
             return Ok(());
         }
@@ -19,15 +19,15 @@ pub(crate) fn run_update(args: &[String]) -> Result<(), String> {
         ));
     }
     if cfg!(feature = "nix") {
-        return Err("This installation is managed by Nix. Update the ApexShot flake input and rebuild your configuration, or upgrade its Nix profile entry.".into());
+        return Err("This installation is managed by Nix. Update the Shotbolt flake input and rebuild your configuration, or upgrade its Nix profile entry.".into());
     }
 
-    println!("Checking for ApexShot updates...");
+    println!("Checking for Shotbolt updates...");
     let Some(update) = apexshot::update::check_for_update_now()
         .map_err(|error| format!("Could not check the latest release: {error}"))?
     else {
         println!(
-            "ApexShot {} is already up to date.",
+            "Shotbolt {} is already up to date.",
             env!("CARGO_PKG_VERSION")
         );
         return Ok(());
@@ -36,7 +36,7 @@ pub(crate) fn run_update(args: &[String]) -> Result<(), String> {
         eprintln!("{notice}");
     }
     println!(
-        "Updating ApexShot {} to {}...",
+        "Updating Shotbolt {} to {}...",
         env!("CARGO_PKG_VERSION"),
         update.version
     );
@@ -44,7 +44,7 @@ pub(crate) fn run_update(args: &[String]) -> Result<(), String> {
         .status()
         .map_err(|error| format!("Could not start the updater: {error}"))?;
     if !status.success() {
-        return Err(format!("The ApexShot updater failed ({status})."));
+        return Err(format!("The Shotbolt updater failed ({status})."));
     }
     Ok(())
 }

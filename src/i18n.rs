@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn t_without_catalog_returns_msgid() {
-        assert_eq!(t("Welcome to ApexShot"), "Welcome to ApexShot");
+        assert_eq!(t("Welcome to Shotbolt"), "Welcome to Shotbolt");
     }
 
     #[test]

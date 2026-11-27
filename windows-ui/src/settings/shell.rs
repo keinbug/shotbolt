@@ -33,6 +33,11 @@ struct NavItem {
 
 /// The pieces of the sidebar the window needs: the column to place in the
 /// layout, and the draggable head that doubles as the window's title.
+/// Shotbolt: pages that only serve the original project's hosted services
+/// (7 = Usage/billing, 9 = Studio licence). They stay built, so page indices
+/// keep their meaning, but get no sidebar row.
+const HIDDEN_PAGES: [usize; 2] = [7, 9];
+
 pub struct Sidebar {
     pub wrapper: GtkBox,
     pub head: GtkBox,
@@ -120,6 +125,7 @@ pub fn build_sidebar(
         click.connect_released(move |_, _, _, _| stack_for_click.set_visible_child_name(&page));
         row.add_controller(click);
 
+        row.set_visible(!HIDDEN_PAGES.contains(&index));
         nav_strip.append(&row);
         items.push(NavItem { row, icon, label });
     }
@@ -254,7 +260,7 @@ impl UserChip {
         } else if !email.is_empty() {
             email.to_string()
         } else {
-            t("ApexShot Cloud")
+            t("Shotbolt Cloud")
         };
         // The chip represents the Cloud account, so its badge reports that
         // account's plan tier. Studio is a separate, device-bound licence with

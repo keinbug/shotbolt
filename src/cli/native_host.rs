@@ -112,7 +112,7 @@ pub(crate) fn install_native_host_manifest(
 
     let manifest = serde_json::json!({
         "name": "io.github.codegoddy.apexshot",
-        "description": "ApexShot native host",
+        "description": "Shotbolt native host",
         "path": host_script,
         "type": "stdio",
         "allowed_origins": [format!("chrome-extension://{}/", extension_id)],

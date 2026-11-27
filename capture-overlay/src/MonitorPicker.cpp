@@ -335,7 +335,7 @@ public:
         setAttribute(Qt::WA_DeleteOnClose, false);
         setFocusPolicy(Qt::StrongFocus);
         setMouseTracking(true);
-        setWindowTitle(QStringLiteral("ApexShot Display Picker"));
+        setWindowTitle(QStringLiteral("Shotbolt Display Picker"));
     }
 
     void setPanelSize(const QSize& size) { m_panelSize = size; }

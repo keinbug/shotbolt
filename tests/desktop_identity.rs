@@ -22,12 +22,12 @@ fn packaged_desktop_identity_matches_primary_ui_application_id() {
 
     assert!(
         settings_source.contains(".application_id(crate::app_identity::app_id())"),
-        "settings window should use the packaged desktop application id so docks show the ApexShot icon"
+        "settings window should use the packaged desktop application id so docks show the Shotbolt icon"
     );
 
     assert!(
         onboarding_source.contains(".application_id(crate::app_identity::app_id())"),
-        "onboarding window should use the packaged desktop application id so docks show the ApexShot icon"
+        "onboarding window should use the packaged desktop application id so docks show the Shotbolt icon"
     );
 
     assert!(

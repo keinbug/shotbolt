@@ -244,7 +244,7 @@ impl GstAudioSetup {
             mono: config.mono_audio,
             noise_suppression: config.noise_suppression,
             source_factory_override: None,
-            client_name: "ApexShot Recording".into(),
+            client_name: "Shotbolt Recording".into(),
         })
     }
 }
@@ -1086,7 +1086,7 @@ pub(crate) fn run_pulse_level_monitor(
         src.set_property("device", device.as_str());
     }
     if src.find_property("client-name").is_some() {
-        src.set_property("client-name", format!("ApexShot {label} meter"));
+        src.set_property("client-name", format!("Shotbolt {label} meter"));
     }
     run_level_meter(label, src, capture_sink, level, stop);
 }
@@ -1304,7 +1304,7 @@ mod tests {
             mono,
             noise_suppression: false,
             source_factory_override: Some("audiotestsrc"),
-            client_name: "ApexShot Test".into(),
+            client_name: "Shotbolt Test".into(),
         }
     }
 

@@ -1,4 +1,4 @@
-; Windows installer for ApexShot, built by scripts/package-windows.sh.
+; Windows installer for Shotbolt, built by scripts/package-windows.sh.
 ;
 ; The caller passes the staged app tree, the version, and the output folder as
 ; /D defines so this file carries no absolute paths and works from a checkout,
@@ -20,12 +20,12 @@
   #define IconFile "apexshot.ico"
 #endif
 
-#define AppName "ApexShot"
-#define AppPublisher "ApexShot"
-#define AppUrl "https://apexshot.org"
-#define AppIssuesUrl "https://github.com/apex-shot/apexshot/issues"
-#define AppReleasesUrl "https://github.com/apex-shot/apexshot/releases"
-#define AppGuid "7E3C8F1B-2B4A-4E4C-9C1E-6A5D24A3F9B7"
+#define AppName "Shotbolt"
+#define AppPublisher "Shotbolt (Fork von ApexShot)"
+#define AppUrl "https://github.com/keinbug/shotbolt"
+#define AppIssuesUrl "https://github.com/keinbug/shotbolt/issues"
+#define AppReleasesUrl "https://github.com/keinbug/shotbolt/releases"
+#define AppGuid "D7334C22-CA14-4047-AE2E-E8E6BDF862C4"
 
 [Setup]
 ; A fixed AppId keeps an upgrade in place instead of stacking a second install.
@@ -76,7 +76,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\{#AppName}"; Filename: "{app}\bin\apexshot-settings.exe"; WorkingDir: "{app}\bin"; IconFilename: "{app}\bin\apexshot-capture.exe"; Comment: "ApexShot settings - the tray icon starts a capture"
+Name: "{group}\{#AppName}"; Filename: "{app}\bin\apexshot-settings.exe"; WorkingDir: "{app}\bin"; IconFilename: "{app}\bin\apexshot-capture.exe"; Comment: "Shotbolt settings - the tray icon starts a capture"
 Name: "{group}\{cm:UninstallProgram,{#AppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\bin\apexshot-settings.exe"; WorkingDir: "{app}\bin"; IconFilename: "{app}\bin\apexshot-capture.exe"; Tasks: desktopicon
 
@@ -84,7 +84,7 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\bin\apexshot-settings.exe"; W
 ; Register apexshot:// for the signed-in user, matching the per-user install.
 ; The Studio page opens this link after a purchase or recovery so the app can
 ; activate the device-bound licence without a file to download and import.
-Root: HKCU; Subkey: "Software\Classes\apexshot"; ValueType: string; ValueName: ""; ValueData: "URL:ApexShot"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\apexshot"; ValueType: string; ValueName: ""; ValueData: "URL:Shotbolt"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\apexshot"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
 Root: HKCU; Subkey: "Software\Classes\apexshot\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\bin\apexshot-capture.exe"",0"
 Root: HKCU; Subkey: "Software\Classes\apexshot\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\bin\apexshot-settings.exe"" ""%1"""

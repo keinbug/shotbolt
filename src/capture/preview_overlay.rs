@@ -174,7 +174,7 @@ fn should_emit_extension_events(layer_shell_active: bool) -> bool {
     !layer_shell_active
 }
 
-const PREVIEW_TRACKED_TITLE: &str = "ApexShot Preview";
+const PREVIEW_TRACKED_TITLE: &str = "Shotbolt Preview";
 const PREVIEW_TRACKED_ROLE: &str = "preview";
 const PREVIEW_TRACKED_NAMESPACE: &str = "apexshot-capture-preview";
 
@@ -387,7 +387,7 @@ fn setup_preview_window(
     probe.log("before-window-build");
     let appwin = ApplicationWindow::builder()
         .application(app)
-        .title(t("ApexShot Preview"))
+        .title(t("Shotbolt Preview"))
         .icon_name(crate::app_identity::icon_name())
         .default_width(preview_width + chrome_pad)
         .default_height(preview_height + chrome_pad)

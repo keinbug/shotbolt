@@ -168,7 +168,7 @@ mod tests {
         let directory = scratch("ledger");
         let ledger = directory.join("motion-exports.json");
         let video = directory.join("Promo.mp4");
-        let recording = directory.join("ApexShot Recording.mp4");
+        let recording = directory.join("Shotbolt Recording.mp4");
         std::fs::write(&video, b"mp4").unwrap();
         std::fs::write(&recording, b"mp4").unwrap();
 
@@ -199,7 +199,7 @@ mod tests {
     fn the_default_export_name_counts_without_a_ledger_entry() {
         let recorded = HashSet::new();
         assert!(is_motion_export(
-            Path::new("C:/Videos/ApexShot Motion.mp4"),
+            Path::new("C:/Videos/Shotbolt Motion.mp4"),
             &recorded
         ));
         assert!(is_motion_export(
@@ -207,7 +207,7 @@ mod tests {
             &recorded
         ));
         assert!(!is_motion_export(
-            Path::new("C:/Videos/ApexShot Recording.mp4"),
+            Path::new("C:/Videos/Shotbolt Recording.mp4"),
             &recorded
         ));
         assert!(!is_motion_export(

@@ -79,7 +79,10 @@ const QStringList& counterKeys()
 
 bool postHeartbeat(const QByteArray& data)
 {
-    HINTERNET session = WinHttpOpen(L"ApexShotUsageTelemetry",
+    // Shotbolt: the counters stay local; nothing is sent to apexshot.org.
+    if (data.size() >= 0)
+        return false;
+    HINTERNET session = WinHttpOpen(L"ShotboltUsageTelemetry",
                                     WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session)

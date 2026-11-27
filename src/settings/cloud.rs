@@ -52,6 +52,13 @@ pub struct CloudSettingsWidgets {
     pub auto_upload_sync: Rc<AutoUploadSync>,
     pub xb_url_entry: Entry,
     pub xb_token_entry: Entry,
+    // Shotbolt: own upload API.
+    pub custom_check: CheckButton,
+    pub custom_url_entry: Entry,
+    pub custom_token_entry: Entry,
+    pub custom_header_entry: Entry,
+    pub custom_field_entry: Entry,
+    pub custom_url_key_entry: Entry,
 }
 
 pub fn build_cloud_section(config: &AppConfig) -> CloudSettingsWidgets {
@@ -94,11 +101,19 @@ pub fn build_cloud_section(config: &AppConfig) -> CloudSettingsWidgets {
 
     let dest_frame = build_frame();
 
-    let apexshot_check = CheckButton::with_label(&t("ApexShot Cloud"));
+    // Shotbolt: the hosted ApexShot Cloud stays wired (the settings keep
+    // their shape) but hidden; the choice is the own API or XBackBone.
+    let custom_check = CheckButton::with_label(&t("Own upload API"));
+    let apexshot_check = CheckButton::with_label(&t("Shotbolt Cloud"));
     let xbackbone_check = CheckButton::with_label(&t("XBackBone (self-hosted)"));
-    let is_xb = config.cloud_destination == "xbackbone";
-    apexshot_check.set_active(!is_xb);
-    xbackbone_check.set_active(is_xb);
+    apexshot_check.set_group(Some(&custom_check));
+    xbackbone_check.set_group(Some(&custom_check));
+    apexshot_check.set_visible(false);
+    match config.cloud_destination.as_str() {
+        "xbackbone" => xbackbone_check.set_active(true),
+        "apexshot" => apexshot_check.set_active(true),
+        _ => custom_check.set_active(true),
+    }
 
     let dest_hbox = GtkBox::new(Orientation::Horizontal, 12);
     dest_hbox.set_hexpand(true);
@@ -106,6 +121,7 @@ pub fn build_cloud_section(config: &AppConfig) -> CloudSettingsWidgets {
     dest_label.set_xalign(0.0);
     dest_label.set_hexpand(true);
     let dest_actions = GtkBox::new(Orientation::Vertical, 8);
+    dest_actions.append(&custom_check);
     dest_actions.append(&apexshot_check);
     dest_actions.append(&xbackbone_check);
     dest_hbox.append(&dest_label);
@@ -124,9 +140,9 @@ pub fn build_cloud_section(config: &AppConfig) -> CloudSettingsWidgets {
     auto_label.set_hexpand(true);
     // The Windows shell auto-uploads recordings too.
     let auto_help_text = if cfg!(target_os = "windows") {
-        t("Uploads each saved screenshot and recording and copies the share link. Does nothing until you Connect.")
+        t("Uploads each saved screenshot and recording and copies the share link. Does nothing until an upload destination is set up.")
     } else {
-        t("Uploads each saved screenshot and copies the share link. Does nothing until you Connect.")
+        t("Uploads each saved screenshot and copies the share link. Does nothing until an upload destination is set up.")
     };
     let auto_help = Label::new(Some(&auto_help_text));
     auto_help.add_css_class("dim-label");
@@ -146,47 +162,34 @@ pub fn build_cloud_section(config: &AppConfig) -> CloudSettingsWidgets {
 
     let nudge_hbox = GtkBox::new(Orientation::Horizontal, 12);
     nudge_hbox.set_hexpand(true);
-    let nudge_label = Label::new(Some(&t("Suggest ApexShot Cloud when copying")));
+    let nudge_label = Label::new(Some(&t("Suggest Shotbolt Cloud when copying")));
     nudge_label.set_xalign(0.0);
     nudge_label.set_hexpand(true);
     nudge_hbox.append(&nudge_label);
     nudge_hbox.append(&cloud_nudge_check);
-    dest_frame.append(&build_row!(&nudge_hbox, true));
+    let nudge_row = build_row!(&nudge_hbox, true);
+    nudge_row.set_visible(false);
+    dest_frame.append(&nudge_row);
 
     section.append(&dest_frame);
 
     #[cfg(not(target_os = "windows"))]
     install_auto_upload_observer(&section, &auto_upload_check, &auto_upload_sync);
 
-    // --- ApexShot Cloud panel ---
+    // --- Own upload API panel ---
+    let custom_panel = build_custom_panel(config);
+    section.append(&custom_panel.container);
+
+    // --- ApexShot Cloud panel (hidden in Shotbolt) ---
     let apexshot_panel = build_apexshot_panel(config);
+    apexshot_panel.container.set_visible(false);
     section.append(&apexshot_panel.container);
 
     // --- XBackBone panel ---
     let xb_panel = build_xbackbone_panel(config);
     section.append(&xb_panel.container);
 
-    // Keep the two checkboxes mutually exclusive without hiding either setup panel.
-    {
-        let xb = xbackbone_check.clone();
-        apexshot_check.connect_toggled(move |check| {
-            if check.is_active() {
-                xb.set_active(false);
-            } else if !xb.is_active() {
-                check.set_active(true);
-            }
-        });
-    }
-    {
-        let apex = apexshot_check.clone();
-        xbackbone_check.connect_toggled(move |check| {
-            if check.is_active() {
-                apex.set_active(false);
-            } else if !apex.is_active() {
-                check.set_active(true);
-            }
-        });
-    }
+    // The checkboxes share one group, so GTK keeps exactly one active.
 
     CloudSettingsWidgets {
         section,
@@ -199,6 +202,180 @@ pub fn build_cloud_section(config: &AppConfig) -> CloudSettingsWidgets {
         auto_upload_sync,
         xb_url_entry: xb_panel.url_entry,
         xb_token_entry: xb_panel.token_entry,
+        custom_check,
+        custom_url_entry: custom_panel.url_entry,
+        custom_token_entry: custom_panel.token_entry,
+        custom_header_entry: custom_panel.header_entry,
+        custom_field_entry: custom_panel.field_entry,
+        custom_url_key_entry: custom_panel.url_key_entry,
+    }
+}
+
+struct CustomPanel {
+    container: GtkBox,
+    url_entry: Entry,
+    token_entry: Entry,
+    header_entry: Entry,
+    field_entry: Entry,
+    url_key_entry: Entry,
+}
+
+/// A labelled row with a control on the right, laid out like the XBackBone panel.
+fn entry_row(label: &str, control: &impl IsA<gtk4::Widget>) -> gtk4::Box {
+    let hbox = GtkBox::new(Orientation::Horizontal, 12);
+    hbox.set_hexpand(true);
+    let label = Label::new(Some(label));
+    label.set_xalign(0.0);
+    label.set_hexpand(true);
+    hbox.append(&label);
+    hbox.append(control);
+    build_table_row(&hbox)
+}
+
+fn text_entry(text: &str, placeholder: &str) -> Entry {
+    let entry = Entry::new();
+    entry.set_hexpand(true);
+    entry.set_width_chars(32);
+    entry.set_placeholder_text(Some(placeholder));
+    entry.set_text(text);
+    entry
+}
+
+fn build_custom_panel(config: &AppConfig) -> CustomPanel {
+    let container = GtkBox::new(Orientation::Vertical, 0);
+    container.set_hexpand(true);
+    container.set_margin_bottom(24);
+
+    let title = Label::new(Some(&t("Own upload API")));
+    title.add_css_class("settings-group-title");
+    title.set_xalign(0.0);
+    title.set_halign(Align::Start);
+    title.set_margin_bottom(8);
+    container.append(&title);
+
+    let frame = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    frame.add_css_class("settings-table-frame");
+    frame.set_margin_start(4);
+    frame.set_margin_end(4);
+
+    let url_entry = text_entry(&config.custom_upload_url, "https://api.example.com/upload");
+    frame.append(&entry_row(&t("Upload URL"), &url_entry));
+
+    let token_entry = text_entry(&config.custom_upload_token, &t("Optional"));
+    token_entry.set_visibility(false);
+    token_entry.set_input_purpose(gtk4::InputPurpose::Password);
+    let show_check = CheckButton::with_label(&t("Show"));
+    {
+        let token_clone = token_entry.clone();
+        show_check.connect_toggled(move |check| {
+            token_clone.set_visibility(check.is_active());
+        });
+    }
+    let token_controls = GtkBox::new(Orientation::Horizontal, 8);
+    token_controls.append(&token_entry);
+    token_controls.append(&show_check);
+    frame.append(&entry_row(&t("API token"), &token_controls));
+
+    let header_entry = text_entry(&config.custom_upload_auth_header, "Authorization");
+    frame.append(&entry_row(&t("Token header"), &header_entry));
+
+    let field_entry = text_entry(&config.custom_upload_field, "file");
+    frame.append(&entry_row(&t("File field name"), &field_entry));
+
+    let url_key_entry = text_entry(&config.custom_upload_url_key, "url");
+    frame.append(&entry_row(
+        &t("Link in response (JSON path)"),
+        &url_key_entry,
+    ));
+
+    let hint = Label::new(Some(&t(
+        "Shotbolt sends the file as a multipart/form-data POST. With the header Authorization the token goes out as \"Bearer <token>\", with any other header unchanged. The link is read from the JSON response (for example url or data.link), or the response body is the link itself.",
+    )));
+    hint.add_css_class("settings-sub-option-hint");
+    hint.set_xalign(0.0);
+    hint.set_halign(Align::Start);
+    hint.set_wrap(true);
+    hint.set_margin_top(8);
+    frame.append(&build_table_row(&hint));
+
+    let test_btn = Button::with_label(&t("Test connection"));
+    frame.append(&entry_row(&t("Verify setup"), &test_btn));
+
+    let status_label = Label::new(None);
+    status_label.set_xalign(0.0);
+    status_label.set_halign(Align::Start);
+    status_label.set_wrap(true);
+    status_label.set_selectable(true);
+    status_label.add_css_class("settings-sub-option-hint");
+    let status_hbox = GtkBox::new(Orientation::Horizontal, 0);
+    status_hbox.set_hexpand(true);
+    status_hbox.append(&status_label);
+    let status_row = build_table_row(&status_hbox);
+    status_row.set_visible(false);
+    {
+        let status_row = status_row.clone();
+        status_label.connect_notify_local(Some("label"), move |label, _| {
+            status_row.set_visible(!label.text().trim().is_empty());
+        });
+    }
+    frame.append(&status_row);
+    container.append(&frame);
+
+    // Test the values as typed, saved or not, on a worker thread; the result
+    // comes back to the main thread through a channel (widgets are not Send).
+    {
+        let url_c = url_entry.clone();
+        let token_c = token_entry.clone();
+        let header_c = header_entry.clone();
+        let field_c = field_entry.clone();
+        let key_c = url_key_entry.clone();
+        let status_c = status_label.clone();
+        let test_btn_c = test_btn.clone();
+        test_btn.connect_clicked(move |_| {
+            test_btn_c.set_sensitive(false);
+            status_c.remove_css_class("settings-toast-error");
+            status_c.set_text(&t("Testing\u{2026}"));
+
+            let mut snapshot = crate::config::load_config();
+            snapshot.custom_upload_url = url_c.text().to_string();
+            snapshot.custom_upload_token = token_c.text().to_string();
+            snapshot.custom_upload_auth_header = header_c.text().to_string();
+            snapshot.custom_upload_field = field_c.text().to_string();
+            snapshot.custom_upload_url_key = key_c.text().to_string();
+            let snapshot = snapshot.sanitized();
+
+            let (sender, receiver) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = sender.send(crate::cloud::custom::test_connection(&snapshot));
+            });
+            let status_i = status_c.clone();
+            let btn_i = test_btn_c.clone();
+            glib::source::idle_add_local(move || match receiver.try_recv() {
+                Ok(result) => {
+                    match result {
+                        Ok(link) => {
+                            status_i.set_text(&format!("{} {link}", t("Works. Test link:")));
+                        }
+                        Err(msg) => {
+                            status_i.set_text(&msg);
+                            status_i.add_css_class("settings-toast-error");
+                        }
+                    }
+                    btn_i.set_sensitive(true);
+                    glib::ControlFlow::Break
+                }
+                Err(_) => glib::ControlFlow::Continue,
+            });
+        });
+    }
+
+    CustomPanel {
+        container,
+        url_entry,
+        token_entry,
+        header_entry,
+        field_entry,
+        url_key_entry,
     }
 }
 
@@ -211,7 +388,7 @@ fn build_apexshot_panel(config: &AppConfig) -> ApexShotPanel {
     let container = GtkBox::new(Orientation::Vertical, 0);
     container.set_hexpand(true);
 
-    let title = Label::new(Some(&t("ApexShot Cloud account")));
+    let title = Label::new(Some(&t("Shotbolt Cloud account")));
     title.add_css_class("settings-group-title");
     title.set_xalign(0.0);
     title.set_halign(Align::Start);
@@ -671,7 +848,7 @@ pub(crate) fn spawn_apexshot_login() {
     }
     crate::utils::notify::desktop_notification(
         "Could not open Settings",
-        "Open ApexShot Settings → Cloud to connect your ApexShot Cloud account.",
+        "Open Shotbolt Settings → Cloud to connect your Shotbolt Cloud account.",
     );
 }
 

@@ -67,7 +67,7 @@ pub fn build_gnome(content: &gtk4::Box) {
         content.append(&title);
 
         let desc = Label::new(Some(&t(
-            "ApexShot requires GNOME Shell. Please install on a GNOME desktop to continue.",
+            "Shotbolt requires GNOME Shell. Please install on a GNOME desktop to continue.",
         )));
         desc.set_halign(Align::Center);
         desc.set_wrap(true);
@@ -97,7 +97,7 @@ pub fn build_gnome(content: &gtk4::Box) {
         content.append(&title);
 
         let desc = Label::new(Some(&t(
-            "An old version of the ApexShot extension is installed. It needs to be removed before installing the new version.",
+            "An old version of the Shotbolt extension is installed. It needs to be removed before installing the new version.",
         )));
         desc.set_halign(Align::Center);
         desc.set_wrap(true);
@@ -205,7 +205,7 @@ pub fn build_gnome(content: &gtk4::Box) {
 
     // Note about logout
     let note_text = if crate::app_identity::portal_only() {
-        t("This Flatpak cannot install extensions into your host desktop. Open the release page and download the GNOME extension archive, then install and enable it on the host in GNOME Extensions or run `gnome-extensions install --force ~/Downloads/apexshot-gnome-integration.zip` followed by `gnome-extensions enable apexshot-gnome-integration@apexshot.github.io` in a host terminal. ApexShot will detect it when the extension is enabled.")
+        t("This Flatpak cannot install extensions into your host desktop. Open the release page and download the GNOME extension archive, then install and enable it on the host in GNOME Extensions or run `gnome-extensions install --force ~/Downloads/apexshot-gnome-integration.zip` followed by `gnome-extensions enable apexshot-gnome-integration@apexshot.github.io` in a host terminal. Shotbolt will detect it when the extension is enabled.")
     } else if is_installed && !is_enabled {
         t("The GNOME extension is installed but not active. Use Enable GNOME Extension or enable it in GNOME Extensions.")
     } else {
@@ -233,18 +233,18 @@ pub fn build_gnome(content: &gtk4::Box) {
 pub(super) fn build_chrome(body: &gtk4::Box, actions: &gtk4::Box, nav: &super::Nav) {
     body.append(&heading(
         &t("Browser Extension"),
-        &t("Optional Chrome/Chromium add-on for full-page web captures that open straight in ApexShot."),
+        &t("Optional Chrome/Chromium add-on for full-page web captures that open straight in Shotbolt."),
     ));
 
     let scroll_title = t("Full-page scroll capture");
     let scroll_body = t("Stitch long pages that a normal screenshot can't fit");
-    let send_title = t("Sends directly to ApexShot");
+    let send_title = t("Sends directly to Shotbolt");
     let send_body = t("Opens in the editor so you can annotate and share immediately");
     let desktop_title = t("Works with your desktop app");
     let desktop_body = if crate::app_identity::portal_only() {
         t("Host-installed browsers need scripts/install-flatpak-browser-host.py run on the host. This bridge does not support browsers installed as Flatpaks.")
     } else {
-        t("Native messaging keeps the browser and ApexShot in sync")
+        t("Native messaging keeps the browser and Shotbolt in sync")
     };
     let features = feature_card_list(&[
         (

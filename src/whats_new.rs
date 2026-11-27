@@ -87,7 +87,7 @@ pub const RELEASES: &[ReleaseNotes] = &[ReleaseNotes {
         },
         Highlight {
             title: "Faster downloads and updates",
-            body: "ApexShot now downloads from its own download servers, so installs and updates finish sooner.",
+            body: "Shotbolt now downloads from its own download servers, so installs and updates finish sooner.",
             studio: false,
             without_studio_only: false,
             platform: Platform::All,

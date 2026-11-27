@@ -259,7 +259,7 @@ where
     let time_str = now.format("%H-%M-%S").to_string();
     let pattern = app_config.rec_filename_pattern.trim();
     let pattern = if pattern.is_empty() {
-        "ApexShot Recording {Date} at {Time}"
+        "Shotbolt Recording {Date} at {Time}"
     } else {
         pattern
     };
@@ -734,7 +734,7 @@ mod tests {
     fn from_app_config_does_not_use_hardcoded_output_mp4() {
         let app = AppConfig {
             video_export_location: "/tmp/apexshot-daemon-recs".into(),
-            rec_filename_pattern: "ApexShot Recording {Date} at {Time}".into(),
+            rec_filename_pattern: "Shotbolt Recording {Date} at {Time}".into(),
             rec_video_fps: 3, // 60
             rec_cursor: false,
             rec_hidpi: false,
@@ -747,7 +747,7 @@ mod tests {
         assert_eq!(
             config.output_path,
             PathBuf::from(
-                "/tmp/apexshot-daemon-recs/ApexShot Recording 2026-07-12 at 15-30-00.mp4"
+                "/tmp/apexshot-daemon-recs/Shotbolt Recording 2026-07-12 at 15-30-00.mp4"
             )
         );
         assert_eq!(config.fps, 60);

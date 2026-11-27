@@ -26,7 +26,7 @@ LRESULT CALLBACK windowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
 HWND createTestWindow()
 {
     const HINSTANCE instance = GetModuleHandleW(nullptr);
-    const wchar_t* className = L"ApexShotWindowCaptureTest";
+    const wchar_t* className = L"ShotboltWindowCaptureTest";
     WNDCLASSW windowClass{};
     windowClass.lpfnWndProc = windowProc;
     windowClass.hInstance = instance;

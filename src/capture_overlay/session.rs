@@ -306,7 +306,7 @@ impl InteractiveOverlaySessionGuard {
         emit_tracked_window_opened(
             tracked_id,
             pid,
-            "ApexShot Capture Overlay",
+            "Shotbolt Capture Overlay",
             "capture-overlay",
             "screenshot",
         );

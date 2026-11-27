@@ -159,7 +159,7 @@ pub fn build_screenshots_section(config: &AppConfig) -> ScreenshotsSettingsWidge
     let cursor_option = Label::new(Some(&t("Include pointer when available")));
     cursor_option.set_xalign(0.0);
     let cursor_desc = Label::new(Some(&t(
-        "ApexShot includes the pointer only when the current capture flow provides cursor data.",
+        "Shotbolt includes the pointer only when the current capture flow provides cursor data.",
     )));
     cursor_desc.set_xalign(0.0);
     cursor_desc.add_css_class("settings-sub-option-hint");

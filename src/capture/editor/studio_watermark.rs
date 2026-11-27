@@ -9,7 +9,7 @@ use super::render::rounded_rect_path;
 
 /// Always the product name, never the build's display name (dev builds add a
 /// suffix there).
-pub(crate) const BRAND: &str = "ApexShot";
+pub(crate) const BRAND: &str = "Shotbolt";
 const FAMILY: &str = "DM Sans";
 
 // Proportions of the mark height `H`.

@@ -94,17 +94,17 @@ pub fn app_id() -> &'static str {
 
 pub fn app_name() -> &'static str {
     if is_dev() {
-        "ApexShot Dev"
+        "Shotbolt Dev"
     } else {
-        "ApexShot"
+        "Shotbolt"
     }
 }
 
 pub fn daemon_name() -> &'static str {
     if is_dev() {
-        "ApexShot Dev Daemon"
+        "Shotbolt Dev Daemon"
     } else {
-        "ApexShot Daemon"
+        "Shotbolt Daemon"
     }
 }
 

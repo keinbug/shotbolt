@@ -772,7 +772,7 @@ impl WaylandBackend {
                 );
                 if kde_screenshot::is_authorization_error(e) {
                     eprintln!(
-                        "[capture] KDE ScreenShot2 authorization missing; falling back to existing Wayland backends. On KDE Plasma, native capture may only be granted to the real ApexShot desktop application identity, not ad-hoc helper/test binaries."
+                        "[capture] KDE ScreenShot2 authorization missing; falling back to existing Wayland backends. On KDE Plasma, native capture may only be granted to the real Shotbolt desktop application identity, not ad-hoc helper/test binaries."
                     );
                 }
                 return None;
@@ -813,7 +813,7 @@ impl WaylandBackend {
                 );
                 if kde_screenshot::is_authorization_error(e) {
                     eprintln!(
-                        "[capture] KDE ScreenShot2 authorization missing; falling back to existing Wayland backends. On KDE Plasma, native capture may only be granted to the real ApexShot desktop application identity, not ad-hoc helper/test binaries."
+                        "[capture] KDE ScreenShot2 authorization missing; falling back to existing Wayland backends. On KDE Plasma, native capture may only be granted to the real Shotbolt desktop application identity, not ad-hoc helper/test binaries."
                     );
                 }
                 return None;
@@ -843,7 +843,7 @@ impl WaylandBackend {
                 );
                 if kde_screenshot::is_authorization_error(e) {
                     eprintln!(
-                        "[capture] KDE ScreenShot2 authorization missing; falling back to existing Wayland backends. On KDE Plasma, native capture may only be granted to the real ApexShot desktop application identity, not ad-hoc helper/test binaries."
+                        "[capture] KDE ScreenShot2 authorization missing; falling back to existing Wayland backends. On KDE Plasma, native capture may only be granted to the real Shotbolt desktop application identity, not ad-hoc helper/test binaries."
                     );
                 }
                 return None;

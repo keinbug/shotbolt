@@ -55,7 +55,7 @@ fn main() {
                     return;
                 }
                 if let Err(error) = app::settings::launch_shell(false) {
-                    eprintln!("Failed to start the ApexShot shell: {error}");
+                    eprintln!("Failed to start the Shotbolt shell: {error}");
                 }
                 if let Err(error) = app::settings::show_settings_window_for_cloud_connect() {
                     eprintln!("Failed to open settings window: {error}");
@@ -130,7 +130,7 @@ fn main() {
     // makes sure the shell that owns the tray icon and the capture hotkeys is
     // running, so the shortcuts keep working after a reboot.
     if let Err(error) = app::settings::launch_shell(false) {
-        eprintln!("Failed to start the ApexShot shell: {error}");
+        eprintln!("Failed to start the Shotbolt shell: {error}");
     }
 
     if let Err(error) = app::settings::show_settings_window() {
@@ -160,7 +160,7 @@ fn finish_onboarding() {
     // the new install lands where the shortcuts work instead of in a
     // settings window the user did not ask for.
     if let Err(error) = app::settings::launch_shell(true) {
-        eprintln!("Failed to start the ApexShot shell: {error}");
+        eprintln!("Failed to start the Shotbolt shell: {error}");
         std::process::exit(1);
     }
 }

@@ -584,7 +584,7 @@ void CaptureOverlay::drawWindowPickerMode(QPainter& p, const QRect& widgetRect)
                    QStringLiteral(
                        "No windows found on this display.\n"
                        "Press Escape to go back.\n"
-                       "On GNOME Wayland, enable the ApexShot extension for the window list."));
+                       "On GNOME Wayland, enable the Shotbolt extension for the window list."));
     } else {
         // Panel behind the list
         if (!m_windowCardRects.isEmpty()) {

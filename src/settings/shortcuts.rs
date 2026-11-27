@@ -632,9 +632,9 @@ pub fn build_shortcuts_section(config: &AppConfig) -> ShortcutSettingsWidgets {
     section.set_hexpand(true);
 
     let tip_text = if cfg!(target_os = "windows") {
-        "Use shortcuts while ApexShot is running in the background."
+        "Use shortcuts while Shotbolt is running in the background."
     } else {
-        "Shortcuts set here are the same hotkeys ApexShot uses. If one does not work, your desktop environment may already be using it. Open your system keyboard settings and disable conflicting shortcuts if you want to reuse them in ApexShot."
+        "Shortcuts set here are the same hotkeys Shotbolt uses. If one does not work, your desktop environment may already be using it. Open your system keyboard settings and disable conflicting shortcuts if you want to reuse them in Shotbolt."
     };
     let tip = Label::new(Some(&t(tip_text)));
     tip.set_wrap(true);

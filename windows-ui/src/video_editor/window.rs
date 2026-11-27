@@ -44,7 +44,7 @@ pub(super) fn build_window(app: &Application, initial: Option<&Path>) {
     let (default_width, default_height) = default_window_size(scale);
     let window = ApplicationWindow::builder()
         .application(app)
-        .title(t("ApexShot Video Editor"))
+        .title(t("Shotbolt Video Editor"))
         .icon_name(crate::app_identity::icon_name())
         .default_width(default_width)
         .default_height(default_height)

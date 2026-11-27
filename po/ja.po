@@ -44,14 +44,14 @@ msgstr "ブリード"
 msgid "Float"
 msgstr "フロート"
 
-msgid "Welcome to ApexShot"
-msgstr "ApexShot へようこそ"
+msgid "Welcome to Shotbolt"
+msgstr "Shotbolt へようこそ"
 
 msgid "Version {version}"
 msgstr "バージョン {version}"
 
-msgid "ApexShot Settings"
-msgstr "ApexShot の設定"
+msgid "Shotbolt Settings"
+msgstr "Shotbolt の設定"
 
 msgid "Close"
 msgstr "閉じる"
@@ -175,7 +175,7 @@ msgid "Include pointer when available"
 msgstr "可能な場合はポインターを含める"
 
 msgid ""
-"ApexShot includes the pointer only when the current capture flow provides cursor data."
+"Shotbolt includes the pointer only when the current capture flow provides cursor data."
 msgstr "現在のキャプチャ経路がカーソルデータを提供する場合のみポインターを含めます。"
 
 msgid "Drawing Tools"
@@ -221,9 +221,9 @@ msgid "Shortcut will be disabled"
 msgstr "ショートカットは無効になります"
 
 msgid ""
-"Shortcuts set here are the same hotkeys ApexShot uses. If one does not work, your desktop environment may already be using it. Open your system keyboard settings and disable conflicting shortcuts if you want to reuse them in ApexShot."
+"Shortcuts set here are the same hotkeys Shotbolt uses. If one does not work, your desktop environment may already be using it. Open your system keyboard settings and disable conflicting shortcuts if you want to reuse them in Shotbolt."
 msgstr ""
-"ここで設定したショートカットが ApexShot のホットキーです。動かない場合はデスクトップ環境が使っている可能性があります。システムのキーボード設定で競合を解除してください。"
+"ここで設定したショートカットが Shotbolt のホットキーです。動かない場合はデスクトップ環境が使っている可能性があります。システムのキーボード設定で競合を解除してください。"
 
 msgid "Save Location"
 msgstr "保存先"
@@ -243,8 +243,8 @@ msgstr "前回の書き出しフォルダーを覚える"
 msgid "Upload destination"
 msgstr "アップロード先"
 
-msgid "ApexShot Cloud"
-msgstr "ApexShot Cloud"
+msgid "Shotbolt Cloud"
+msgstr "Shotbolt Cloud"
 
 msgid "XBackBone (self-hosted)"
 msgstr "XBackBone（セルフホスト）"
@@ -268,24 +268,24 @@ msgid "Copied. Want a link instead?"
 msgstr "コピーしました。代わりにリンクを作成しますか？"
 
 msgid ""
-"A free ApexShot account turns every capture into a share link, with 20 links "
+"A free Shotbolt account turns every capture into a share link, with 20 links "
 "a month."
 msgstr ""
-"無料の ApexShot アカウントなら、すべてのキャプチャが共有リンクになります（月 20 "
+"無料の Shotbolt アカウントなら、すべてのキャプチャが共有リンクになります（月 20 "
 "リンクまで）。"
 
 msgid "Get link"
 msgstr "リンクを取得"
 
-msgid "Suggest ApexShot Cloud when copying"
-msgstr "コピー時に ApexShot Cloud を提案"
+msgid "Suggest Shotbolt Cloud when copying"
+msgstr "コピー時に Shotbolt Cloud を提案"
 
 msgid ""
 "Uploads each saved screenshot and copies the share link. Does nothing until you Connect."
 msgstr "保存した各ショットをアップロードし、共有リンクをコピーします。接続するまでは何もしません。"
 
-msgid "ApexShot Cloud account"
-msgstr "ApexShot Cloud アカウント"
+msgid "Shotbolt Cloud account"
+msgstr "Shotbolt Cloud アカウント"
 
 msgid "Connected"
 msgstr "接続済み"
@@ -470,11 +470,11 @@ msgstr "フィードバックを送る"
 msgid "Website"
 msgstr "ウェブサイト"
 
-msgid "Support ApexShot"
-msgstr "ApexShot を支援"
+msgid "Support Shotbolt"
+msgstr "Shotbolt を支援"
 
-msgid "ApexShot is free and open source. Donations keep development going."
-msgstr "ApexShot は無料のオープンソースです。寄付が開発を支えます。"
+msgid "Shotbolt is free and open source. Donations keep development going."
+msgstr "Shotbolt は無料のオープンソースです。寄付が開発を支えます。"
 
 msgid "Support on Ko-fi"
 msgstr "Ko-fi で支援"
@@ -482,11 +482,11 @@ msgstr "Ko-fi で支援"
 msgid "Cloud is a separate paid product"
 msgstr "クラウドは別の有料製品です"
 
-msgid "Opens ApexShot Cloud plans. This is not a donation."
-msgstr "ApexShot Cloud のプランを開きます。寄付ではありません。"
+msgid "Opens Shotbolt Cloud plans. This is not a donation."
+msgstr "Shotbolt Cloud のプランを開きます。寄付ではありません。"
 
-msgid "Copyright © 2026 ApexShot. All rights reserved."
-msgstr "Copyright © 2026 ApexShot. All rights reserved."
+msgid "Copyright © 2026 Shotbolt. All rights reserved."
+msgstr "Copyright © 2026 Shotbolt. All rights reserved."
 
 msgid "Terms of Service"
 msgstr "利用規約"
@@ -494,8 +494,8 @@ msgstr "利用規約"
 msgid "Privacy Policy"
 msgstr "プライバシーポリシー"
 
-msgid "ApexShot Setup"
-msgstr "ApexShot のセットアップ"
+msgid "Shotbolt Setup"
+msgstr "Shotbolt のセットアップ"
 
 msgid "← Back"
 msgstr "← 戻る"
@@ -503,8 +503,8 @@ msgstr "← 戻る"
 msgid "Next →"
 msgstr "次へ →"
 
-msgid "Start Using ApexShot"
-msgstr "ApexShot を使い始める"
+msgid "Start Using Shotbolt"
+msgstr "Shotbolt を使い始める"
 
 msgid "Extension Installed ✓"
 msgstr "拡張をインストール済み ✓"
@@ -513,8 +513,8 @@ msgid "GNOME Shell Extension Required"
 msgstr "GNOME Shell 拡張が必要です"
 
 msgid ""
-"ApexShot requires GNOME Shell. Please install on a GNOME desktop to continue."
-msgstr "ApexShot には GNOME Shell が必要です。GNOME デスクトップにインストールしてください。"
+"Shotbolt requires GNOME Shell. Please install on a GNOME desktop to continue."
+msgstr "Shotbolt には GNOME Shell が必要です。GNOME デスクトップにインストールしてください。"
 
 msgid "Exit"
 msgstr "終了"
@@ -523,7 +523,7 @@ msgid "Update GNOME Extension"
 msgstr "GNOME 拡張を更新"
 
 msgid ""
-"An old version of the ApexShot extension is installed. It needs to be removed before installing the new version."
+"An old version of the Shotbolt extension is installed. It needs to be removed before installing the new version."
 msgstr "古い拡張がインストールされています。新しい版の前に削除してください。"
 
 msgid "Remove Old Extension"
@@ -571,8 +571,8 @@ msgid "Browser Extension"
 msgstr "ブラウザ拡張"
 
 msgid ""
-"Optional Chrome/Chromium add-on for full-page web captures that open straight in ApexShot."
-msgstr "ページ全体をキャプチャし、ApexShot で開く任意の Chrome/Chromium 拡張です。"
+"Optional Chrome/Chromium add-on for full-page web captures that open straight in Shotbolt."
+msgstr "ページ全体をキャプチャし、Shotbolt で開く任意の Chrome/Chromium 拡張です。"
 
 msgid "Full-page scroll capture"
 msgstr "ページ全体のスクロールキャプチャ"
@@ -580,8 +580,8 @@ msgstr "ページ全体のスクロールキャプチャ"
 msgid "Stitch long pages that a normal screenshot can't fit"
 msgstr "通常のショットに収まらない長いページをつなぎます"
 
-msgid "Sends directly to ApexShot"
-msgstr "ApexShot に直接送信"
+msgid "Sends directly to Shotbolt"
+msgstr "Shotbolt に直接送信"
 
 msgid "Opens in the editor so you can annotate and share immediately"
 msgstr "エディターで開き、すぐ注釈と共有ができます"
@@ -589,8 +589,8 @@ msgstr "エディターで開き、すぐ注釈と共有ができます"
 msgid "Works with your desktop app"
 msgstr "デスクトップアプリと連携"
 
-msgid "Native messaging keeps the browser and ApexShot in sync"
-msgstr "ネイティブメッセージングでブラウザと ApexShot を同期"
+msgid "Native messaging keeps the browser and Shotbolt in sync"
+msgstr "ネイティブメッセージングでブラウザと Shotbolt を同期"
 
 msgid "Get Chrome Extension"
 msgstr "Chrome 拡張を入手"
@@ -600,10 +600,10 @@ msgid ""
 msgstr "任意です。あとから設定または Chrome ウェブストアからインストールできます。"
 
 msgid ""
-"Thanks for choosing ApexShot as your screenshot companion.\n"
+"Thanks for choosing Shotbolt as your screenshot companion.\n"
 "Let's get you set up in just a few quick steps."
 msgstr ""
-"ApexShot をお選びいただきありがとうございます。\n"
+"Shotbolt をお選びいただきありがとうございます。\n"
 "いくつかの手順でセットアップします。"
 
 msgid "Area & fullscreen capture"
@@ -655,8 +655,8 @@ msgstr "キャプチャ後にフローを離れず URL をコピー"
 msgid "Storage you control"
 msgstr "自分で管理する保存先"
 
-msgid "Hosted ApexShot Cloud or your own XBackBone instance"
-msgstr "ホスト型 ApexShot Cloud か自分の XBackBone"
+msgid "Hosted Shotbolt Cloud or your own XBackBone instance"
+msgstr "ホスト型 Shotbolt Cloud か自分の XBackBone"
 
 msgid "Choose your cloud"
 msgstr "クラウドを選ぶ"
@@ -678,10 +678,10 @@ msgid "How to capture"
 msgstr "キャプチャ方法"
 
 msgid ""
-"ApexShot runs in the background with a tray icon and hotkeys.\n"
+"Shotbolt runs in the background with a tray icon and hotkeys.\n"
 "After setup, you do not need to open Settings every time."
 msgstr ""
-"ApexShot はトレイアイコンとホットキーでバックグラウンド動作します。\n"
+"Shotbolt はトレイアイコンとホットキーでバックグラウンド動作します。\n"
 "セットアップ後は毎回設定を開く必要はありません。"
 
 msgid "Tray icon"
@@ -693,8 +693,8 @@ msgstr "右クリックで範囲・画面・ウィンドウ・録画"
 msgid "App menu"
 msgstr "アプリメニュー"
 
-msgid "Opening ApexShot shows Settings; captures stay on tray and hotkeys"
-msgstr "ApexShot を開くと設定です。キャプチャはトレイとホットキーのまま"
+msgid "Opening Shotbolt shows Settings; captures stay on tray and hotkeys"
+msgstr "Shotbolt を開くと設定です。キャプチャはトレイとホットキーのまま"
 
 msgid "Hotkeys"
 msgstr "ホットキー"
@@ -739,8 +739,8 @@ msgstr "右クリックで範囲・画面・録画"
 msgid "Capture without opening Settings every time"
 msgstr "毎回設定を開かずにキャプチャ"
 
-msgid "Open ApexShot anytime for Settings and preferences"
-msgstr "設定はいつでも ApexShot から"
+msgid "Open Shotbolt anytime for Settings and preferences"
+msgstr "設定はいつでも Shotbolt から"
 
 msgid "Pro tip"
 msgstr "ヒント"
@@ -980,41 +980,41 @@ msgstr "カーソルの動きを分析中…"
 msgid "Animation"
 msgstr "アニメーション"
 
-msgid "ApexShot Editor"
-msgstr "ApexShot エディター"
+msgid "Shotbolt Editor"
+msgstr "Shotbolt エディター"
 
-msgid "ApexShot History"
-msgstr "ApexShotの沿革"
+msgid "Shotbolt History"
+msgstr "Shotboltの沿革"
 
-msgid "ApexShot Preview"
-msgstr "ApexShot プレビュー"
+msgid "Shotbolt Preview"
+msgstr "Shotbolt プレビュー"
 
-msgid "ApexShot Recording"
-msgstr "ApexShotの録画"
+msgid "Shotbolt Recording"
+msgstr "Shotboltの録画"
 
-msgid "ApexShot Recording Countdown"
-msgstr "ApexShot 録画カウントダウン"
+msgid "Shotbolt Recording Countdown"
+msgstr "Shotbolt 録画カウントダウン"
 
-msgid "ApexShot Recording Editor"
-msgstr "ApexShot 録画エディタ"
+msgid "Shotbolt Recording Editor"
+msgstr "Shotbolt 録画エディタ"
 
-msgid "ApexShot Recording Mask"
-msgstr "ApexShot レコーディングマスク"
+msgid "Shotbolt Recording Mask"
+msgstr "Shotbolt レコーディングマスク"
 
-msgid "ApexShot could not export this recording."
-msgstr "ApexShotはこの録画をエクスポートできませんでした。"
+msgid "Shotbolt could not export this recording."
+msgstr "Shotboltはこの録画をエクスポートできませんでした。"
 
-msgid "ApexShot could not open this video file."
-msgstr "ApexShotはこの動画ファイルを開くことができませんでした。"
+msgid "Shotbolt could not open this video file."
+msgstr "Shotboltはこの動画ファイルを開くことができませんでした。"
 
-msgid "ApexShot lost contact with the export worker."
-msgstr "ApexShotは、輸出担当者と連絡が取れなくなった。"
+msgid "Shotbolt lost contact with the export worker."
+msgstr "Shotboltは、輸出担当者と連絡が取れなくなった。"
 
-msgid "ApexShot lost contact with the upload worker."
-msgstr "ApexShot がアップロードワーカーとの接続を失いました。"
+msgid "Shotbolt lost contact with the upload worker."
+msgstr "Shotbolt がアップロードワーカーとの接続を失いました。"
 
-msgid "ApexShot-YYYY-MM-DD_HH-MM-SS.png"
-msgstr "ApexShot-YYYY-MM-DD_HH-MM-SS.png"
+msgid "Shotbolt-YYYY-MM-DD_HH-MM-SS.png"
+msgstr "Shotbolt-YYYY-MM-DD_HH-MM-SS.png"
 
 msgid "Apply selection"
 msgstr "選択内容を適用する"
@@ -1134,12 +1134,12 @@ msgid "Colors"
 msgstr "色"
 
 msgid ""
-"Connect ApexShot Cloud in Settings → Cloud, or switch destination to XBackBone and configure it."
+"Connect Shotbolt Cloud in Settings → Cloud, or switch destination to XBackBone and configure it."
 msgstr "「設定」→「クラウド」でApexShot Cloudを接続するか、保存先をXBackBoneに切り替えて設定を行ってください。"
 
 msgid ""
-"Connect your ApexShot Cloud account to browse everything you have uploaded, right here in History."
-msgstr "ApexShot Cloud アカウントを連携すると、「履歴」画面でアップロードしたすべてのコンテンツを確認できます。"
+"Connect your Shotbolt Cloud account to browse everything you have uploaded, right here in History."
+msgstr "Shotbolt Cloud アカウントを連携すると、「履歴」画面でアップロードしたすべてのコンテンツを確認できます。"
 
 msgid "Content copied to clipboard"
 msgstr "コンテンツがクリップボードにコピーされました"
@@ -1226,8 +1226,8 @@ msgid ""
 "Cursor replacement is unavailable. Its inferred path can still guide Auto Zoom."
 msgstr "カーソルの置換は利用できません。ただし、その推定パスは引き続き自動ズームの目安となります。"
 
-msgid "Cursor styling requires pointer data from an ApexShot recording."
-msgstr "カーソルのスタイル設定には、ApexShotの記録データに含まれるポインタデータが必要です。"
+msgid "Cursor styling requires pointer data from an Shotbolt recording."
+msgstr "カーソルのスタイル設定には、Shotboltの記録データに含まれるポインタデータが必要です。"
 
 msgid "Cursor unavailable"
 msgstr "カーソルが使用できません"
@@ -1349,8 +1349,8 @@ msgstr "終了 {time}"
 msgid "Estimated export size"
 msgstr "輸出規模の見込み"
 
-msgid "Everything you have uploaded to ApexShot Cloud"
-msgstr "ApexShot Cloudにアップロードしたすべてのデータ"
+msgid "Everything you have uploaded to Shotbolt Cloud"
+msgstr "Shotbolt Cloudにアップロードしたすべてのデータ"
 
 msgid "Export complete"
 msgstr "エクスポートが完了しました"
@@ -1418,8 +1418,8 @@ msgid "GIF"
 msgstr "GIF"
 
 msgid ""
-"GNOME Shell extension is not installed. Please install the ApexShot GNOME extension first."
-msgstr "GNOME Shell 拡張機能がインストールされていません。まず、ApexShot GNOME 拡張機能をインストールしてください。"
+"GNOME Shell extension is not installed. Please install the Shotbolt GNOME extension first."
+msgstr "GNOME Shell 拡張機能がインストールされていません。まず、Shotbolt GNOME 拡張機能をインストールしてください。"
 
 msgid "Geometry"
 msgstr "幾何学"
@@ -1846,7 +1846,7 @@ msgid "Recording setup"
 msgstr "録音の設定"
 
 msgid ""
-"Recording will continue with the OS cursor hidden. Enable the ApexShot GNOME extension for the editor."
+"Recording will continue with the OS cursor hidden. Enable the Shotbolt GNOME extension for the editor."
 msgstr "OSのカーソルを非表示にしたまま、録画を続行します。エディタでApexShot GNOME拡張機能を有効にしてください。"
 
 msgid "Recordings"
@@ -1924,7 +1924,7 @@ msgstr "スクロール"
 msgid "Scroll Capture"
 msgstr "スクロールキャプチャ"
 
-msgid "Scroll capture requires the ApexShot"
+msgid "Scroll capture requires the Shotbolt"
 msgstr "スクロールのキャプチャにはApexShotが必要です"
 
 msgid "Search isn't available for Cloud"
@@ -1959,8 +1959,8 @@ msgid "Set a fixed focus point for this zoom"
 msgstr "このズームのフォーカスポイントを固定する"
 
 msgid ""
-"Set the instance URL and API token in Settings → Cloud, or switch to ApexShot Cloud and sign in."
-msgstr "「設定」→「Cloud」でインスタンスのURLとAPIトークンを設定するか、ApexShot Cloudに切り替えてログインしてください。"
+"Set the instance URL and API token in Settings → Cloud, or switch to Shotbolt Cloud and sign in."
+msgstr "「設定」→「Cloud」でインスタンスのURLとAPIトークンを設定するか、Shotbolt Cloudに切り替えてログインしてください。"
 
 msgid "Shadow"
 msgstr "シャドウ"
@@ -1995,8 +1995,8 @@ msgstr "プレビューおよびエクスポート時に、録画映像の上に
 msgid "Sign in"
 msgstr "ログイン"
 
-msgid "Sign in to ApexShot Cloud"
-msgstr "ApexShot Cloud にログインしてください"
+msgid "Sign in to Shotbolt Cloud"
+msgstr "Shotbolt Cloud にログインしてください"
 
 msgid "Size"
 msgstr "サイズ"
@@ -2107,8 +2107,8 @@ msgstr "厚さ"
 msgid "Thin"
 msgstr "薄い"
 
-msgid "This page covers ApexShot Cloud"
-msgstr "このページでは、ApexShot Cloudについて解説しています"
+msgid "This page covers Shotbolt Cloud"
+msgstr "このページでは、Shotbolt Cloudについて解説しています"
 
 msgid "This permanently removes the file from disk."
 msgstr "これにより、ファイルがディスクから完全に削除されます。"
@@ -2212,8 +2212,8 @@ msgstr "ヤル"
 msgid "Yesterday"
 msgstr "昨日"
 
-msgid "You have not uploaded anything to ApexShot Cloud yet."
-msgstr "ApexShot Cloudにはまだ何もアップロードされていません。"
+msgid "You have not uploaded anything to Shotbolt Cloud yet."
+msgstr "Shotbolt Cloudにはまだ何もアップロードされていません。"
 
 msgid "You're connected"
 msgstr "接続されています"
@@ -2222,7 +2222,7 @@ msgid "Your next screenshot gets a share link."
 msgstr "次のスクリーンショットには、共有用リンクが付きます。"
 
 msgid ""
-"Your uploads currently go to a self-hosted XBackBone instance. Switch your upload destination to ApexShot Cloud in Settings to browse those uploads here."
+"Your uploads currently go to a self-hosted XBackBone instance. Switch your upload destination to Shotbolt Cloud in Settings to browse those uploads here."
 msgstr ""
 "現在、アップロードされたファイルは、自社ホスト型のXBackBoneインスタンスに保存されています。「設定」でアップロード先をApexShot Cloudに変更すると、こちらでそれらのアップロードを確認できるようになります。"
 
@@ -2286,14 +2286,14 @@ msgstr "ペン"
 msgid "Choose the solid color used when Background is set to plain color"
 msgstr "「背景」が「単色」に設定されている場合に使用する単色を選択してください"
 
-msgid "ApexShot update available"
-msgstr "ApexShot のアップデートを利用できます"
+msgid "Shotbolt update available"
+msgstr "Shotbolt のアップデートを利用できます"
 
 msgid "Update available · v{version}"
 msgstr "アップデートを利用できます · v{version}"
 
-msgid "Version {version} is ready. Open the ApexShot menu to view it."
-msgstr "バージョン {version} の準備ができました。ApexShot メニューを開いて確認してください。"
+msgid "Version {version} is ready. Open the Shotbolt menu to view it."
+msgstr "バージョン {version} の準備ができました。Shotbolt メニューを開いて確認してください。"
 
 msgid "Static"
 msgstr "静止"
@@ -2809,8 +2809,8 @@ msgstr "各ズームの 0.35 秒前からカメラの動きを開始します。
 msgid "Played once, when the capture freezes. Saving or cropping stays silent."
 msgstr "キャプチャがフリーズしたときに一度だけ再生されます。保存や切り抜きは無音のままです。"
 
-msgid "Your desktop controls the capture sound on this route, so ApexShot cannot replace or disable it here and will not play an additional sound."
-msgstr "この経路ではキャプチャ音をデスクトップ側が制御するため、ApexShot がここで置き換えたり無効にしたりすることはできず、追加の音も再生されません。"
+msgid "Your desktop controls the capture sound on this route, so Shotbolt cannot replace or disable it here and will not play an additional sound."
+msgstr "この経路ではキャプチャ音をデスクトップ側が制御するため、Shotbolt がここで置き換えたり無効にしたりすることはできず、追加の音も再生されません。"
 
 msgid "Bold"
 msgstr "太字"
@@ -2947,7 +2947,7 @@ msgstr ""
 "これらの既定値を使用するには、デスクトップのGlobalShortcutsポータルの対応と許可が必要です。ショートカットが利用できない場合はトレイを使用してください。"
 
 msgid ""
-"This Flatpak cannot install extensions into your host desktop. Open the release page and download the GNOME extension archive, then install and enable it on the host in GNOME Extensions or run `gnome-extensions install --force ~/Downloads/apexshot-gnome-integration.zip` followed by `gnome-extensions enable apexshot-gnome-integration@apexshot.github.io` in a host terminal. ApexShot will detect it when the extension is enabled."
+"This Flatpak cannot install extensions into your host desktop. Open the release page and download the GNOME extension archive, then install and enable it on the host in GNOME Extensions or run `gnome-extensions install --force ~/Downloads/apexshot-gnome-integration.zip` followed by `gnome-extensions enable apexshot-gnome-integration@apexshot.github.io` in a host terminal. Shotbolt will detect it when the extension is enabled."
 msgstr ""
 "このFlatpakはホストのデスクトップに拡張機能をインストールできません。リリースページを開いてGNOME拡張機能のアーカイブをダウンロードし、ホストのGNOME拡張機能アプリでインストールして有効にするか、ホストの端末で`gnome-extensions install --force ~/Downloads/apexshot-gnome-integration.zip`を実行した後、`gnome-extensions enable apexshot-gnome-integration@apexshot.github.io`を実行してください。拡張機能が有効になるとApexShotが検出します。"
 
@@ -2961,8 +2961,8 @@ msgstr "戻る"
 msgid "Cloud sharing"
 msgstr "クラウド共有"
 
-msgid "Connect ApexShot Cloud"
-msgstr "ApexShot Cloud を接続"
+msgid "Connect Shotbolt Cloud"
+msgstr "Shotbolt Cloud を接続"
 
 msgid "Connect your account"
 msgstr "アカウントを接続"
@@ -3014,8 +3014,8 @@ msgstr "Pro にアップグレード"
 msgid "Keep working"
 msgstr "作業を続ける"
 
-msgid "Support ApexShot / Go Pro"
-msgstr "ApexShot を支援 / Pro にアップグレード"
+msgid "Support Shotbolt / Go Pro"
+msgstr "Shotbolt を支援 / Pro にアップグレード"
 
 msgid "Your capture is saved"
 msgstr "キャプチャを保存しました"
@@ -3035,8 +3035,8 @@ msgstr "キャプチャは XBackBone サーバーにアップロードされま�
 msgid "Code expires in {minutes} min"
 msgstr "コードの有効期限：あと {minutes} 分"
 
-msgid "Couldn't reach ApexShot Cloud. Check your connection and try again."
-msgstr "ApexShot Cloud に接続できませんでした。接続を確認してもう一度お試しください。"
+msgid "Couldn't reach Shotbolt Cloud. Check your connection and try again."
+msgstr "Shotbolt Cloud に接続できませんでした。接続を確認してもう一度お試しください。"
 
 msgid "Couldn't save your setup. Check that your config folder is writable, then try again."
 msgstr "セットアップを保存できませんでした。設定フォルダーに書き込めるか確認して、もう一度お試しください。"
@@ -3047,8 +3047,8 @@ msgstr "はじめる"
 msgid "Hosted by us. Connect with a one-time code from your browser."
 msgstr "当社がホスト。ブラウザに表示されるワンタイムコードで接続します。"
 
-msgid "Optional. Connect ApexShot Cloud to turn a capture into a link you can paste anywhere. ApexShot works offline without an account, so you can skip this."
-msgstr "任意です。ApexShot Cloud に接続すると、キャプチャを好きな場所に貼れるリンクにできます。ApexShot はアカウントなしでオフラインでも使えるので、この手順は省略できます。"
+msgid "Optional. Connect Shotbolt Cloud to turn a capture into a link you can paste anywhere. Shotbolt works offline without an account, so you can skip this."
+msgstr "任意です。Shotbolt Cloud に接続すると、キャプチャを好きな場所に貼れるリンクにできます。Shotbolt はアカウントなしでオフラインでも使えるので、この手順は省略できます。"
 
 msgid "Self-host for full control of storage. Set it up later in Settings → Cloud."
 msgstr "ストレージを完全に管理できるセルフホスト型。後から「設定 → クラウド」で設定できます。"
@@ -3080,8 +3080,8 @@ msgstr "ブラウザーを開けませんでした: {error}。下のリンクを
 msgid "The selected portal will embed the cursor in the video, so it cannot be edited separately."
 msgstr "選択したポータルではカーソルが動画に埋め込まれるため、個別に編集できません。"
 
-msgid "The window cursor remains editable, but Auto Zoom clicks will not be recorded without the ApexShot GNOME extension."
-msgstr "ウィンドウカーソルは編集できますが、ApexShot GNOME 拡張機能がないと自動ズームのクリックは記録されません。"
+msgid "The window cursor remains editable, but Auto Zoom clicks will not be recorded without the Shotbolt GNOME extension."
+msgstr "ウィンドウカーソルは編集できますが、Shotbolt GNOME 拡張機能がないと自動ズームのクリックは記録されません。"
 
 msgid "Export Motion video"
 msgstr "Motion 動画をエクスポートする"
@@ -3227,8 +3227,8 @@ msgstr "このバージョンはライセンスより新しいものです"
 msgid "Tilt, rotate and position a still inside its background."
 msgstr "静止画を背景の中で傾け、回転し、配置できます。"
 
-msgid "Unlock ApexShot Studio"
-msgstr "ApexShot Studioをアンロック"
+msgid "Unlock Shotbolt Studio"
+msgstr "Shotbolt Studioをアンロック"
 
 msgid "Upgrade to Studio — $39 once"
 msgstr "Studio にアップグレード — 39ドル（買い切り）"
@@ -3251,8 +3251,8 @@ msgstr "ライセンスをコピー"
 msgid "100% displays export pixels at native screen scale"
 msgstr "100% は書き出しピクセルを画面のネイティブ倍率で表示します。"
 
-msgid "ApexShot lost contact with the copy worker."
-msgstr "ApexShot はコピーワーカーとの接続を失いました。"
+msgid "Shotbolt lost contact with the copy worker."
+msgstr "Shotbolt はコピーワーカーとの接続を失いました。"
 
 msgid "Before / after divider"
 msgstr "ビフォー／アフターの分割線"
@@ -3489,8 +3489,8 @@ msgstr "9:16"
 msgid "Add gradient stop"
 msgstr "グラデーションの停止位置を追加"
 
-msgid "ApexShot Video Editor"
-msgstr "ApexShot 動画エディタ"
+msgid "Shotbolt Video Editor"
+msgstr "Shotbolt 動画エディタ"
 
 msgid "Background image"
 msgstr "背景画像"
@@ -3725,17 +3725,17 @@ msgstr "動画編集は Windows 版ではまだ利用できません。"
 msgid "Your screenshot companion for Windows. Set it up in a few quick steps."
 msgstr "Windows のためのスクリーンショットの相棒。数ステップですぐに設定できます。"
 
-msgid "ApexShot runs in the background with a tray icon.\nAfter setup, you do not need to open Settings every time."
-msgstr "ApexShot はトレイアイコンでバックグラウンド動作します。\nセットアップ後は毎回設定を開く必要はありません。"
+msgid "Shotbolt runs in the background with a tray icon.\nAfter setup, you do not need to open Settings every time."
+msgstr "Shotbolt はトレイアイコンでバックグラウンド動作します。\nセットアップ後は毎回設定を開く必要はありません。"
 
-msgid "ApexShot stays in the tray; right-click it for the capture menu."
-msgstr "ApexShot はトレイに常駐します。右クリックでキャプチャメニューが開きます。"
+msgid "Shotbolt stays in the tray; right-click it for the capture menu."
+msgstr "Shotbolt はトレイに常駐します。右クリックでキャプチャメニューが開きます。"
 
 msgid "Bindings are saved; global hotkeys arrive in a later build."
 msgstr "キー割り当ては保存されます。グローバルホットキーは今後のビルドで対応します。"
 
-msgid "ApexShot is ready. It runs from the tray from now on."
-msgstr "ApexShot の準備ができました。以降はトレイから動作します。"
+msgid "Shotbolt is ready. It runs from the tray from now on."
+msgstr "Shotbolt の準備ができました。以降はトレイから動作します。"
 
 msgid "Signed in, but this device could not save the account."
 msgstr "サインインしましたが、このデバイスはアカウントを保存できませんでした。"
@@ -3842,8 +3842,8 @@ msgstr "カメラをオンにする"
 msgid "Add change at playhead"
 msgstr "再生位置に変更を追加"
 
-msgid "ApexShot"
-msgstr "ApexShot"
+msgid "Shotbolt"
+msgstr "Shotbolt"
 
 msgid "No settings found"
 msgstr "設定が見つかりません"
@@ -3967,8 +3967,8 @@ msgstr ""
 msgid "Requires the corresponding Windows OCR language pack."
 msgstr "対応する Windows OCR 言語パックが必要です。"
 
-msgid "Shortcuts work while the ApexShot background shell is running."
-msgstr "ApexShot のバックグラウンドシェルが動作している間、ショートカットが使えます。"
+msgid "Shortcuts work while the Shotbolt background shell is running."
+msgstr "Shotbolt のバックグラウンドシェルが動作している間、ショートカットが使えます。"
 
 msgid ""
 "The Windows shell uses its tray icon to open capture, Settings, and Quit."
@@ -3983,8 +3983,8 @@ msgstr "キャプチャツールバーでは、個々のスクリーンショッ
 msgid "This action requires the Windows image editor or overlay backend."
 msgstr "この操作には Windows の画像エディタまたはオーバーレイバックエンドが必要です。"
 
-msgid "Use your configured shortcuts while ApexShot runs in the background."
-msgstr "ApexShot がバックグラウンドで動作している間、設定したショートカットを使えます。"
+msgid "Use your configured shortcuts while Shotbolt runs in the background."
+msgstr "Shotbolt がバックグラウンドで動作している間、設定したショートカットを使えます。"
 
 msgid "When hidden, stop the recording from the tray or with its shortcut."
 msgstr "非表示のときは、トレイまたはショートカットから録画を停止します。"
@@ -4150,8 +4150,8 @@ msgstr "難読化の強さ"
 msgid "One shortcut away."
 msgstr "ショートカット 1 つで始められます。"
 
-msgid "Open ApexShot"
-msgstr "ApexShot を開く"
+msgid "Open Shotbolt"
+msgstr "Shotbolt を開く"
 
 msgid "Open Image"
 msgstr "画像を開く"
@@ -4196,8 +4196,8 @@ msgstr "注釈付き画像を保存"
 msgid "Select image"
 msgstr "画像を選択"
 
-msgid "Shortcuts work while ApexShot runs in the background."
-msgstr "ApexShot がバックグラウンドで動作している間もショートカットを使えます。"
+msgid "Shortcuts work while Shotbolt runs in the background."
+msgstr "Shotbolt がバックグラウンドで動作している間もショートカットを使えます。"
 
 msgid "Start a capture from your keyboard or the tray menu."
 msgstr "キーボードまたはトレイメニューからキャプチャを開始できます。"
@@ -4253,8 +4253,8 @@ msgstr "書き出しましたが、音声を追加できませんでした:"
 msgid "Wait for the background image to finish loading."
 msgstr "背景画像の読み込みが完了するまでお待ちください。"
 
-msgid "Your shortcuts work while ApexShot runs."
-msgstr "ApexShot の動作中はショートカットを使えます。"
+msgid "Your shortcuts work while Shotbolt runs."
+msgstr "Shotbolt の動作中はショートカットを使えます。"
 
 msgid "You’re all set."
 msgstr "準備完了です。"
@@ -4280,20 +4280,20 @@ msgstr "利用上限まで残り {remaining} です。"
 msgid "{remaining} remains of your {limit} allowance."
 msgstr "{remaining} が残っています（利用上限 {limit} のうち）。"
 
-msgid "ApexShot Update"
-msgstr "ApexShot のアップデート"
+msgid "Shotbolt Update"
+msgstr "Shotbolt のアップデート"
 
-msgid "ApexShot v{version} is ready to install."
-msgstr "ApexShot v{version} をインストールできます。"
+msgid "Shotbolt v{version} is ready to install."
+msgstr "Shotbolt v{version} をインストールできます。"
 
-msgid "ApexShot v{version} is on its way. Keep this window open."
-msgstr "ApexShot v{version} をダウンロードしています。このウィンドウを開いたままにしてください。"
+msgid "Shotbolt v{version} is on its way. Keep this window open."
+msgstr "Shotbolt v{version} をダウンロードしています。このウィンドウを開いたままにしてください。"
 
-msgid "ApexShot v{version} has finished downloading."
-msgstr "ApexShot v{version} のダウンロードが完了しました。"
+msgid "Shotbolt v{version} has finished downloading."
+msgstr "Shotbolt v{version} のダウンロードが完了しました。"
 
-msgid "ApexShot v{version} could not be updated."
-msgstr "ApexShot v{version} をアップデートできませんでした。"
+msgid "Shotbolt v{version} could not be updated."
+msgstr "Shotbolt v{version} をアップデートできませんでした。"
 
 msgid "Update available"
 msgstr "アップデートがあります"
@@ -4379,8 +4379,8 @@ msgstr "Motion に書き出す静止画がありません。"
 msgid "Opened {name} in the image editor"
 msgstr "{name} を画像エディターで開きました"
 
-msgid "Optional. Link your account to upload screenshots and recordings to ApexShot Cloud."
-msgstr "任意。アカウントをリンクすると、スクリーンショットと録画を ApexShot Cloud にアップロードできます。"
+msgid "Optional. Link your account to upload screenshots and recordings to Shotbolt Cloud."
+msgstr "任意。アカウントをリンクすると、スクリーンショットと録画を Shotbolt Cloud にアップロードできます。"
 
 msgid "Share link copied to clipboard: {url}"
 msgstr "共有リンクをクリップボードにコピーしました: {url}"
@@ -4875,8 +4875,8 @@ msgstr "{seconds} 秒"
 msgid "A link to the exported file was copied"
 msgstr "エクスポートしたファイルへのリンクをコピーしました"
 
-msgid "ApexShot could not reserve a file for the export."
-msgstr "ApexShot はエクスポート用のファイルを確保できませんでした。"
+msgid "Shotbolt could not reserve a file for the export."
+msgstr "Shotbolt はエクスポート用のファイルを確保できませんでした。"
 
 msgid "Checking encoder support…"
 msgstr "エンコーダーの対応状況を確認しています…"
@@ -4966,8 +4966,8 @@ msgstr "{used}（上限 {limit}）"
 msgid "Activate a license"
 msgstr "ライセンスを有効化"
 
-msgid "ApexShot Studio"
-msgstr "ApexShot Studio"
+msgid "Shotbolt Studio"
+msgstr "Shotbolt Studio"
 
 msgid "Included updates ended {date}."
 msgstr "付属のアップデートは {date} に終了しました。"
@@ -4984,8 +4984,8 @@ msgstr "要確認"
 msgid "Not activated on this device."
 msgstr "このデバイスでは有効化されていません。"
 
-msgid "Open ApexShot anytime for Settings, shortcuts, and preferences"
-msgstr "設定、ショートカット、環境設定はいつでも ApexShot を開いて変更できます"
+msgid "Open Shotbolt anytime for Settings, shortcuts, and preferences"
+msgstr "設定、ショートカット、環境設定はいつでも Shotbolt を開いて変更できます"
 
 msgid "Other device"
 msgstr "別のデバイス"
@@ -5020,23 +5020,23 @@ msgstr "0 B/s"
 msgid "An export is still running. Let it finish, then try again."
 msgstr "書き出しがまだ実行中です。完了してからもう一度お試しください。"
 
-msgid "ApexShot could not close every window. Close them, then try again."
-msgstr "ApexShot がすべてのウィンドウを閉じられませんでした。ウィンドウを閉じてから、もう一度お試しください。"
+msgid "Shotbolt could not close every window. Close them, then try again."
+msgstr "Shotbolt がすべてのウィンドウを閉じられませんでした。ウィンドウを閉じてから、もう一度お試しください。"
 
-msgid "ApexShot is up to date"
-msgstr "ApexShot は最新です"
+msgid "Shotbolt is up to date"
+msgstr "Shotbolt は最新です"
 
-msgid "ApexShot v{version} is being installed. Keep this window open."
-msgstr "ApexShot v{version} をインストールしています。このウィンドウは開いたままにしてください。"
+msgid "Shotbolt v{version} is being installed. Keep this window open."
+msgstr "Shotbolt v{version} をインストールしています。このウィンドウは開いたままにしてください。"
 
-msgid "ApexShot v{version} is installed."
-msgstr "ApexShot v{version} をインストールしました。"
+msgid "Shotbolt v{version} is installed."
+msgstr "Shotbolt v{version} をインストールしました。"
 
-msgid "ApexShot v{version} is ready. Your current work will not be interrupted."
-msgstr "ApexShot v{version} の準備ができました。現在の作業は中断されません。"
+msgid "Shotbolt v{version} is ready. Your current work will not be interrupted."
+msgstr "Shotbolt v{version} の準備ができました。現在の作業は中断されません。"
 
-msgid "ApexShot window"
-msgstr "ApexShot ウィンドウ"
+msgid "Shotbolt window"
+msgstr "Shotbolt ウィンドウ"
 
 msgid "Could not check the release: {error}"
 msgstr "リリースを確認できませんでした: {error}"
@@ -5080,8 +5080,8 @@ msgstr "画像エディター"
 msgid "Installation was cancelled."
 msgstr "インストールはキャンセルされました。"
 
-msgid "Installing restarts ApexShot, which would stop the recording in progress."
-msgstr "インストールすると ApexShot が再起動し、進行中の録画が停止します。"
+msgid "Installing restarts Shotbolt, which would stop the recording in progress."
+msgstr "インストールすると Shotbolt が再起動し、進行中の録画が停止します。"
 
 msgid "Installing update"
 msgstr "アップデートをインストール中"
@@ -5095,11 +5095,11 @@ msgstr "インストールの準備中"
 msgid "Refreshing the GNOME extension..."
 msgstr "GNOME 拡張機能を更新中..."
 
-msgid "Restart ApexShot"
-msgstr "ApexShot を再起動"
+msgid "Restart Shotbolt"
+msgstr "Shotbolt を再起動"
 
-msgid "Restart ApexShot to use the new version."
-msgstr "新しいバージョンを使うには ApexShot を再起動してください。"
+msgid "Restart Shotbolt to use the new version."
+msgstr "新しいバージョンを使うには Shotbolt を再起動してください。"
 
 msgid "Saving your work…"
 msgstr "作業内容を保存しています…"
@@ -5149,11 +5149,11 @@ msgstr "サーバーから空のファイルが送られてきました。"
 msgid "The update package is missing."
 msgstr "アップデートパッケージが見つかりません。"
 
-msgid "These windows close while ApexShot updates and reopen with your edits afterwards:"
-msgstr "以下のウィンドウは ApexShot の更新中に閉じ、更新後に編集内容を保ったまま再び開きます:"
+msgid "These windows close while Shotbolt updates and reopen with your edits afterwards:"
+msgstr "以下のウィンドウは Shotbolt の更新中に閉じ、更新後に編集内容を保ったまま再び開きます:"
 
-msgid "This installation is managed by Nix. Update the ApexShot flake input and rebuild your configuration, or upgrade its Nix profile entry."
-msgstr "このインストールは Nix で管理されています。ApexShot の flake 入力を更新して構成を再ビルドするか、Nix プロファイルのエントリをアップグレードしてください。"
+msgid "This installation is managed by Nix. Update the Shotbolt flake input and rebuild your configuration, or upgrade its Nix profile entry."
+msgstr "このインストールは Nix で管理されています。Shotbolt の flake 入力を更新して構成を再ビルドするか、Nix プロファイルのエントリをアップグレードしてください。"
 
 msgid "This release does not include a package for this system."
 msgstr "このリリースにはこのシステム用のパッケージが含まれていません。"
@@ -5167,8 +5167,8 @@ msgstr "このバージョンはまだ Flatpak リポジトリにありません
 msgid "Tidying the startup entries..."
 msgstr "スタートアップ項目を整理中..."
 
-msgid "Update ApexShot"
-msgstr "ApexShot をアップデート"
+msgid "Update Shotbolt"
+msgstr "Shotbolt をアップデート"
 
 msgid "Updating..."
 msgstr "アップデート中..."
@@ -5284,8 +5284,8 @@ msgstr "Studio を確認"
 msgid "What's new"
 msgstr "新機能"
 
-msgid "What's new in ApexShot {version}"
-msgstr "ApexShot {version} の新機能"
+msgid "What's new in Shotbolt {version}"
+msgstr "Shotbolt {version} の新機能"
 
 msgid "Explore Studio"
 msgstr "Studio を見る"
@@ -5395,11 +5395,11 @@ msgstr "これらのスタイルを続けるには Studio を入手してくだ�
 msgid "Get Studio"
 msgstr "Studio を入手"
 
-msgid "Your next 3 Studio exports are on us. After each one, ApexShot shows how many are left."
-msgstr "次の 3 回の Studio 書き出しは無料です。書き出すたびに ApexShot が残り回数を表示します。"
+msgid "Your next 3 Studio exports are on us. After each one, Shotbolt shows how many are left."
+msgstr "次の 3 回の Studio 書き出しは無料です。書き出すたびに Shotbolt が残り回数を表示します。"
 
-msgid "Choose Studio in ApexShot, sign in, and pay. ApexShot turns Studio on for you, with no licence file to copy or import."
-msgstr "ApexShot で Studio を選び、サインインして支払うだけ。ApexShot が Studio を有効にするので、ライセンスファイルのコピーやインポートは不要です。"
+msgid "Choose Studio in Shotbolt, sign in, and pay. Shotbolt turns Studio on for you, with no licence file to copy or import."
+msgstr "Shotbolt で Studio を選び、サインインして支払うだけ。Shotbolt が Studio を有効にするので、ライセンスファイルのコピーやインポートは不要です。"
 
 msgid "Name"
 msgstr "名前"
@@ -5419,8 +5419,8 @@ msgstr "このプロジェクトの背景・カーソル・クリック音を保
 msgid "Save this project's background, cursor, camera and captions, then put them on any recording."
 msgstr "このプロジェクトの背景・カーソル・カメラ・キャプションを保存して、どの録画にも適用できます。"
 
-msgid "ApexShot on X11 desktops"
-msgstr "X11 デスクトップで ApexShot"
+msgid "Shotbolt on X11 desktops"
+msgstr "X11 デスクトップで Shotbolt"
 
 msgid "Cinnamon, Xfce, MATE, and other X11 desktops now get shortcuts, window recordings, scrolling capture, and Auto Zoom."
 msgstr "Cinnamon、Xfce、MATE などの X11 デスクトップで、ショートカット、ウィンドウ録画、スクロールキャプチャ、自動ズームが使えるようになりました。"
@@ -5464,8 +5464,8 @@ msgstr "「Speaker」メニューで、すべてのアプリ、1 つのアプリ
 msgid "Faster downloads and updates"
 msgstr "より速いダウンロードと更新"
 
-msgid "ApexShot now downloads from its own download servers, so installs and updates finish sooner."
-msgstr "ApexShot は専用のダウンロードサーバーから取得するようになり、インストールと更新がより早く終わります。"
+msgid "Shotbolt now downloads from its own download servers, so installs and updates finish sooner."
+msgstr "Shotbolt は専用のダウンロードサーバーから取得するようになり、インストールと更新がより早く終わります。"
 
 msgid "Updates skip the setup wizard"
 msgstr "更新でセットアップウィザードを省略"
@@ -5488,8 +5488,8 @@ msgstr "コントロールバーなしで開始した録画も、トレイ、ape
 msgid "Not now"
 msgstr "今はしない"
 
-msgid "Your capture is saved. Connect a free ApexShot account and every upload becomes a link in your clipboard."
-msgstr "キャプチャは保存されています。無料の ApexShot アカウントを接続すると、アップロードがクリップボードのリンクになります。"
+msgid "Your capture is saved. Connect a free Shotbolt account and every upload becomes a link in your clipboard."
+msgstr "キャプチャは保存されています。無料の Shotbolt アカウントを接続すると、アップロードがクリップボードのリンクになります。"
 
 msgid "Connected as {email}"
 msgstr "{email} として接続しました"
@@ -5503,8 +5503,8 @@ msgstr "次回のキャプチャに共有リンクが付きます。"
 msgid "Sign in to get a share link"
 msgstr "ログインして共有リンクを取得しましょう。"
 
-msgid "Connect your ApexShot account in Settings → Cloud to get share links."
-msgstr "設定 → クラウドで ApexShot アカウントを接続すると、共有リンクを取得できます。"
+msgid "Connect your Shotbolt account in Settings → Cloud to get share links."
+msgstr "設定 → クラウドで Shotbolt アカウントを接続すると、共有リンクを取得できます。"
 
 msgid ""
 "Every capture becomes a link in your clipboard. Free: 20 uploads a month."

@@ -482,7 +482,7 @@ fn device_name() -> String {
             };
             format!("{host}{suffix}")
         }
-        None => format!("ApexShot{suffix}"),
+        None => format!("Shotbolt{suffix}"),
     }
 }
 

@@ -52,7 +52,7 @@ pub fn build(body: &GtkBox, actions: &GtkBox, nav: &Nav) {
     let tray_title = t("Tray icon");
     let tray_body = t("Right-click for Area, Screen, Window, and Record");
     let menu_title = t("App menu");
-    let menu_body = t("Opening ApexShot shows Settings; captures stay on tray and hotkeys");
+    let menu_body = t("Opening Shotbolt shows Settings; captures stay on tray and hotkeys");
     let tips = feature_card_list(&[
         (
             custom::OVERLAPPING_WINDOWS_SYMBOLIC,

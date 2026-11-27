@@ -8,7 +8,7 @@ pub fn set_daemon_hotkey_suppressed(suppressed: bool) -> anyhow::Result<()> {
         FindWindowW, SendMessageTimeoutW, SMTO_ABORTIFHUNG, WM_APP,
     };
 
-    let class: Vec<u16> = "ApexShotGlobalHotkeys"
+    let class: Vec<u16> = "ShotboltGlobalHotkeys"
         .encode_utf16()
         .chain(Some(0))
         .collect();

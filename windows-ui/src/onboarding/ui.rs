@@ -167,7 +167,7 @@ pub fn login_error_message(error: &crate::cloud::auth::LoginError) -> String {
         LoginError::Expired => t("This code expired. Try again to get a new one."),
         LoginError::Denied => t("Authorization was denied in the browser."),
         LoginError::NotConfigured | LoginError::HttpRequest(_) | LoginError::Server(_) => {
-            t("Couldn't reach ApexShot Cloud. Check your connection and try again.")
+            t("Couldn't reach Shotbolt Cloud. Check your connection and try again.")
         }
         LoginError::Local(_) => t("Signed in, but this device could not save the account."),
     }

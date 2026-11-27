@@ -438,7 +438,7 @@ impl PointerTrackSession {
                     );
                     crate::utils::notify::desktop_notification(
                         &crate::i18n::t("Pointer track unavailable"),
-                        &crate::i18n::t("Recording will continue with the OS cursor hidden. Enable the ApexShot GNOME extension for the editor."),
+                        &crate::i18n::t("Recording will continue with the OS cursor hidden. Enable the Shotbolt GNOME extension for the editor."),
                     );
                 }
                 Self {
@@ -625,8 +625,8 @@ fn maybe_prompt_gnome_extension() {
         && !crate::gnome_shell::is_shell_overlay_service_available()
     {
         crate::utils::notify::desktop_notification(
-            "Enable the ApexShot GNOME extension",
-            "Pointer tracking and area dim need the ApexShot GNOME extension.",
+            "Enable the Shotbolt GNOME extension",
+            "Pointer tracking and area dim need the Shotbolt GNOME extension.",
         );
     }
 }
@@ -2265,7 +2265,7 @@ mod tests {
 
         assert_eq!(
             prepared.output_path,
-            PathBuf::from("/tmp/apexshot-recordings/ApexShot Recording 2026-03-25 at 12-00-00.mp4")
+            PathBuf::from("/tmp/apexshot-recordings/Shotbolt Recording 2026-03-25 at 12-00-00.mp4")
         );
         assert_eq!(prepared.updated_app_config.rec_controls, true);
         assert_eq!(prepared.updated_app_config.rec_hidpi, true);

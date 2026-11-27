@@ -59,8 +59,8 @@ pub(super) fn header(width: u32, height: u32, fps: u32, pix_fmt: &str) -> io::Re
     .concat();
     let info = [
         uint(0x2ad7b1, 1_000),
-        element(0x4d80, b"ApexShot"),
-        element(0x5741, b"ApexShot"),
+        element(0x4d80, b"Shotbolt"),
+        element(0x5741, b"Shotbolt"),
     ]
     .concat();
     let mut bitmap = Vec::with_capacity(40);

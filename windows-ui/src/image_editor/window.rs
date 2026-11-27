@@ -39,7 +39,7 @@ pub(super) fn build_window(app: &Application, initial: Option<&Path>) {
     let (default_width, default_height) = ui_support::default_window_size(scale);
     let window = ApplicationWindow::builder()
         .application(app)
-        .title(t("ApexShot Editor"))
+        .title(t("Shotbolt Editor"))
         .icon_name(crate::app_identity::icon_name())
         .default_width(default_width)
         .default_height(default_height)
@@ -98,7 +98,9 @@ pub(super) fn build_window(app: &Application, initial: Option<&Path>) {
     let editor_open_count = initial
         .filter(|path| path.is_file())
         .map(|_| super::look_chip::bump_editor_open());
-    let look_chip = super::look_chip::build(scale, &canvas.host, editor_open_count);
+    // Shotbolt: the chip only advertises Studio looks, so it never shows.
+    let _ = editor_open_count;
+    let look_chip = super::look_chip::build(scale, &canvas.host, None);
 
     // Upload keeps its own busy state so a document change mid-request cannot
     // re-enable the button.
@@ -114,7 +116,7 @@ pub(super) fn build_window(app: &Application, initial: Option<&Path>) {
         .and_then(|stem| stem.to_str())
         .filter(|stem| !stem.is_empty())
         .map(|stem| format!("{stem} Motion.mp4"))
-        .unwrap_or_else(|| "ApexShot Motion.mp4".to_string());
+        .unwrap_or_else(|| "Shotbolt Motion.mp4".to_string());
 
     // The workspace holds the two mode pages: the annotate canvas and the
     // Motion page with its preview and timeline dock.
@@ -824,7 +826,7 @@ fn is_temporary_capture(path: &Path) -> bool {
     let Some(parent) = path.parent() else {
         return false;
     };
-    let temporary = std::env::temp_dir().join("ApexShot");
+    let temporary = std::env::temp_dir().join("Shotbolt");
     match (
         std::fs::canonicalize(parent),
         std::fs::canonicalize(temporary),
@@ -2043,7 +2045,7 @@ mod tests {
 
     #[test]
     fn temporary_capture_matches_the_shells_path_form() {
-        let folder = std::env::temp_dir().join("ApexShot");
+        let folder = std::env::temp_dir().join("Shotbolt");
         std::fs::create_dir_all(&folder).unwrap();
         let file = folder.join(format!(
             "apexshot-temporary-capture-test-{}.png",

@@ -135,7 +135,7 @@ impl View {
             Status::Offline => {
                 self.title.set_text("Shortcuts are offline");
                 self.detail
-                    .set_text("Start the ApexShot capture app to enable them.");
+                    .set_text("Start the Shotbolt capture app to enable them.");
                 self.defaults.set_visible(false);
                 root.set_visible(true);
             }

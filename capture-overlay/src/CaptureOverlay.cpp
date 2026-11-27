@@ -485,7 +485,7 @@ CaptureOverlay::CaptureOverlay(const QPixmap& background, QWidget* parent,
     setGeometry(desktop);
 
     setWindowFlags(captureOverlayWindowFlags());
-    setWindowTitle(QStringLiteral("ApexShot Capture Overlay"));
+    setWindowTitle(QStringLiteral("Shotbolt Capture Overlay"));
     setFocusPolicy(Qt::StrongFocus);
 
     if (m_background.isNull())

@@ -144,7 +144,7 @@ fn present_card(overlay: &Overlay, release: Release) {
     heading.append(&close);
 
     let copy = Label::new(Some(&tfmt(
-        "ApexShot v{version} is ready. Your current work will not be interrupted.",
+        "Shotbolt v{version} is ready. Your current work will not be interrupted.",
         &[("version", &release.version)],
     )));
     copy.add_css_class("apexshot-update-copy");
@@ -181,7 +181,7 @@ fn present_card(overlay: &Overlay, release: Release) {
     let actions = GtkBox::new(Orientation::Horizontal, 8);
     actions.set_halign(Align::Fill);
     actions.set_hexpand(true);
-    let update_btn = Button::with_label(&t("Update ApexShot"));
+    let update_btn = Button::with_label(&t("Update Shotbolt"));
     update_btn.add_css_class("apexshot-update-primary");
     let action_spacer = GtkBox::new(Orientation::Horizontal, 0);
     action_spacer.set_hexpand(true);

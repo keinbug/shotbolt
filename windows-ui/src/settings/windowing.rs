@@ -9,7 +9,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
-const RUN_VALUE: &str = "ApexShot";
+const RUN_VALUE: &str = "Shotbolt";
 static LAUNCHER_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn parse_env_bool(name: &str) -> Option<bool> {
@@ -224,7 +224,7 @@ pub fn install_autostart_entry_smart() -> anyhow::Result<PathBuf> {
         if script.exists() {
             let previous = std::fs::read(&script)?;
             anyhow::ensure!(
-                previous.starts_with(&encode_startup_script("' ApexShot login launcher\n")),
+                previous.starts_with(&encode_startup_script("' Shotbolt login launcher\n")),
                 "refusing to replace an unrecognized login launcher at {}",
                 script.display()
             );
@@ -471,7 +471,7 @@ mod tests {
     #[test]
     fn login_start_quotes_the_shell_and_keeps_it_in_the_background() {
         assert_eq!(
-            autostart_command(Path::new(r"C:\Program Files\ApexShot\apexshot-capture.exe")),
+            autostart_command(Path::new(r"C:\Program Files\Shotbolt\apexshot-capture.exe")),
             r#""C:\Program Files\ApexShot\apexshot-capture.exe" --background"#
         );
     }

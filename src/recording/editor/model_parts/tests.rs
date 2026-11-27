@@ -82,10 +82,10 @@ fn default_session_is_not_dirty_and_trim_is() {
 
 #[test]
 fn output_path_adds_edited_suffix() {
-    let path = PathBuf::from("/tmp/ApexShot Recording.mp4");
+    let path = PathBuf::from("/tmp/Shotbolt Recording.mp4");
     assert_eq!(
         edited_output_path(&path),
-        PathBuf::from("/tmp/ApexShot Recording-edited.mp4")
+        PathBuf::from("/tmp/Shotbolt Recording-edited.mp4")
     );
 }
 
@@ -94,8 +94,8 @@ fn sanitize_title_strips_illegal_chars_and_empty_becomes_untitled() {
     assert_eq!(sanitize_title("  My / Clip?  "), "My Clip");
     assert_eq!(sanitize_title(":::"), "Untitled");
     assert_eq!(
-        title_from_path(Path::new("/tmp/ApexShot Recording.mp4")),
-        "ApexShot Recording"
+        title_from_path(Path::new("/tmp/Shotbolt Recording.mp4")),
+        "Shotbolt Recording"
     );
 }
 

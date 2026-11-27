@@ -367,7 +367,7 @@ pub(crate) fn generate_filename(config: &SaveConfig) -> String {
         chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string()
     };
 
-    let prefix = config.filename_prefix.as_deref().unwrap_or("ApexShot");
+    let prefix = config.filename_prefix.as_deref().unwrap_or("Shotbolt");
     format!("{}-{}.{}", prefix, timestamp, config.format.extension())
 }
 

@@ -36,7 +36,7 @@ const SYNC_TOLERANCE_SECONDS: f64 = 0.3;
 /// The stream name the editor's sound runs under. It has to differ from the
 /// video's: the audio server remembers a mute per application name, and the
 /// editor's video stream is muted on purpose.
-const STREAM_NAME: &str = "ApexShot editor sound";
+const STREAM_NAME: &str = "Shotbolt editor sound";
 
 /// One run of the composition's sound from a composition time.
 pub(super) struct SoundPlayer {

@@ -109,7 +109,7 @@ bool runProbe(const QStringList& arguments, QString* out, QString* error)
     if (program.isEmpty()) {
         if (error)
             *error = QStringLiteral("ffmpeg was not found. Place ffmpeg.exe next to "
-                                    "ApexShot, in its bin folder, or on PATH.");
+                                    "Shotbolt, in its bin folder, or on PATH.");
         return false;
     }
 
@@ -673,7 +673,7 @@ void bindToRecorderLifetime(QProcess* process)
 
 QString lowDiskMessage(qint64 freeBytes)
 {
-    return QStringLiteral("Recording stopped because the disk is almost full. ApexShot keeps "
+    return QStringLiteral("Recording stopped because the disk is almost full. Shotbolt keeps "
                           "at least %1 MB free; %2 MB was left. The recording so far was saved.")
         .arg(Platform::kRecordingDiskReserveBytes / (1024 * 1024))
         .arg(freeBytes / (1024 * 1024));
@@ -2576,7 +2576,7 @@ bool RecordingSession::start(const RecordingRequest& request, QString& error)
         if (freeBytes >= 0 && freeBytes < kRecordingDiskReserveBytes) {
             QDir(d->workDir).removeRecursively();
             d->workDir.clear();
-            error = QStringLiteral("Not enough free disk space to record. ApexShot needs at "
+            error = QStringLiteral("Not enough free disk space to record. Shotbolt needs at "
                                    "least %1 MB free; %2 MB is free.")
                         .arg(kRecordingDiskReserveBytes / (1024 * 1024))
                         .arg(freeBytes / (1024 * 1024));

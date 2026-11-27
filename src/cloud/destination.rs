@@ -3,19 +3,21 @@ use std::path::Path;
 use crate::config::AppConfig;
 
 use super::upload::{UploadError, UploadProgress, UploadResult};
-use super::{apexshot, xbackbone};
+use super::{apexshot, custom, xbackbone};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Destination {
     ApexShot,
     XBackbone,
+    Custom,
 }
 
 impl Destination {
     pub fn from_config(config: &AppConfig) -> Self {
         match config.cloud_destination.as_str() {
             "xbackbone" => Destination::XBackbone,
-            _ => Destination::ApexShot,
+            "apexshot" => Destination::ApexShot,
+            _ => Destination::Custom,
         }
     }
 
@@ -23,6 +25,7 @@ impl Destination {
         match self {
             Destination::ApexShot => apexshot::is_configured(config),
             Destination::XBackbone => xbackbone::is_configured(config),
+            Destination::Custom => custom::is_configured(config),
         }
     }
 
@@ -35,6 +38,7 @@ impl Destination {
         match self {
             Destination::ApexShot => apexshot::upload(config, path, progress),
             Destination::XBackbone => xbackbone::upload(config, path, progress),
+            Destination::Custom => custom::upload(config, path, progress),
         }
     }
 
@@ -42,6 +46,7 @@ impl Destination {
         match self {
             Destination::ApexShot => apexshot::not_configured_notification(config),
             Destination::XBackbone => xbackbone::not_configured_notification(config),
+            Destination::Custom => custom::not_configured_notification(config),
         }
     }
 }
@@ -51,12 +56,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn from_config_defaults_to_apexshot_for_unknown_values() {
+    fn from_config_defaults_to_custom_for_unknown_values() {
         let cfg = AppConfig {
             cloud_destination: "something-else".to_string(),
             ..AppConfig::default()
         };
-        assert_eq!(Destination::from_config(&cfg), Destination::ApexShot);
+        assert_eq!(Destination::from_config(&cfg), Destination::Custom);
     }
 
     #[test]
@@ -66,6 +71,25 @@ mod tests {
             ..AppConfig::default()
         };
         assert_eq!(Destination::from_config(&cfg), Destination::XBackbone);
+    }
+
+    #[test]
+    fn from_config_selects_custom() {
+        let cfg = AppConfig {
+            cloud_destination: "custom".to_string(),
+            ..AppConfig::default()
+        };
+        assert_eq!(Destination::from_config(&cfg), Destination::Custom);
+    }
+
+    #[test]
+    fn custom_is_configured_requires_a_url() {
+        assert!(!Destination::Custom.is_configured(&AppConfig::default()));
+        let configured = AppConfig {
+            custom_upload_url: "https://api.example/upload".to_string(),
+            ..AppConfig::default()
+        };
+        assert!(Destination::Custom.is_configured(&configured));
     }
 
     #[test]

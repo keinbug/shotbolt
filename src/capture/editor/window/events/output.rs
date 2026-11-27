@@ -107,7 +107,7 @@ pub(super) fn wire_output_lifecycle(
                     .await
                     .unwrap_or_else(|_| {
                         Err(EditorError::ImageSave(crate::i18n::t(
-                            "ApexShot lost contact with the copy worker.",
+                            "Shotbolt lost contact with the copy worker.",
                         )))
                     })
                     .map_err(|error| error.to_string());
@@ -733,7 +733,7 @@ fn edited_image_suggestion(source: &Path, config: &crate::config::AppConfig) -> 
             .file_stem()
             .and_then(|stem| stem.to_str())
             .filter(|stem| !stem.is_empty())
-            .unwrap_or("ApexShot");
+            .unwrap_or("Shotbolt");
         let extension = source
             .extension()
             .and_then(|extension| extension.to_str())
@@ -758,7 +758,7 @@ fn collision_free_suggestion(suggestion: PathBuf) -> PathBuf {
         .file_stem()
         .and_then(|stem| stem.to_str())
         .filter(|stem| !stem.is_empty())
-        .unwrap_or("ApexShot");
+        .unwrap_or("Shotbolt");
     let extension = suggestion
         .extension()
         .and_then(|extension| extension.to_str())
@@ -981,7 +981,7 @@ fn start_static_export(
         .await
         .unwrap_or_else(|_| {
             Err(StaticExportError::Image(crate::i18n::t(
-                "ApexShot lost contact with the export worker.",
+                "Shotbolt lost contact with the export worker.",
             )))
         });
         match result {
@@ -1071,7 +1071,7 @@ fn motion_export_suggestion(source_image: &Path) -> PathBuf {
         .file_stem()
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty())
-        .unwrap_or("ApexShot");
+        .unwrap_or("Shotbolt");
     dir.join(format!("{stem} Motion.mp4"))
 }
 
@@ -1261,7 +1261,7 @@ mod tests {
             .file_name()
             .unwrap()
             .to_string_lossy()
-            .starts_with("ApexShot-"));
+            .starts_with("Shotbolt-"));
         assert_eq!(
             suggestion
                 .extension()
@@ -1283,7 +1283,7 @@ mod tests {
             .file_name()
             .unwrap()
             .to_string_lossy()
-            .starts_with("ApexShot-"));
+            .starts_with("Shotbolt-"));
         assert_eq!(
             suggestion
                 .extension()
