@@ -13,6 +13,8 @@
 #   SHOTBOLT_UPDATE_HOST  ssh target            (default root@5.83.154.137)
 #   SHOTBOLT_UPDATE_DIR   folder on the server  (default /srv/auric-updates/shotbolt)
 #   SHOTBOLT_UPDATE_URL   its public URL        (default https://auric-upload.de/shotbolt)
+#   SHOTBOLT_SSH_KEY      private key file      (default: ssh's own keys)
+#   SHOTBOLT_KNOWN_HOSTS  known_hosts file      (default: ssh's own)
 set -euo pipefail
 
 installer=${1:?usage: publish-update.sh <Shotbolt-X.Y.Z-setup.exe> [notes]}
@@ -20,6 +22,10 @@ notes=${2:-}
 host=${SHOTBOLT_UPDATE_HOST:-root@5.83.154.137}
 remote=${SHOTBOLT_UPDATE_DIR:-/srv/auric-updates/shotbolt}
 public=${SHOTBOLT_UPDATE_URL:-https://auric-upload.de/shotbolt}
+
+ssh_opts=(-o BatchMode=yes)
+[[ -n ${SHOTBOLT_SSH_KEY:-} ]] && ssh_opts+=(-o IdentitiesOnly=yes -i "$SHOTBOLT_SSH_KEY")
+[[ -n ${SHOTBOLT_KNOWN_HOSTS:-} ]] && ssh_opts+=(-o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$SHOTBOLT_KNOWN_HOSTS")
 
 name=$(basename "$installer")
 if [[ ! $name =~ ^Shotbolt-([0-9]+(\.[0-9]+)+)-setup\.exe$ ]]; then
@@ -71,14 +77,14 @@ code{font-size:.85em;word-break:break-all;color:#555}</style></head>
 EOF
 
 echo "Uploading $name ($size bytes) to $host:$remote/releases/$version/"
-ssh "$host" "mkdir -p '$remote/releases/$version'"
-scp "$installer" "$host:$remote/releases/$version/$name.part"
-ssh "$host" "cd '$remote/releases/$version' && echo '$sha  $name.part' | sha256sum -c --quiet && mv '$name.part' '$name' && chmod 644 '$name'"
+ssh "${ssh_opts[@]}" "$host" "mkdir -p '$remote/releases/$version'"
+scp "${ssh_opts[@]}" "$installer" "$host:$remote/releases/$version/$name.part"
+ssh "${ssh_opts[@]}" "$host" "cd '$remote/releases/$version' && echo '$sha  $name.part' | sha256sum -c --quiet && mv '$name.part' '$name' && chmod 644 '$name'"
 
 # latest.json last, so clients never see a version whose installer is missing.
-scp "$staging/index.html" "$host:$remote/index.html.part"
-scp "$staging/latest.json" "$host:$remote/latest.json.part"
-ssh "$host" "cd '$remote' && chmod 644 index.html.part latest.json.part && mv index.html.part index.html && mv latest.json.part latest.json"
+scp "${ssh_opts[@]}" "$staging/index.html" "$host:$remote/index.html.part"
+scp "${ssh_opts[@]}" "$staging/latest.json" "$host:$remote/latest.json.part"
+ssh "${ssh_opts[@]}" "$host" "cd '$remote' && chmod 644 index.html.part latest.json.part && mv index.html.part index.html && mv latest.json.part latest.json"
 
 echo "Checking $public/latest.json"
 curl -fsS "$public/latest.json" | python -c 'import json,sys; d=json.load(sys.stdin); print("live:", d["tag_name"], d["assets"][0]["browser_download_url"])'

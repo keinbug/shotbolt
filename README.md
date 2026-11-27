@@ -61,11 +61,13 @@ A minimal compatible server for trying it out locally is
 
 1. Raise `version` in `Cargo.toml` and `windows-ui/Cargo.toml` (e.g. `1.0.2`),
    and in the package entries of `Cargo.lock` and `windows-ui/Cargo.lock`.
-2. Commit and push, then run the workflow *Shotbolt release*
-   (`gh workflow run shotbolt-release.yml --ref main`) and download its
-   artifact (`gh run download <run id> -n shotbolt-windows-installer`).
-3. Publish it on the update server:
-   `bash scripts/publish-update.sh Shotbolt-1.0.2-setup.exe "What changed"`.
-   It uploads the installer first and swaps `latest.json` last. Installed
-   Shotbolt builds offer the update within a day, or at once through
-   Settings → About → *Check for Updates*.
+2. Commit and push, then push a tag:
+   `git tag -a v1.0.2 -m "What changed" && git push origin v1.0.2`.
+3. The workflow *Shotbolt release* builds and smoke-tests the installer,
+   uploads it to the update server (the tag message becomes the notes) and
+   attaches it to a GitHub release. Installed Shotbolt builds offer the update
+   within a day, or at once through Settings → About → *Check for Updates*.
+
+The upload uses the repository secrets `SHOTBOLT_DEPLOY_KEY` (SSH key) and
+`SHOTBOLT_DEPLOY_KNOWN_HOSTS`. By hand, the same upload is
+`bash scripts/publish-update.sh Shotbolt-1.0.2-setup.exe "What changed"`.

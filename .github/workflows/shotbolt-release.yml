@@ -1,12 +1,13 @@
 name: Shotbolt release
 
 # Builds and smoke-tests the Windows installer.
-# Release = bump `version` in Cargo.toml and windows-ui/Cargo.toml, run this
-# workflow (or push a tag `v<version>`), download the artifact, then publish it
-# on the update server with scripts/publish-update.sh. Installed Shotbolt
-# builds read that server's latest.json (windows-ui/src/update/check.rs).
+# Release = bump `version` in Cargo.toml and windows-ui/Cargo.toml, push a tag
+# `v<version>`. The tag build uploads the installer to the update server
+# (scripts/publish-update.sh with the SHOTBOLT_DEPLOY_* secrets) and attaches
+# it to a GitHub release. Installed Shotbolt builds read the server's
+# latest.json (windows-ui/src/update/check.rs).
 #
-# A tag also attaches the installer to a GitHub release, as a second download.
+# A manual run builds and tests the installer as an artifact only.
 on:
   push:
     tags: ['v*']
@@ -189,6 +190,28 @@ jobs:
             dist/windows/SHA256SUMS
           if-no-files-found: error
           retention-days: 30
+
+      # The tag's message (or the commit subject) becomes the update notes.
+      - name: Publish on the update server
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          DEPLOY_KEY: ${{ secrets.SHOTBOLT_DEPLOY_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.SHOTBOLT_DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          keys="$(cygpath -u "$RUNNER_TEMP")/deploy"
+          mkdir -p "$keys"
+          printf '%s\n' "$DEPLOY_KEY" > "$keys/id"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$keys/known_hosts"
+          chmod 600 "$keys/id"
+          git fetch --quiet --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME" || true
+          notes=$(git tag -l --format='%(contents:subject)' "$GITHUB_REF_NAME")
+          [[ -n $notes ]] || notes=$(git log -1 --format=%s)
+          installer=$(ls dist/windows/Shotbolt-*-setup.exe | head -1)
+          SHOTBOLT_SSH_KEY="$keys/id" SHOTBOLT_KNOWN_HOSTS="$keys/known_hosts" \
+            bash scripts/publish-update.sh "$installer" "$notes"
+          rm -rf "$keys"
 
       - name: Publish the GitHub release
         if: startsWith(github.ref, 'refs/tags/')
