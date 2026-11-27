@@ -5631,3 +5631,45 @@ msgid ""
 msgstr ""
 "Kostenlose Links bleiben 7 Tage verfügbar.\n"
 "{url}"
+
+msgid "Shotbolt is a fork of ApexShot, free software under the GNU GPL v3 or later."
+msgstr "Shotbolt ist ein Fork von ApexShot, freie Software unter der GNU GPL v3 oder neuer."
+
+msgid "Source code"
+msgstr "Quellcode"
+
+msgid "Checking for updates…"
+msgstr "Suche nach Updates …"
+
+msgid "Shotbolt {version} is available."
+msgstr "Shotbolt {version} ist verfügbar."
+
+msgid "Shotbolt is up to date."
+msgstr "Shotbolt ist auf dem neuesten Stand."
+
+msgid "Could not reach the update server."
+msgstr "Der Update-Server ist nicht erreichbar."
+
+msgid "Shotbolt is a fork of ApexShot with its own name, logo, and update server."
+msgstr "Shotbolt ist ein Fork von ApexShot mit eigenem Namen, Logo und Update-Server."
+
+msgid "Upload to your own API"
+msgstr "Upload an deine eigene API"
+
+msgid "Settings → Cloud → Own upload API sends captures to any HTTP endpoint and copies the returned link."
+msgstr "Einstellungen → Cloud → Own upload API schickt Aufnahmen an einen beliebigen HTTP-Endpunkt und kopiert den zurückgegebenen Link."
+
+msgid "Updates from Shotbolt's server"
+msgstr "Updates vom Shotbolt-Server"
+
+msgid "Shotbolt checks its own update server and installs new versions without the setup wizard."
+msgstr "Shotbolt fragt seinen eigenen Update-Server und installiert neue Versionen ohne Setup-Assistenten."
+
+msgid "No telemetry"
+msgstr "Keine Telemetrie"
+
+msgid "Shotbolt sends no usage or download statistics."
+msgstr "Shotbolt sendet keine Nutzungs- oder Download-Statistiken."
+
+msgid "Shotbolt is free software under the GNU GPL v3 or later."
+msgstr "Shotbolt ist freie Software unter der GNU GPL v3 oder neuer."

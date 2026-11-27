@@ -13,9 +13,8 @@ kept as [README.apexshot.md](README.apexshot.md), and the licence is in
 
 - **Name and logo:** the app shows up as Shotbolt.
 - **Own upload API:** Settings → Cloud → *Own upload API* (described below).
-- **Own updates:** Shotbolt checks the releases of
-  [keinbug/shotbolt](https://github.com/keinbug/shotbolt/releases), not
-  ApexShot's.
+- **Own updates:** Shotbolt checks its own update server
+  (`https://auric-upload.de/shotbolt/latest.json`), not ApexShot's.
 - **Not included:** ApexShot Cloud login, the cloud and Studio hints, and the
   usage and download telemetry.
 - **Studio stays locked:** this build has no Studio licence key, so Studio
@@ -29,8 +28,8 @@ Internal names stay as they were, so nothing breaks:
 
 ## Install (Windows)
 
-1. Download `Shotbolt-<version>-setup.exe` from the
-   [latest release](https://github.com/keinbug/shotbolt/releases/latest).
+1. Download `Shotbolt-<version>-setup.exe` from
+   <https://auric-upload.de/shotbolt/>.
 2. Run it. It installs for your user under `%LOCALAPPDATA%\Programs\Shotbolt`,
    with no administrator rights needed.
 
@@ -60,7 +59,13 @@ A minimal compatible server for trying it out locally is
 
 ## Releasing a new version
 
-1. Raise `version` in `Cargo.toml` and `windows-ui/Cargo.toml` (e.g. `1.0.1`).
-2. Commit, then push a tag `v1.0.1`.
-3. The workflow *Shotbolt release* builds the installer and publishes the
-   GitHub release. Installed Shotbolt builds then offer the update.
+1. Raise `version` in `Cargo.toml` and `windows-ui/Cargo.toml` (e.g. `1.0.2`),
+   and in the package entries of `Cargo.lock` and `windows-ui/Cargo.lock`.
+2. Commit and push, then run the workflow *Shotbolt release*
+   (`gh workflow run shotbolt-release.yml --ref main`) and download its
+   artifact (`gh run download <run id> -n shotbolt-windows-installer`).
+3. Publish it on the update server:
+   `bash scripts/publish-update.sh Shotbolt-1.0.2-setup.exe "What changed"`.
+   It uploads the installer first and swaps `latest.json` last. Installed
+   Shotbolt builds offer the update within a day, or at once through
+   Settings → About → *Check for Updates*.

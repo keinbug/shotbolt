@@ -104,8 +104,7 @@ pub fn start(
     Ok((receiver, destination))
 }
 
-/// Shotbolt downloads straight from its own GitHub releases; the original
-/// project's Cloudflare mirror only holds ApexShot builds.
+/// Shotbolt downloads straight from its own update server; there is no mirror.
 fn mirror_url(_url: &str) -> Option<String> {
     None
 }
@@ -456,11 +455,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn release_assets_come_straight_from_github() {
+    fn release_assets_have_no_mirror() {
         assert_eq!(
-            mirror_url(
-                "https://github.com/keinbug/shotbolt/releases/download/v1.0.0/Shotbolt-1.0.0-setup.exe"
-            ),
+            mirror_url("https://auric-upload.de/shotbolt/releases/1.0.0/Shotbolt-1.0.0-setup.exe"),
             None
         );
         assert_eq!(
@@ -468,7 +465,7 @@ mod tests {
             None
         );
         assert_eq!(
-            mirror_url("https://github.com/keinbug/shotbolt/releases/download/"),
+            mirror_url("https://auric-upload.de/shotbolt/releases/"),
             None
         );
     }

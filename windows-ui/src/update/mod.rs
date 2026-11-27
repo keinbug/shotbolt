@@ -18,7 +18,7 @@ pub mod open_windows;
 mod telemetry;
 pub(crate) mod window;
 
-pub use check::{cached_release, check, check_and_show, prompt_is_snoozed, snooze};
+pub use check::{cached_release, check, check_and_show, check_now, prompt_is_snoozed, snooze};
 
 use std::ffi::OsString;
 

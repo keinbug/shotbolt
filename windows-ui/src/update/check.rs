@@ -13,7 +13,10 @@ use serde::{Deserialize, Serialize};
 
 use super::Release;
 
-const LATEST_RELEASE_API: &str = "https://api.github.com/repos/keinbug/shotbolt/releases/latest";
+/// Shotbolt's own update server. `latest.json` uses the same shape as a
+/// GitHub release (`tag_name`, `html_url`, `assets[]`), written by
+/// `scripts/publish-update.sh`.
+const LATEST_RELEASE_API: &str = "https://auric-upload.de/shotbolt/latest.json";
 const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 const PROMPT_SNOOZE: Duration = Duration::from_secs(24 * 60 * 60);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(4);
@@ -45,12 +48,12 @@ struct CheckState {
 }
 
 #[derive(Debug, Deserialize)]
-struct GithubRelease {
+struct LatestRelease {
     tag_name: String,
     #[serde(default)]
     html_url: String,
     #[serde(default)]
-    assets: Vec<GithubReleaseAsset>,
+    assets: Vec<LatestReleaseAsset>,
     #[serde(default)]
     draft: bool,
     #[serde(default)]
@@ -58,7 +61,7 @@ struct GithubRelease {
 }
 
 #[derive(Debug, Deserialize)]
-struct GithubReleaseAsset {
+struct LatestReleaseAsset {
     name: String,
     browser_download_url: String,
     #[serde(default)]
@@ -100,6 +103,22 @@ pub fn check() -> Option<Release> {
         return None;
     }
     Some(available.clone().into())
+}
+
+/// Ask the update server right now, ignoring the daily cache and any snooze.
+///
+/// Used by the "Check for Updates" button: `Ok(None)` means the installed
+/// build is current. The result also refreshes the cached state.
+pub fn check_now() -> Result<Option<Release>, String> {
+    let release = fetch_latest_release()?;
+    let available = available_from_release(&release, env!("CARGO_PKG_VERSION"));
+    if let Some(path) = state_path() {
+        let mut state = load_state(&path);
+        state.last_checked_unix = now_unix();
+        state.available_update = available.clone();
+        save_state(&path, &state);
+    }
+    Ok(available.map(Into::into))
 }
 
 /// Run the check and open the window when it finds a release to offer.
@@ -201,20 +220,20 @@ fn latest_release_endpoint() -> String {
         .unwrap_or_else(|| LATEST_RELEASE_API.to_string())
 }
 
-fn fetch_latest_release() -> Result<GithubRelease, String> {
+fn fetch_latest_release() -> Result<LatestRelease, String> {
     ureq::AgentBuilder::new()
         .timeout(REQUEST_TIMEOUT)
         .user_agent(concat!("Shotbolt/", env!("CARGO_PKG_VERSION")))
         .build()
         .get(&latest_release_endpoint())
-        .set("Accept", "application/vnd.github+json")
+        .set("Accept", "application/json")
         .call()
         .map_err(|error| error.to_string())?
         .into_json()
         .map_err(|error| error.to_string())
 }
 
-fn available_from_release(release: &GithubRelease, installed: &str) -> Option<Available> {
+fn available_from_release(release: &LatestRelease, installed: &str) -> Option<Available> {
     if release.draft || release.prerelease || !is_newer_version(&release.tag_name, installed) {
         return None;
     }
@@ -286,7 +305,7 @@ mod tests {
         ]
     }"#;
 
-    fn release(raw: &str) -> GithubRelease {
+    fn release(raw: &str) -> LatestRelease {
         serde_json::from_str(raw).expect("a release payload")
     }
 

@@ -1,8 +1,11 @@
 use crate::i18n::{t, tfmt};
-use gtk4::{prelude::*, Align, Box as GtkBox, Button, Label, Orientation, Separator};
+use gtk4::{prelude::*, Align, Box as GtkBox, Button, Label, Orientation};
 
-const KOFI_URL: &str = "https://ko-fi.com/codegoddy";
-const CLOUD_PLANS_URL: &str = "https://apexshot.org/pricing";
+/// Shotbolt's source and licence.
+const SOURCE_URL: &str = "https://github.com/keinbug/shotbolt";
+
+/// The logo the icon set is made from, so the page shows the real app icon.
+const LOGO_PNG: &[u8] = include_bytes!("../../media/shotbolt-logo-400.png");
 
 fn open_in_browser(url: &'static str) {
     std::thread::spawn(move || {
@@ -12,6 +15,21 @@ fn open_in_browser(url: &'static str) {
 
 pub struct AboutSettingsWidgets {
     pub section: GtkBox,
+}
+
+fn logo() -> gtk4::Widget {
+    let bytes = gtk4::glib::Bytes::from_static(LOGO_PNG);
+    match gtk4::gdk::Texture::from_bytes(&bytes) {
+        Ok(texture) => {
+            let picture = gtk4::Picture::for_paintable(&texture);
+            picture.set_can_shrink(true);
+            picture.set_size_request(128, 128);
+            picture.set_halign(Align::Center);
+            picture.set_margin_bottom(16);
+            picture.upcast()
+        }
+        Err(_) => GtkBox::new(Orientation::Vertical, 0).upcast(),
+    }
 }
 
 pub fn build_about_section() -> AboutSettingsWidgets {
@@ -25,35 +43,7 @@ pub fn build_about_section() -> AboutSettingsWidgets {
     // --- 1. ICON & TITLE ---
     let header_vbox = GtkBox::new(Orientation::Vertical, 8);
 
-    // Procedural Logo Drawing
-    let drawing_area = gtk4::DrawingArea::new();
-    drawing_area.set_content_width(128);
-    drawing_area.set_content_height(128);
-    drawing_area.set_halign(Align::Center);
-    drawing_area.set_margin_bottom(16);
-
-    drawing_area.set_draw_func(move |_, cr, width, height| {
-        let cx = width as f64 / 2.0;
-        let cy = height as f64 / 2.0;
-
-        // Scale from 24x24 viewBox to 128x128, centered
-        let scale = width as f64 / 24.0;
-        cr.translate(cx - 12.0 * scale, cy - 12.0 * scale);
-        cr.scale(scale, scale);
-
-        // Draw the new logo: curved arch shape
-        // Path: M 2 21 C 6 21, 8 2, 12 2 C 16 2, 18 21, 22 21
-        cr.set_source_rgba(0.913, 0.329, 0.125, 1.0); // #E95420
-        cr.set_line_width(2.5);
-        cr.set_line_cap(gtk4::cairo::LineCap::Round);
-        cr.move_to(2.0, 21.0);
-        cr.curve_to(6.0, 21.0, 8.0, 2.0, 12.0, 2.0);
-        cr.curve_to(16.0, 2.0, 18.0, 21.0, 22.0, 21.0);
-        cr.stroke().expect("Failed to draw logo");
-    });
-
-    let title = Label::new(None);
-    title.set_markup("Apex<span weight='light' alpha='50%'>s h o t</span>");
+    let title = Label::new(Some("Shotbolt"));
     title.add_css_class("about-app-name");
 
     let version = Label::new(Some(&tfmt(
@@ -62,7 +52,7 @@ pub fn build_about_section() -> AboutSettingsWidgets {
     )));
     version.add_css_class("about-version-label");
 
-    header_vbox.append(&drawing_area);
+    header_vbox.append(&logo());
     header_vbox.append(&title);
     header_vbox.append(&version);
     section.append(&header_vbox);
@@ -75,112 +65,94 @@ pub fn build_about_section() -> AboutSettingsWidgets {
     check_btn.add_css_class("settings-primary-btn");
     check_btn.set_width_request(200);
     check_btn.set_halign(Align::Center);
-    check_btn.connect_clicked(|_| {
-        open_in_browser("https://github.com/apex-shot/apexshot/releases");
-    });
 
-    let whats_new_btn = Button::with_label(&t("What's New"));
-    whats_new_btn.add_css_class("secondary-settings-button");
-    whats_new_btn.set_width_request(200);
-    whats_new_btn.set_halign(Align::Center);
-    whats_new_btn.connect_clicked(|_| {
-        open_in_browser("https://github.com/apex-shot/apexshot/releases/latest");
-    });
+    let update_status = Label::new(None);
+    update_status.add_css_class("settings-sub-option-hint");
+    update_status.set_wrap(true);
+    update_status.set_justify(gtk4::Justification::Center);
+    update_status.set_max_width_chars(40);
+    update_status.set_halign(Align::Center);
+    update_status.set_visible(false);
+
+    wire_update_check(&check_btn, &update_status);
 
     update_vbox.append(&check_btn);
-    update_vbox.append(&whats_new_btn);
+    update_vbox.append(&update_status);
     section.append(&update_vbox);
 
-    // --- 3. LINKS ---
-    let links_grid = gtk4::Grid::new();
-    links_grid.set_margin_top(48);
-    links_grid.set_column_spacing(24);
-    links_grid.set_row_spacing(12);
-    links_grid.set_halign(Align::Center);
-
-    let create_link = |label: &str| -> Button {
-        let btn = Button::with_label(label);
-        btn.add_css_class("about-link-button");
-        btn.connect_clicked(|_| {
-            std::thread::spawn(move || {
-                let _ = crate::utils::open::open_url("https://apexshot.org/");
-            });
-        });
-        btn
-    };
-
-    links_grid.attach(&create_link(&t("Help Center")), 0, 0, 1, 1);
-    links_grid.attach(&create_link(&t("Send Feedback")), 1, 0, 1, 1);
-    links_grid.attach(&create_link(&t("Website")), 0, 1, 1, 1);
-    section.append(&links_grid);
-
-    // --- 4. SUPPORT ---
-    let support_vbox = GtkBox::new(Orientation::Vertical, 10);
-    support_vbox.set_margin_top(40);
-    support_vbox.set_halign(Align::Center);
-    support_vbox.set_hexpand(true);
-
-    let support_title = Label::new(Some(&t("Support Shotbolt")));
-    support_title.add_css_class("about-support-title");
-    support_title.set_halign(Align::Center);
-
-    let support_copy = Label::new(Some(&t(
-        "Shotbolt is free and open source. Donations keep development going.",
-    )));
-    support_copy.add_css_class("about-support-copy");
-    support_copy.set_wrap(true);
-    support_copy.set_justify(gtk4::Justification::Center);
-    support_copy.set_max_width_chars(40);
-    support_copy.set_halign(Align::Center);
-
-    let kofi_btn = Button::with_label(&t("Support on Ko-fi"));
-    kofi_btn.add_css_class("secondary-settings-button");
-    kofi_btn.set_width_request(200);
-    kofi_btn.set_halign(Align::Center);
-    kofi_btn.set_margin_top(4);
-    kofi_btn.connect_clicked(|_| {
-        open_in_browser(KOFI_URL);
-    });
-
-    let cloud_note = Button::with_label(&t("Support Shotbolt / Go Pro"));
-    cloud_note.add_css_class("about-link-button");
-    cloud_note.set_halign(Align::Center);
-    cloud_note.set_tooltip_text(Some(&t(
-        "Opens Shotbolt Cloud plans. This is not a donation.",
-    )));
-    cloud_note.connect_clicked(|_| {
-        open_in_browser(CLOUD_PLANS_URL);
-    });
-
-    support_vbox.append(&support_title);
-    support_vbox.append(&support_copy);
-    support_vbox.append(&kofi_btn);
-    support_vbox.append(&cloud_note);
-    section.append(&support_vbox);
-
-    // --- 5. FOOTER ---
+    // --- 3. FOOTER ---
     let footer_vbox = GtkBox::new(Orientation::Vertical, 8);
-    footer_vbox.set_margin_top(40);
-    footer_vbox.set_opacity(0.5);
+    footer_vbox.set_margin_top(48);
 
-    let copyright = Label::new(Some(&t("Copyright © 2026 Shotbolt. All rights reserved.")));
-    copyright.add_css_class("settings-sub-option-hint");
-    copyright.set_halign(Align::Center);
+    let licence = Label::new(Some(&t(
+        "Shotbolt is a fork of ApexShot, free software under the GNU GPL v3 or later.",
+    )));
+    licence.add_css_class("settings-sub-option-hint");
+    licence.set_wrap(true);
+    licence.set_justify(gtk4::Justification::Center);
+    licence.set_max_width_chars(44);
+    licence.set_halign(Align::Center);
+    licence.set_opacity(0.6);
 
-    let legal_hbox = GtkBox::new(Orientation::Horizontal, 12);
-    legal_hbox.set_halign(Align::Center);
-    let tos = Label::new(Some(&t("Terms of Service")));
-    tos.add_css_class("settings-sub-option-hint");
-    let privacy = Label::new(Some(&t("Privacy Policy")));
-    privacy.add_css_class("settings-sub-option-hint");
+    let source = Button::with_label(&t("Source code"));
+    source.add_css_class("about-link-button");
+    source.set_halign(Align::Center);
+    source.connect_clicked(|_| open_in_browser(SOURCE_URL));
 
-    legal_hbox.append(&tos);
-    legal_hbox.append(&Separator::new(Orientation::Vertical));
-    legal_hbox.append(&privacy);
-
-    footer_vbox.append(&copyright);
-    footer_vbox.append(&legal_hbox);
+    footer_vbox.append(&licence);
+    footer_vbox.append(&source);
     section.append(&footer_vbox);
 
     AboutSettingsWidgets { section }
+}
+
+/// Ask Shotbolt's update server on click and say what it found; a newer
+/// release opens the update window.
+#[cfg(target_os = "windows")]
+fn wire_update_check(button: &Button, status: &Label) {
+    let status = status.clone();
+    button.connect_clicked(move |button| {
+        button.set_sensitive(false);
+        status.remove_css_class("settings-toast-error");
+        status.set_text(&t("Checking for updates…"));
+        status.set_visible(true);
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = sender.send(crate::update::check_now());
+        });
+
+        let button = button.clone();
+        let status = status.clone();
+        gtk4::glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
+            match receiver.try_recv() {
+                Ok(Ok(Some(release))) => {
+                    status.set_text(&tfmt(
+                        "Shotbolt {version} is available.",
+                        &[("version", release.version.as_str())],
+                    ));
+                    crate::update_ui::open_update_window(&release);
+                }
+                Ok(Ok(None)) => status.set_text(&t("Shotbolt is up to date.")),
+                Ok(Err(error)) => {
+                    eprintln!("[update] manual check failed: {error}");
+                    status.set_text(&t("Could not reach the update server."));
+                    status.add_css_class("settings-toast-error");
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    return gtk4::glib::ControlFlow::Continue;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    status.set_text(&t("Could not reach the update server."));
+                }
+            }
+            button.set_sensitive(true);
+            gtk4::glib::ControlFlow::Break
+        });
+    });
+}
+
+#[cfg(not(target_os = "windows"))]
+fn wire_update_check(button: &Button, _status: &Label) {
+    button.connect_clicked(|_| open_in_browser("https://github.com/keinbug/shotbolt/releases"));
 }

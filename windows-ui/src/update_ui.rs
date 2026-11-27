@@ -216,7 +216,7 @@ fn present_card(overlay: &Overlay, release: Release) {
 }
 
 /// Hand the already-resolved release to the standalone update window.
-fn open_update_window(release: &Release) {
+pub fn open_update_window(release: &Release) {
     let Some(executable) = crate::update::executable_path() else {
         eprintln!("[update] Could not find the update window binary beside this one.");
         return;

@@ -61,57 +61,36 @@ pub struct ReleaseNotes {
 /// Free improvements for a release go first in this list before shipping, so
 /// the window leads with what every copy gains.
 pub const RELEASES: &[ReleaseNotes] = &[ReleaseNotes {
-    version: "0.3.2",
+    version: "1.0.0",
     subtitle: None,
     highlights: &[
         Highlight {
-            title: "Recording works again",
-            body: "Screen and webcam recordings start again. In 0.3.1 the bundled ffmpeg stopped every recording from starting.",
-            studio: false,
-            without_studio_only: false,
-            platform: Platform::Windows,
-        },
-        Highlight {
-            title: "Choose your mic and speaker",
-            body: "In Video mode, right-click Mic or Speaker to pick a device. The toolbar shows the device you chose and a live level meter.",
-            studio: false,
-            without_studio_only: false,
-            platform: Platform::Linux,
-        },
-        Highlight {
-            title: "Record one app's sound",
-            body: "The Speaker menu records every app, a single app, or no system sound at all.",
-            studio: false,
-            without_studio_only: false,
-            platform: Platform::Linux,
-        },
-        Highlight {
-            title: "Faster downloads and updates",
-            body: "Shotbolt now downloads from its own download servers, so installs and updates finish sooner.",
+            title: "Welcome to Shotbolt",
+            body: "Shotbolt is a fork of ApexShot with its own name, logo, and update server.",
             studio: false,
             without_studio_only: false,
             platform: Platform::All,
         },
         Highlight {
-            title: "Updates skip the setup wizard",
-            body: "Updating goes straight to installing, without asking you to accept the licence again.",
+            title: "Upload to your own API",
+            body: "Settings → Cloud → Own upload API sends captures to any HTTP endpoint and copies the returned link.",
+            studio: false,
+            without_studio_only: false,
+            platform: Platform::All,
+        },
+        Highlight {
+            title: "Updates from Shotbolt's server",
+            body: "Shotbolt checks its own update server and installs new versions without the setup wizard.",
             studio: false,
             without_studio_only: false,
             platform: Platform::Windows,
         },
         Highlight {
-            title: "Quick Access in your recordings",
-            body: "A Quick Access card that appears while you record now shows in the video, so you can record yourself capturing and editing.",
+            title: "No telemetry",
+            body: "Shotbolt sends no usage or download statistics.",
             studio: false,
             without_studio_only: false,
-            platform: Platform::Windows,
-        },
-        Highlight {
-            title: "Stop any recording",
-            body: "A recording started without the controls bar now stops from the tray, with apexshot record stop, or with Ctrl+C.",
-            studio: false,
-            without_studio_only: false,
-            platform: Platform::Linux,
+            platform: Platform::All,
         },
     ],
 }];
@@ -133,7 +112,7 @@ fn highlights_for(notes: &ReleaseNotes, studio_active: bool, build: Platform) ->
 }
 
 /// The line under the highlight list, so the free tools stay visible.
-pub const FOOTER: &str = "Capture, annotation, recording, and the editors' core tools stay free.";
+pub const FOOTER: &str = "Shotbolt is free software under the GNU GPL v3 or later.";
 
 /// What a fresh start should do with the highlights.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -267,40 +246,40 @@ mod tests {
 
     #[test]
     fn versions_compare_by_their_numeric_parts() {
-        assert_eq!(compare_versions("0.3.0", "0.3.0"), Ordering::Equal);
-        assert_eq!(compare_versions("0.3.1", "0.3.0"), Ordering::Greater);
-        assert_eq!(compare_versions("0.3.0", "0.3.1"), Ordering::Less);
+        assert_eq!(compare_versions("0.9.0", "0.9.0"), Ordering::Equal);
+        assert_eq!(compare_versions("0.9.1", "0.9.0"), Ordering::Greater);
+        assert_eq!(compare_versions("0.9.0", "0.9.1"), Ordering::Less);
         assert_eq!(compare_versions("0.10.0", "0.9.9"), Ordering::Greater);
         assert_eq!(compare_versions("1.0", "1.0.0"), Ordering::Equal);
         // A suffix is metadata, not part of the ordering.
-        assert_eq!(compare_versions("0.3.1-rc1", "0.3.1"), Ordering::Equal);
-        assert_eq!(compare_versions("v0.3.1", "0.3.1"), Ordering::Equal);
+        assert_eq!(compare_versions("0.9.1-rc1", "0.9.1"), Ordering::Equal);
+        assert_eq!(compare_versions("v0.9.1", "0.9.1"), Ordering::Equal);
     }
 
     #[test]
     fn notes_to_show_needs_a_previous_version_and_stays_within_the_range() {
-        assert_eq!(notes_to_show("0.3.2", None), None);
+        assert_eq!(notes_to_show("1.0.0", None), None);
 
-        let notes = notes_to_show("0.3.2", Some("0.3.1")).expect("the new release qualifies");
-        assert_eq!(notes.version, "0.3.2");
+        let notes = notes_to_show("1.0.0", Some("0.9.1")).expect("the new release qualifies");
+        assert_eq!(notes.version, "1.0.0");
 
         // The recorded version already covers the release.
-        assert_eq!(notes_to_show("0.3.2", Some("0.3.2")), None);
+        assert_eq!(notes_to_show("1.0.0", Some("1.0.0")), None);
         // A build older than the entry shows nothing.
-        assert_eq!(notes_to_show("0.3.1", Some("0.3.0")), None);
+        assert_eq!(notes_to_show("0.9.1", Some("0.9.0")), None);
         // A recorded version newer than the running build is a downgrade.
-        assert_eq!(notes_to_show("0.3.1", Some("0.4.0")), None);
+        assert_eq!(notes_to_show("0.9.1", Some("1.1.0")), None);
     }
 
     #[test]
     fn the_newest_qualifying_entry_is_the_one_returned() {
-        let notes = notes_to_show("0.3.2", Some("0.1.0")).expect("the release qualifies");
+        let notes = notes_to_show("1.0.0", Some("0.1.0")).expect("the release qualifies");
         assert_eq!(notes.version, RELEASES[0].version);
     }
 
     #[test]
     fn the_current_release_leads_with_free_improvements_and_has_no_subtitle() {
-        let notes = notes_for("0.3.2").expect("the current release");
+        let notes = notes_for("1.0.0").expect("the current release");
         assert_eq!(notes.subtitle, None);
         // Free improvements come before anything Studio-related.
         let first_studio = notes
@@ -316,15 +295,15 @@ mod tests {
 
     #[test]
     fn notes_for_returns_the_newest_entry_covered_by_the_build() {
-        assert_eq!(notes_for("0.3.2").map(|notes| notes.version), Some("0.3.2"));
-        assert_eq!(notes_for("0.4.0").map(|notes| notes.version), Some("0.3.2"));
-        assert_eq!(notes_for("0.3.1"), None);
+        assert_eq!(notes_for("1.0.0").map(|notes| notes.version), Some("1.0.0"));
+        assert_eq!(notes_for("1.1.0").map(|notes| notes.version), Some("1.0.0"));
+        assert_eq!(notes_for("0.9.1"), None);
     }
 
     #[test]
     fn a_fresh_install_marks_the_version_without_showing() {
         assert_eq!(
-            decide_on_startup("0.3.2", None, false),
+            decide_on_startup("1.0.0", None, false),
             StartupDecision::MarkSeen
         );
     }
@@ -332,8 +311,8 @@ mod tests {
     #[test]
     fn a_finished_install_with_no_record_shows_the_current_notes() {
         assert!(matches!(
-            decide_on_startup("0.3.2", None, true),
-            StartupDecision::Show(notes) if notes.version == "0.3.2"
+            decide_on_startup("1.0.0", None, true),
+            StartupDecision::Show(notes) if notes.version == "1.0.0"
         ));
     }
 
@@ -348,15 +327,15 @@ mod tests {
     #[test]
     fn an_upgrade_shows_the_entries_after_the_recorded_version() {
         assert!(matches!(
-            decide_on_startup("0.3.2", Some("0.2.0"), true),
-            StartupDecision::Show(notes) if notes.version == "0.3.2"
+            decide_on_startup("1.0.0", Some("0.2.0"), true),
+            StartupDecision::Show(notes) if notes.version == "1.0.0"
         ));
     }
 
     #[test]
     fn the_same_version_does_nothing() {
         assert_eq!(
-            decide_on_startup("0.3.2", Some("0.3.2"), true),
+            decide_on_startup("1.0.0", Some("1.0.0"), true),
             StartupDecision::Nothing
         );
     }
@@ -364,7 +343,7 @@ mod tests {
     #[test]
     fn a_downgrade_records_the_running_version() {
         assert_eq!(
-            decide_on_startup("0.3.1", Some("0.3.2"), true),
+            decide_on_startup("0.9.1", Some("1.0.0"), true),
             StartupDecision::MarkSeen
         );
     }
@@ -372,7 +351,7 @@ mod tests {
     #[test]
     fn an_upgrade_past_the_newest_entry_records_the_running_version() {
         assert_eq!(
-            decide_on_startup("0.3.3", Some("0.3.2"), true),
+            decide_on_startup("1.0.1", Some("1.0.0"), true),
             StartupDecision::MarkSeen
         );
     }
@@ -474,24 +453,22 @@ mod tests {
                 .map(|h| h.title)
                 .collect()
         };
-        // The device menus, one-app audio, and the stop fix are Linux-only;
-        // the recorder fix, the silent update, and Quick Access are Windows-only.
+        // The update-server note is Windows-only; the rest is everywhere.
         assert_eq!(
             titles(Platform::Linux),
             [
-                "Choose your mic and speaker",
-                "Record one app's sound",
-                "Faster downloads and updates",
-                "Stop any recording"
+                "Welcome to Shotbolt",
+                "Upload to your own API",
+                "No telemetry"
             ]
         );
         assert_eq!(
             titles(Platform::Windows),
             [
-                "Recording works again",
-                "Faster downloads and updates",
-                "Updates skip the setup wizard",
-                "Quick Access in your recordings"
+                "Welcome to Shotbolt",
+                "Upload to your own API",
+                "Updates from Shotbolt's server",
+                "No telemetry"
             ]
         );
     }

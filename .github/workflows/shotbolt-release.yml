@@ -1,12 +1,12 @@
 name: Shotbolt release
 
-# Builds the Windows installer and publishes it as a GitHub release.
-# Release = bump `version` in Cargo.toml and windows-ui/Cargo.toml, push a tag
-# `v<version>`. Installed Shotbolt builds find the release through the GitHub
-# API (windows-ui/src/update/check.rs) and offer the update.
+# Builds and smoke-tests the Windows installer.
+# Release = bump `version` in Cargo.toml and windows-ui/Cargo.toml, run this
+# workflow (or push a tag `v<version>`), download the artifact, then publish it
+# on the update server with scripts/publish-update.sh. Installed Shotbolt
+# builds read that server's latest.json (windows-ui/src/update/check.rs).
 #
-# A manual run (Actions → Shotbolt release → Run workflow) builds the
-# installer as an artifact only, without a release.
+# A tag also attaches the installer to a GitHub release, as a second download.
 on:
   push:
     tags: ['v*']
