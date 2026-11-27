@@ -457,7 +457,7 @@ mod tests {
     fn a_field_is_terminated_and_holds_the_whole_text() {
         let mut field = [0xFFFF_u16; 16];
         write_utf16(&mut field, "Shotbolt");
-        assert_eq!(&field[..9], &[65, 112, 101, 120, 83, 104, 111, 116, 0]);
+        assert_eq!(&field[..9], &[83, 104, 111, 116, 98, 111, 108, 116, 0]);
     }
 
     #[test]

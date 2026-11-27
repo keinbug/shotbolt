@@ -472,7 +472,7 @@ mod tests {
     fn login_start_quotes_the_shell_and_keeps_it_in_the_background() {
         assert_eq!(
             autostart_command(Path::new(r"C:\Program Files\Shotbolt\apexshot-capture.exe")),
-            r#""C:\Program Files\ApexShot\apexshot-capture.exe" --background"#
+            r#""C:\Program Files\Shotbolt\apexshot-capture.exe" --background"#
         );
     }
 

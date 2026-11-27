@@ -957,7 +957,10 @@ mod tests {
 
     #[test]
     fn a_signed_out_apexshot_destination_needs_sign_in() {
-        let config = AppConfig::default();
+        let config = AppConfig {
+            cloud_destination: "apexshot".to_string(),
+            ..AppConfig::default()
+        };
         assert!(needs_apexshot_sign_in(&config));
     }
 

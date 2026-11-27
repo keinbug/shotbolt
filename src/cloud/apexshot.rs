@@ -526,7 +526,7 @@ mod tests {
     fn client_update_error_is_not_mapped_to_a_pro_plan_upgrade() {
         let error = map_upload_http_error(make_status_error(
             426,
-            r#"{"code":"client_update_required","error":"Update ApexShot to upload securely."}"#,
+            r#"{"code":"client_update_required","error":"Update Shotbolt to upload securely."}"#,
         ));
 
         assert!(

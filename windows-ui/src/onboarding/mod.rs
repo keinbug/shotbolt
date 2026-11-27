@@ -918,7 +918,7 @@ mod tests {
                                     content.downcast::<gtk4::Label>().expect("step number");
                                 assert_eq!(number.text().as_str(), (index + 1).to_string());
                             }
-                            if index < 3 {
+                            if index + 1 < OnboardingStep::all().len() {
                                 let connector = &parts[index * 2 + 1];
                                 assert!(connector.has_css_class("onboarding-progress-connector"));
                                 assert_eq!(
